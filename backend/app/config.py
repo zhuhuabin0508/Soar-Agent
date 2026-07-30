@@ -1,0 +1,59 @@
+"""应用配置模块。
+
+使用 pydantic-settings 从环境变量与 ``.env`` 文件加载配置，
+便于在不同环境（开发 / 测试 / 生产）间切换。
+"""
+from pathlib import Path
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# backend 目录绝对路径，用于稳定定位 .env 文件
+BASE_DIR: Path = Path(__file__).resolve().parent.parent
+
+
+class Settings(BaseSettings):
+    """应用配置项。
+
+    所有字段均提供开发环境默认值，可被同名环境变量或 ``.env`` 文件覆盖。
+    """
+
+    DATABASE_URL: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/soar"
+    # 拆分的数据库连接参数（供 pg_dump / psql 等命令行工具使用）
+    DB_USER: str = "postgres"
+    DB_PASSWORD: str = "postgres"
+    DB_HOST: str = "localhost"
+    DB_PORT: int = 5432
+    DB_NAME: str = "soar"
+    REDIS_URL: str = "redis://localhost:6379/0"
+    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
+    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
+
+    # Anthropic API Key：留空表示未配置，Agent 决策将走 Mock 降级路径
+    ANTHROPIC_API_KEY: str = ""
+
+    # ===== 鉴权与安全配置 =====
+    # JWT 签名密钥；生产环境必须通过 .env 注入强随机值（>=32 字节）
+    JWT_SECRET: str = "soar-dev-secret-change-me-in-production-please"
+    # JWT 访问令牌有效期（分钟）
+    JWT_EXPIRE_MINUTES: int = 1440
+    # JWT 算法
+    JWT_ALGORITHM: str = "HS256"
+    # 初始管理员账号（首次启动 seed 时创建）
+    SEED_ADMIN_USERNAME: str = "admin"
+    SEED_ADMIN_PASSWORD: str = "admin123"
+    # CORS 允许的源；逗号分隔。默认仅允许本地前端
+    CORS_ORIGINS: str = "http://localhost:8080,http://localhost:5173,http://127.0.0.1:8080"
+    # Webhook 请求体最大字节数（默认 1MB）
+    WEBHOOK_MAX_BODY_BYTES: int = 1024 * 1024
+    # Webhook 限流：每个 workflow 每分钟最大请求数
+    WEBHOOK_RATE_LIMIT_PER_MINUTE: int = 30
+
+    model_config = SettingsConfigDict(
+        env_file=BASE_DIR / ".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+
+# 全局配置单例
+settings: Settings = Settings()

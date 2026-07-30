@@ -1,0 +1,13 @@
+# 依赖与构建产物（容器内重新构建，避免污染）
+node_modules
+dist
+
+# 版本控制
+.git
+.gitignore
+
+# 日志
+*.log
+
+# 编辑器/系统
+.DS_Store

@@ -1,0 +1,111 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 基础重置：确保三栏布局与画布能填满整个视口高度 */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+  /* 暗色主题全局背景与文字色 */
+  background-color: #030712; /* gray-950 */
+  color: #f3f4f6; /* gray-100 */
+}
+
+/* ===== 暗色主题滚动条统一 ===== */
+/* Webkit 内核（Chrome / Edge / Safari） */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #374151; /* gray-700 */
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4b5563; /* gray-600 */
+}
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #374151 transparent;
+}
+
+/* ===== 全局 focus 样式统一（无障碍 + 视觉一致） ===== */
+:focus-visible {
+  outline: 2px solid #06b6d4; /* brand-500 */
+  outline-offset: 2px;
+}
+
+/* ===== 通用工具类 ===== */
+@layer components {
+  /* 页面容器：统一外层 padding 与高度 */
+  .page-container {
+    @apply min-h-full bg-gray-950 p-6 text-gray-100;
+  }
+
+  /* 卡片：统一容器样式 */
+  .card {
+    @apply rounded-lg border border-gray-800 bg-gray-900;
+  }
+
+  /* 卡片内体：统一内边距 */
+  .card-body {
+    @apply p-4;
+  }
+
+  /* 主按钮（品牌色） */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  /* 次按钮（暗色描边） */
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-gray-700 bg-gray-800 px-4 py-2 text-sm font-medium text-gray-200 transition hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  /* 危险按钮 */
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md bg-danger-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-danger-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger-400 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  /* 幽灵按钮（无边框，仅 hover 背景） */
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-gray-300 transition hover:bg-gray-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  /* 小尺寸按钮 */
+  .btn-sm {
+    @apply px-3 py-1.5 text-xs;
+  }
+
+  /* 输入框统一样式 */
+  .input-base {
+    @apply w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 transition focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500;
+  }
+
+  /* 表格容器：统一 overflow 与边框 */
+  .table-wrap {
+    @apply overflow-x-auto rounded-lg border border-gray-800;
+  }
+
+  /* 表格行 hover 高亮 */
+  .table-row-hover {
+    @apply transition hover:bg-gray-800/60;
+  }
+
+  /* 标签 / 徽章 */
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium;
+  }
+}
