@@ -99,6 +99,28 @@ services:
     command: ["celery", "-A", "app.core.celery_app", "worker", "-l", "info"]
     restart: unless-stopped
 
+  # ---------- 定时任务调度：Celery Beat ----------
+  # 复用后端镜像，运行 celery beat 调度器，按 beat_schedule 定时投递任务到 Redis
+  # 当前定时任务：scan_asset_agents（每小时整点扫描资产智能体的新知识库）
+  beat:
+    build:
+      context: ./backend
+    image: soar-backend:latest
+    container_name: soar-beat
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-soar}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    entrypoint: []
+    command: ["celery", "-A", "app.core.celery_app", "beat", "-l", "info"]
+    restart: unless-stopped
+
   # ---------- 前端：React + Nginx ----------
   frontend:
     build:

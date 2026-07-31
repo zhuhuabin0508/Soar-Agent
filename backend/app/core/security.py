@@ -249,6 +249,40 @@ def run_lightweight_migrations(engine) -> None:
             "banned_ips",
             {"source": "VARCHAR(20) NOT NULL DEFAULT 'agent'"},
         )
+        # assets 表（资产管理智能体）：首次由 create_all 建表，此处为老库补列
+        ensure_columns(
+            engine,
+            "assets",
+            {
+                "agent_id": "INTEGER NOT NULL",
+                "kb_id": "INTEGER NOT NULL DEFAULT 0",
+                "kb_name": "VARCHAR(255)",
+                "identifier": "VARCHAR(255) NOT NULL",
+                "identifier_type": "VARCHAR(32)",
+                "name": "VARCHAR(255)",
+                "asset_type": "VARCHAR(64)",
+                "department": "VARCHAR(128)",
+                "owner": "VARCHAR(128)",
+                "location": "VARCHAR(128)",
+                "ip": "VARCHAR(128)",
+                "criticality": "VARCHAR(16)",
+                "extra_fields": "JSON",
+                "source": "VARCHAR(20) NOT NULL DEFAULT 'agent_add'",
+                "raw_content": "TEXT",
+                "created_at": "TIMESTAMP WITHOUT TIME ZONE",
+                "updated_at": "TIMESTAMP WITHOUT TIME ZONE",
+            },
+        )
+        # assets 表唯一去重索引（agent_id + identifier）：同一智能体下相同 identifier 视为同一资产
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS idx_assets_agent_identifier "
+                    "ON assets (agent_id, identifier)"
+                ))
+                logger.info("轻量迁移: assets 唯一索引已确保存在")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("assets 唯一索引创建失败: %s", exc)
         # knowledge_bases 表新增 embedding_config_id 列（关联 embedding 类型 LLMConfig）
         ensure_columns(
             engine,

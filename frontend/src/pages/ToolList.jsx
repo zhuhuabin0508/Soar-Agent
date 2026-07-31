@@ -5,19 +5,7 @@ import { Modal } from '../components/Dialog'
 import { inputCls } from '../components/property/FormControls'
 import { TutorialButton, TutorialDrawer } from '../components/TutorialDrawer'
 import { TOOL_TUTORIAL } from '../components/tutorialContent'
-
-// 工具集分类标签映射（category 值 → 中文标签 + 图标）
-const CATEGORY_META = {
-  file_operations: { label: '文件操作', icon: '📁', desc: '读取 Excel / Word / PDF / CSV 等上传文件' },
-  security: { label: '安全运营', icon: '🛡️', desc: 'IP 查询、威胁情报、资产归属等 SOAR 安全工具' },
-  cron_jobs: { label: '定时任务', icon: '⏰', desc: '按 Cron 表达式周期性触发工作流' },
-  memory: { label: '记忆', icon: '🧠', desc: '智能体长期记忆的存取' },
-  computer_use: { label: '计算机操作', icon: '💻', desc: '命令执行、文件系统、浏览器等操作系统交互' },
-  clarifying_question: { label: '澄清提问', icon: '❓', desc: '向用户提问以澄清需求或获取决策' },
-  task_planning: { label: '任务规划', icon: '📋', desc: '将复杂任务分解为有序步骤' },
-  task_delegation: { label: '任务委派', icon: '📤', desc: '委派子代理或触发工作流技能' },
-}
-const UNCATEGORIZED = { label: '其他', icon: '📦', desc: '未分类工具' }
+import { CATEGORY_META, UNCATEGORIZED } from '../constants/toolCategories'
 
 // 格式化时间
 function fmtTime(t) {

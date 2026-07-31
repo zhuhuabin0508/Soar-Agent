@@ -5,6 +5,7 @@
 """
 from app.models.agent import Agent
 from app.models.agent_file import AgentFile
+from app.models.asset import Asset
 from app.models.audit_log import AuditLog
 from app.models.backup_record import BackupRecord
 from app.models.banned_ip import BannedIP
@@ -36,6 +37,7 @@ __all__ = [
     "Tool",
     "Agent",
     "AgentFile",
+    "Asset",
     "AgentMemory",
     "KnowledgeBase",
     "KnowledgeDocument",

@@ -11,6 +11,7 @@ from app.api.v1 import (
     agents,
     agent_files,
     approvals,
+    assets,
     auth,
     backup,
     banned_ips,
@@ -75,6 +76,8 @@ api_router.include_router(notifications.router)
 api_router.include_router(backup.router)
 # 已封禁 IP 管理
 api_router.include_router(banned_ips.router)
+# 资产管理
+api_router.include_router(assets.router)
 
 
 @api_router.get("/health", tags=["health"])

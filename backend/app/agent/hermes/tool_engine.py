@@ -200,7 +200,11 @@ class HermesToolEngine:
             try:
                 from app.core.tool_runner import load_tool_function
 
-                run_fn = load_tool_function(tool, enabled_kbs=self.agent.enabled_kbs or [])
+                run_fn = load_tool_function(
+                    tool,
+                    enabled_kbs=self.agent.enabled_kbs or [],
+                    agent_id=self.agent.id,
+                )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("DB 工具加载失败: %s, error=%s", name, exc)
                 continue

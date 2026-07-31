@@ -95,7 +95,6 @@ function AgentList() {
       <header className="flex items-center justify-between border-b border-gray-800 bg-gray-900/60 px-6 py-4">
         <div className="flex items-center gap-4">
           <h1 className="text-xl font-semibold text-gray-100">智能体</h1>
-          <span className="text-xs text-gray-500">共 {rows.length} 个</span>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -123,13 +122,14 @@ function AgentList() {
         </div>
       </header>
 
-      <div className="px-6 pb-3">
+      <div className="flex items-center gap-3 px-6 py-3">
         <input
-          className="w-full max-w-sm rounded-md border border-gray-700 bg-gray-900 px-3 py-1.5 text-sm text-gray-200 placeholder-gray-500 focus:border-brand-500 focus:outline-none"
+          className="max-w-sm flex-1 rounded-md border border-gray-700 bg-gray-900 px-3 py-1.5 text-sm text-gray-200 placeholder-gray-500 focus:border-brand-500 focus:outline-none"
           placeholder="搜索智能体名称..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+        <span className="text-xs text-gray-500">共 {filteredRows.length} / {rows.length} 个</span>
       </div>
 
       <div className="min-w-0 flex-1 overflow-y-auto p-6">

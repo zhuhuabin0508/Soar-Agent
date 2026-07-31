@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   getApprovals,
   getApprovalStats,
@@ -6,6 +7,8 @@ import {
   rejectExecution,
 } from '../api/approvals'
 import { workflows as workflowsApi } from '../api/client'
+import { bannedIpsApi } from '../api/bannedIps'
+import BannedIPsPanel from '../components/BannedIPsPanel'
 
 // ============ 工具函数 ============
 function fmtTime(t) {
@@ -287,17 +290,32 @@ function ApprovalCard({ item, onApprove, onReject, busy }) {
 
 // ============ 工作台主组件 ============
 function ApprovalCenter() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  // 支持 URL ?tab=banned 直接切到已封禁 IP Tab
+  const initialTab = searchParams.get('tab') === 'banned' ? 'banned' : 'pending'
+
   const [items, setItems] = useState([])
   const [stats, setStats] = useState(null)
+  const [bannedStats, setBannedStats] = useState({ total: 0, active: 0, expired: 0, unblocked: 0 })
   const [workflows, setWorkflows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState(null)
 
-  // 查询筛选条件
-  const [tab, setTab] = useState('pending') // pending | all
+  // 查询筛选条件：pending | all | banned
+  const [tab, setTab] = useState(initialTab)
   const [workflowId, setWorkflowId] = useState('')
   const [keyword, setKeyword] = useState('')
+
+  // 切换 Tab 时同步 URL
+  const switchTab = useCallback((newTab) => {
+    setTab(newTab)
+    if (newTab === 'banned') {
+      setSearchParams({ tab: 'banned' }, { replace: true })
+    } else {
+      setSearchParams({}, { replace: true })
+    }
+  }, [setSearchParams])
 
   // 拉取统计数据
   const loadStats = useCallback(async () => {
@@ -307,6 +325,16 @@ function ApprovalCenter() {
     } catch (err) {
       // 静默失败，不打断主流程
       console.error('stats load failed', err)
+    }
+  }, [])
+
+  // 拉取已封禁 IP 统计
+  const loadBannedStats = useCallback(async () => {
+    try {
+      const data = await bannedIpsApi.stats()
+      setBannedStats(data || { total: 0, active: 0, expired: 0, unblocked: 0 })
+    } catch (err) {
+      console.error('banned stats load failed', err)
     }
   }, [])
 
@@ -338,11 +366,14 @@ function ApprovalCenter() {
     }
   }, [tab, workflowId, keyword])
 
-  // 待处理工单轮询（5s）；切到「全部」时不轮询避免覆盖筛选
+  // 待处理工单轮询（5s）；切到「全部」或「已封禁IP」时不轮询避免覆盖筛选
   useEffect(() => {
-    load()
-    loadStats()
+    if (tab !== 'banned') {
+      load()
+      loadStats()
+    }
     loadWorkflows()
+    loadBannedStats()
     let timer = null
     if (tab === 'pending' && !workflowId && !keyword) {
       timer = setInterval(() => {
@@ -353,7 +384,7 @@ function ApprovalCenter() {
     return () => {
       if (timer) clearInterval(timer)
     }
-  }, [load, loadStats, loadWorkflows, tab, workflowId, keyword])
+  }, [load, loadStats, loadWorkflows, loadBannedStats, tab, workflowId, keyword])
 
   const handleApprove = async (id) => {
     setBusyId(id)
@@ -392,12 +423,21 @@ function ApprovalCenter() {
               待处理 {stats.pending}
             </span>
           )}
+          {bannedStats.active > 0 && (
+            <span className="rounded-full bg-danger-500/20 px-2.5 py-0.5 text-xs font-medium text-danger-300">
+              封禁中 {bannedStats.active}
+            </span>
+          )}
         </div>
         <button
           type="button"
           onClick={() => {
-            load()
-            loadStats()
+            if (tab === 'banned') {
+              loadBannedStats()
+            } else {
+              load()
+              loadStats()
+            }
           }}
           className="btn-secondary btn-sm"
         >
@@ -406,123 +446,149 @@ function ApprovalCenter() {
       </header>
 
       <div className="flex-1 min-w-0 overflow-y-auto p-6">
-        {/* 统计看板：4 张数字卡片横向铺满 */}
-        {stats && (
-          <div className="grid w-full grid-cols-2 gap-4 pb-6 lg:grid-cols-4">
-            <StatCard
-              label="待处理工单"
-              value={stats.pending ?? 0}
-              sub={`今日新增 ${stats.today_new ?? 0}`}
-              color="orange"
-            />
-            <StatCard
-              label="同意封禁"
-              value={stats.approved ?? 0}
-              sub="累计"
-              color="red"
-            />
-            <StatCard
-              label="已忽略"
-              value={stats.rejected ?? 0}
-              sub="累计"
-              color="gray"
-            />
-            <StatCard
-              label="平均处理时长"
-              value={fmtDuration(stats.avg_handle_seconds)}
-              sub="已结束工单"
-              color="indigo"
-            />
-          </div>
-        )}
-
-        {/* 查询筛选区：Tab + 工作流下拉 + 关键词输入，横向铺满 */}
-        <div className="mb-4 flex w-full flex-wrap items-center gap-3 border-b border-gray-800 pb-4">
+        {/* Tab 导航栏 */}
+        <div className="mb-4 flex w-full items-center gap-3 border-b border-gray-800 pb-4">
           <div className="flex shrink-0 rounded-md border border-gray-800 bg-gray-900/60 p-0.5">
             <button
               type="button"
-              onClick={() => setTab('pending')}
+              onClick={() => switchTab('pending')}
               className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
                 tab === 'pending'
                   ? 'bg-brand-600 text-white'
                   : 'text-gray-400 hover:text-gray-200'
               }`}
             >
-              待处理
+              📋 待审批工单
             </button>
             <button
               type="button"
-              onClick={() => setTab('all')}
+              onClick={() => switchTab('banned')}
+              className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+                tab === 'banned'
+                  ? 'bg-danger-600 text-white'
+                  : 'text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              🚫 已封禁 IP
+              {bannedStats.active > 0 && (
+                <span className="ml-1 rounded-full bg-danger-500/30 px-1.5 text-[10px]">
+                  {bannedStats.active}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => switchTab('all')}
               className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
                 tab === 'all'
                   ? 'bg-brand-600 text-white'
                   : 'text-gray-400 hover:text-gray-200'
               }`}
             >
-              全部历史
+              📜 全部历史
             </button>
           </div>
-
-          <select
-            value={workflowId}
-            onChange={(e) => setWorkflowId(e.target.value)}
-            className="min-w-0 flex-1 rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white outline-none focus:border-brand-500"
-          >
-            <option value="">全部工作流</option>
-            {workflows.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name}
-              </option>
-            ))}
-          </select>
-
-          <input
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-            placeholder="搜索告警类型 / IP / 工作流名..."
-            className="min-w-0 flex-1 rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white outline-none placeholder:text-gray-500 focus:border-brand-500"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') load()
-            }}
-          />
-          <button
-            type="button"
-            onClick={load}
-            className="shrink-0 btn-secondary btn-sm"
-          >
-            查询
-          </button>
         </div>
 
-        {error && (
-          <div className="mb-4 w-full rounded-md border border-danger-500/40 bg-danger-500/10 px-4 py-2 text-sm text-red-300">
-            {error}
-          </div>
-        )}
-
-        {loading ? (
-          <div className="flex h-40 items-center justify-center text-sm text-gray-500">
-            加载中...
-          </div>
-        ) : items.length === 0 ? (
-          <div className="flex h-60 flex-col items-center justify-center gap-2 text-gray-500">
-            <div className="text-4xl">✅</div>
-            <div className="text-sm">
-              {tab === 'pending' ? '暂无待处理工单' : '未查询到符合条件的工单'}
-            </div>
-          </div>
+        {/* ====== 已封禁 IP Tab：渲染 BannedIPsPanel ====== */}
+        {tab === 'banned' ? (
+          <BannedIPsPanel />
         ) : (
-          <div className="flex flex-col gap-4">
-            {items.map((item) => (
-              <ApprovalCard
-                key={item.execution_id}
-                item={item}
-                onApprove={handleApprove}
-                onReject={handleReject}
-                busy={busyId === item.execution_id}
+          <>
+            {/* 统计看板：4 张数字卡片横向铺满 */}
+            {stats && (
+              <div className="grid w-full grid-cols-2 gap-4 pb-6 lg:grid-cols-4">
+                <StatCard
+                  label="待处理工单"
+                  value={stats.pending ?? 0}
+                  sub={`今日新增 ${stats.today_new ?? 0}`}
+                  color="orange"
+                />
+                <StatCard
+                  label="同意封禁"
+                  value={stats.approved ?? 0}
+                  sub="累计"
+                  color="red"
+                />
+                <StatCard
+                  label="已忽略"
+                  value={stats.rejected ?? 0}
+                  sub="累计"
+                  color="gray"
+                />
+                <StatCard
+                  label="平均处理时长"
+                  value={fmtDuration(stats.avg_handle_seconds)}
+                  sub="已结束工单"
+                  color="indigo"
+                />
+              </div>
+            )}
+
+            {/* 查询筛选区：工作流下拉 + 关键词输入 */}
+            <div className="mb-4 flex w-full flex-wrap items-center gap-3">
+              <select
+                value={workflowId}
+                onChange={(e) => setWorkflowId(e.target.value)}
+                className="min-w-0 flex-1 rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white outline-none focus:border-brand-500"
+              >
+                <option value="">全部工作流</option>
+                {workflows.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name}
+                  </option>
+                ))}
+              </select>
+
+              <input
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                placeholder="搜索告警类型 / IP / 工作流名..."
+                className="min-w-0 flex-1 rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white outline-none placeholder:text-gray-500 focus:border-brand-500"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') load()
+                }}
               />
-            ))}
-          </div>
+              <button
+                type="button"
+                onClick={load}
+                className="shrink-0 btn-secondary btn-sm"
+              >
+                查询
+              </button>
+            </div>
+
+            {error && (
+              <div className="mb-4 w-full rounded-md border border-danger-500/40 bg-danger-500/10 px-4 py-2 text-sm text-red-300">
+                {error}
+              </div>
+            )}
+
+            {loading ? (
+              <div className="flex h-40 items-center justify-center text-sm text-gray-500">
+                加载中...
+              </div>
+            ) : items.length === 0 ? (
+              <div className="flex h-60 flex-col items-center justify-center gap-2 text-gray-500">
+                <div className="text-4xl">✅</div>
+                <div className="text-sm">
+                  {tab === 'pending' ? '暂无待处理工单' : '未查询到符合条件的工单'}
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-4">
+                {items.map((item) => (
+                  <ApprovalCard
+                    key={item.execution_id}
+                    item={item}
+                    onApprove={handleApprove}
+                    onReject={handleReject}
+                    busy={busyId === item.execution_id}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

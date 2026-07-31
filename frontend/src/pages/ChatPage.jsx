@@ -555,11 +555,13 @@ export default function ChatPage() {
                 }
                 case 'done':
                   flushPending()
-                  if (data.content) fullText = data.content
+                  // 不用 data.content 覆盖已累积的流式内容
+                  // data.content 只包含最后一轮 LLM 回复，会丢失前面轮次的分析过程
+                  // 保留 m.content（包含所有轮次的 token 累积），仅无累积时用 data.content 回退
                   updateMessages((prev) =>
                     prev.map((m) =>
                       m.id === aiMsg.id
-                        ? { ...m, content: fullText, status: 'done' }
+                        ? { ...m, content: m.content || data.content || fullText || '', status: 'done' }
                         : m
                     )
                   )
@@ -684,7 +686,7 @@ export default function ChatPage() {
                 updateMessages((prev) =>
                   prev.map((m) =>
                     m.id === aiMsg.id
-                      ? { ...m, content: reply || fullText || '(无回复)', status: 'done' }
+                      ? { ...m, content: m.content || reply || fullText || '(无回复)', status: 'done' }
                       : m
                   )
                 )
@@ -713,7 +715,7 @@ export default function ChatPage() {
       updateMessages((prev) =>
         prev.map((m) =>
           m.id === aiMsg.id && m.status === 'streaming'
-            ? { ...m, content: fullText, status: 'done' }
+            ? { ...m, content: m.content || fullText, status: 'done' }
             : m
         )
       )

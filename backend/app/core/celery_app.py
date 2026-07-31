@@ -48,6 +48,21 @@ celery_app.conf.update(
     task_default_max_retries=0,
 )
 
+# ============================================================================
+# Celery Beat 定时任务调度
+# ============================================================================
+# beat 服务通过 `celery -A app.core.celery_app beat` 启动（见 docker-compose beat 服务）。
+# 每个条目：{"task-name": {"task": "celery_task_name", "schedule": crontab(...)}}
+from celery.schedules import crontab  # noqa: E402
+
+celery_app.conf.beat_schedule = {
+    # 资产管理智能体定时扫描：每小时整点检查新知识库并自动梳理资产
+    "scan-asset-agents-hourly": {
+        "task": "scan_asset_agents",
+        "schedule": crontab(minute=0),  # 每小时整点执行
+    },
+}
+
 # 自动发现 app 包下的 tasks 模块（即 app.tasks）
 celery_app.autodiscover_tasks(["app"])
 

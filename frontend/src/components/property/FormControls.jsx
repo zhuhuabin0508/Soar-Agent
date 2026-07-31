@@ -3,6 +3,7 @@
 
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useWorkflowStore } from '../../store/workflowStore'
+import InfoTip from '../InfoTip'
 
 // 基础样式（不含宽度），用于 flex 行内需要自定义宽度的元素
 // 避免 w-full 与 flex-1 / w-24 同行时产生宽度冲突导致溢出
@@ -13,6 +14,19 @@ export const inputCls = `${inputBaseCls} w-full`
 export const textareaCls = `${inputCls} resize-y font-mono`
 export const labelCls = 'mb-1 block text-xs font-medium text-gray-400'
 export const hintCls = 'mt-1 text-[11px] leading-relaxed text-gray-500'
+
+// 带可选 InfoTip 的 label 渲染辅助函数
+// 将原来的 label 下方小字 hint 改为 label 右侧圆圈感叹号 tooltip
+function LabelWithTip({ label, hint }) {
+  if (!label) return null
+  if (!hint) return <label className={labelCls}>{label}</label>
+  return (
+    <label className={`${labelCls} flex items-center gap-1.5`}>
+      {label}
+      <InfoTip text={hint} />
+    </label>
+  )
+}
 
 // 上游节点输出字段映射（用于变量引用选择器）
 const NODE_OUTPUT_FIELDS = {
@@ -141,11 +155,11 @@ export function VariableRefButton({ currentNodeId, onPick }) {
 export function Section({ title, children, hint }) {
   return (
     <div className="rounded-md border border-gray-800 bg-gray-900/40 p-3">
-      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-300">
+      <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-300">
         {title}
+        {hint && <InfoTip text={hint} />}
       </div>
       <div className="flex flex-col gap-2.5">{children}</div>
-      {hint && <p className={hintCls}>{hint}</p>}
     </div>
   )
 }
@@ -154,14 +168,13 @@ export function Section({ title, children, hint }) {
 export function TextInput({ label, value, onChange, placeholder, hint }) {
   return (
     <div>
-      {label && <label className={labelCls}>{label}</label>}
+      <LabelWithTip label={label} hint={hint} />
       <input
         className={inputCls}
         value={value ?? ''}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
       />
-      {hint && <p className={hintCls}>{hint}</p>}
     </div>
   )
 }
@@ -170,7 +183,7 @@ export function TextInput({ label, value, onChange, placeholder, hint }) {
 export function NumberInput({ label, value, onChange, min, max, step, hint }) {
   return (
     <div>
-      {label && <label className={labelCls}>{label}</label>}
+      <LabelWithTip label={label} hint={hint} />
       <input
         type="number"
         className={inputCls}
@@ -180,7 +193,6 @@ export function NumberInput({ label, value, onChange, min, max, step, hint }) {
         step={step}
         onChange={(e) => onChange(Number(e.target.value))}
       />
-      {hint && <p className={hintCls}>{hint}</p>}
     </div>
   )
 }
@@ -189,7 +201,7 @@ export function NumberInput({ label, value, onChange, min, max, step, hint }) {
 export function SelectInput({ label, value, onChange, options, hint }) {
   return (
     <div>
-      {label && <label className={labelCls}>{label}</label>}
+      <LabelWithTip label={label} hint={hint} />
       <select
         className={inputCls}
         value={value ?? ''}
@@ -205,7 +217,6 @@ export function SelectInput({ label, value, onChange, options, hint }) {
           )
         })}
       </select>
-      {hint && <p className={hintCls}>{hint}</p>}
     </div>
   )
 }
@@ -214,7 +225,7 @@ export function SelectInput({ label, value, onChange, options, hint }) {
 export function TextArea({ label, value, onChange, rows = 4, placeholder, hint }) {
   return (
     <div>
-      {label && <label className={labelCls}>{label}</label>}
+      <LabelWithTip label={label} hint={hint} />
       <textarea
         className={textareaCls}
         rows={rows}
@@ -222,7 +233,6 @@ export function TextArea({ label, value, onChange, rows = 4, placeholder, hint }
         value={value ?? ''}
         onChange={(e) => onChange(e.target.value)}
       />
-      {hint && <p className={hintCls}>{hint}</p>}
     </div>
   )
 }
@@ -237,9 +247,9 @@ export function CheckRow({ label, checked, onChange, hint }) {
         checked={!!checked}
         onChange={(e) => onChange(e.target.checked)}
       />
-      <span className="text-sm text-gray-300">
+      <span className="flex items-center gap-1 text-sm text-gray-300">
         {label}
-        {hint && <span className="block text-[11px] text-gray-500">{hint}</span>}
+        {hint && <InfoTip text={hint} />}
       </span>
     </label>
   )

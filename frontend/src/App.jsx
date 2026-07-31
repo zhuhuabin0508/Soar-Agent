@@ -27,6 +27,7 @@ import SystemMonitor from './pages/SystemMonitor'
 import NotificationCenter from './pages/NotificationCenter'
 import BackupManagement from './pages/BackupManagement'
 import BannedIPs from './pages/BannedIPs'
+import Assets from './pages/Assets'
 import Profile from './pages/Profile'
 import AgentTutorial from './pages/AgentTutorial'
 
@@ -78,6 +79,7 @@ const router = createBrowserRouter([
           { path: '/executions/:id', element: <ExecutionDetail /> },
           { path: '/monitor', element: <MonitorDashboard /> },
           { path: '/banned-ips', element: <BannedIPs /> },
+          { path: '/assets', element: <Assets /> },
           { path: '/dashboard', element: <Dashboard /> },
           // 系统配置
           { path: '/users', element: <UserManagement /> },

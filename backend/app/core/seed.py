@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models.tool import Tool
 from app.models.workflow import Workflow
+from app.models.skill import Skill
 
 logger = logging.getLogger(__name__)
 
@@ -712,7 +713,521 @@ HERMES_BUILTIN_TOOLS: list[dict[str, Any]] = [
         "category": "security",
         "enabled": True,
     },
+    # ===== 资产管理智能体专用工具（category='asset'） =====
+    # 依赖沙箱注入：current_agent_id / Asset / SessionLocal / KnowledgeBase / KnowledgeSegment / enabled_kbs
+    # 注意：沙箱禁止 import / setattr / getattr，故用直接属性赋值 + SQLAlchemy | 运算符构造 OR 条件
+    {
+        "name": "discover_new_kbs",
+        "description": (
+            "发现当前资产智能体已勾选但尚未梳理到资产表的知识库。"
+            "用于智能体主动检查是否有新增知识库需要录入资产。"
+            "返回 discovered 列表（每个元素含 kb_id/kb_name），count 为新发现的数量。"
+        ),
+        "parameters_schema": [],
+        "code": (
+            "async def run(**kwargs):\n"
+            "    agent_id = current_agent_id\n"
+            "    if not agent_id:\n"
+            "        return {'error': '未找到当前智能体上下文（current_agent_id 为空），无法确定资产作用域'}\n"
+            "    kb_ids = list(enabled_kbs or [])\n"
+            "    if not kb_ids:\n"
+            "        return {'discovered': [], 'count': 0, 'message': '当前智能体未勾选任何知识库，请先在智能体配置中勾选知识库'}\n"
+            "    db = SessionLocal()\n"
+            "    try:\n"
+            "        ingested_rows = db.query(Asset.kb_id).filter(\n"
+            "            Asset.agent_id == agent_id,\n"
+            "            Asset.kb_id.in_(kb_ids),\n"
+            "        ).distinct().all()\n"
+            "        ingested_kb_ids = set(r[0] for r in ingested_rows)\n"
+            "        kbs = db.query(KnowledgeBase).filter(KnowledgeBase.id.in_(kb_ids)).all()\n"
+            "        kb_name_map = {kb.id: kb.name for kb in kbs}\n"
+            "        new_kbs = []\n"
+            "        for kb_id in kb_ids:\n"
+            "            if kb_id not in ingested_kb_ids:\n"
+            "                new_kbs.append({\n"
+            "                    'kb_id': kb_id,\n"
+            "                    'kb_name': kb_name_map.get(kb_id, '知识库-' + str(kb_id)),\n"
+            "                })\n"
+            "        return {\n"
+            "            'agent_id': agent_id,\n"
+            "            'enabled_kbs': kb_ids,\n"
+            "            'ingested_kbs': sorted(ingested_kb_ids),\n"
+            "            'discovered': new_kbs,\n"
+            "            'count': len(new_kbs),\n"
+            "            'message': '发现 ' + str(len(new_kbs)) + ' 个尚未梳理的知识库' if new_kbs else '所有勾选的知识库均已梳理到资产表',\n"
+            "        }\n"
+            "    except Exception as exc:\n"
+            "        return {'error': '发现新知识库失败: ' + str(exc)}\n"
+            "    finally:\n"
+            "        db.close()\n"
+        ),
+        "tool_type": "code",
+        "category": "asset",
+        "enabled": True,
+    },
+    {
+        "name": "fetch_kb_content",
+        "description": (
+            "拉取指定知识库的全部分段文本内容，供智能体梳理资产信息。"
+            "返回 segments 列表（每个元素含 id/seq/content）。"
+            "建议梳理流程：先 discover_new_kbs 发现新知识库，再用本工具拉取内容，"
+            "然后逐段提取资产信息调用 add_asset 录入。"
+        ),
+        "parameters_schema": [
+            {"name": "kb_id", "type": "Number", "required": True, "description": "知识库 ID"},
+            {"name": "limit", "type": "Number", "required": False, "description": "最多拉取的分段数，默认 200，最大 500"},
+        ],
+        "code": (
+            "async def run(**kwargs):\n"
+            "    kb_id = kwargs.get('kb_id')\n"
+            "    if not kb_id:\n"
+            "        return {'error': '请提供 kb_id 参数指定要拉取的知识库'}\n"
+            "    kb_id = int(kb_id)\n"
+            "    limit = int(kwargs.get('limit') or 200)\n"
+            "    if limit < 1:\n"
+            "        limit = 1\n"
+            "    if limit > 500:\n"
+            "        limit = 500\n"
+            "    db = SessionLocal()\n"
+            "    try:\n"
+            "        kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()\n"
+            "        if not kb:\n"
+            "            return {'error': '知识库不存在: ' + str(kb_id)}\n"
+            "        segs = db.query(KnowledgeSegment).filter(\n"
+            "            KnowledgeSegment.kb_id == kb_id\n"
+            "        ).order_by(KnowledgeSegment.id).limit(limit).all()\n"
+            "        segments = []\n"
+            "        for s in segs:\n"
+            "            segments.append({\n"
+            "                'id': s.id,\n"
+            "                'seq': s.seq,\n"
+            "                'content': s.content or '',\n"
+            "            })\n"
+            "        return {\n"
+            "            'kb_id': kb_id,\n"
+            "            'kb_name': kb.name,\n"
+            "            'segment_count': len(segments),\n"
+            "            'truncated': len(segs) >= limit,\n"
+            "            'segments': segments,\n"
+            "        }\n"
+            "    except Exception as exc:\n"
+            "        return {'error': '拉取知识库内容失败: ' + str(exc)}\n"
+            "    finally:\n"
+            "        db.close()\n"
+        ),
+        "tool_type": "code",
+        "category": "asset",
+        "enabled": True,
+    },
+    {
+        "name": "query_asset",
+        "description": (
+            "查询当前资产智能体资产表中是否已存在某资产。"
+            "支持按 identifier（唯一标识）/ ip / name / keyword（模糊匹配 identifier+name+ip+owner）查询。"
+            "返回 found/count/assets 列表。用于对话录入资产前判断是新增还是更新。"
+        ),
+        "parameters_schema": [
+            {"name": "identifier", "type": "String", "required": False, "description": "资产唯一标识（精确匹配，如 IP/主机名/工号）"},
+            {"name": "ip", "type": "String", "required": False, "description": "按 IP 地址精确匹配"},
+            {"name": "name", "type": "String", "required": False, "description": "按资产名称模糊匹配"},
+            {"name": "keyword", "type": "String", "required": False, "description": "关键词模糊匹配 identifier/name/ip/owner"},
+            {"name": "limit", "type": "Number", "required": False, "description": "返回上限，默认 20，最大 100"},
+        ],
+        "code": (
+            "async def run(**kwargs):\n"
+            "    agent_id = current_agent_id\n"
+            "    if not agent_id:\n"
+            "        return {'error': '未找到当前智能体上下文'}\n"
+            "    identifier = (kwargs.get('identifier') or '').strip()\n"
+            "    ip = (kwargs.get('ip') or '').strip()\n"
+            "    name = (kwargs.get('name') or '').strip()\n"
+            "    keyword = (kwargs.get('keyword') or '').strip()\n"
+            "    limit = int(kwargs.get('limit') or 20)\n"
+            "    if limit < 1:\n"
+            "        limit = 1\n"
+            "    if limit > 100:\n"
+            "        limit = 100\n"
+            "    db = SessionLocal()\n"
+            "    try:\n"
+            "        q = db.query(Asset).filter(Asset.agent_id == agent_id)\n"
+            "        if identifier:\n"
+            "            q = q.filter(Asset.identifier == identifier)\n"
+            "        elif ip:\n"
+            "            q = q.filter(Asset.ip == ip)\n"
+            "        elif name:\n"
+            "            q = q.filter(Asset.name.like('%' + name + '%'))\n"
+            "        elif keyword:\n"
+            "            q = q.filter(\n"
+            "                Asset.identifier.like('%' + keyword + '%') |\n"
+            "                Asset.name.like('%' + keyword + '%') |\n"
+            "                Asset.ip.like('%' + keyword + '%') |\n"
+            "                Asset.owner.like('%' + keyword + '%')\n"
+            "            )\n"
+            "        else:\n"
+            "            return {'error': '请提供 identifier / ip / name / keyword 之一作为查询条件'}\n"
+            "        rows = q.limit(limit).all()\n"
+            "        assets = []\n"
+            "        for a in rows:\n"
+            "            assets.append({\n"
+            "                'id': a.id, 'kb_id': a.kb_id, 'kb_name': a.kb_name,\n"
+            "                'identifier': a.identifier, 'identifier_type': a.identifier_type,\n"
+            "                'name': a.name, 'asset_type': a.asset_type, 'department': a.department,\n"
+            "                'owner': a.owner, 'location': a.location, 'ip': a.ip,\n"
+            "                'criticality': a.criticality, 'extra_fields': a.extra_fields or {},\n"
+            "                'source': a.source, 'raw_content': a.raw_content or '',\n"
+            "                'created_at': str(a.created_at) if a.created_at else '',\n"
+            "                'updated_at': str(a.updated_at) if a.updated_at else '',\n"
+            "            })\n"
+            "        return {\n"
+            "            'agent_id': agent_id,\n"
+            "            'found': len(assets) > 0,\n"
+            "            'count': len(assets),\n"
+            "            'assets': assets,\n"
+            "        }\n"
+            "    except Exception as exc:\n"
+            "        return {'error': '查询资产失败: ' + str(exc)}\n"
+            "    finally:\n"
+            "        db.close()\n"
+        ),
+        "tool_type": "code",
+        "category": "asset",
+        "enabled": True,
+    },
+    {
+        "name": "add_asset",
+        "description": (
+            "向当前资产智能体的资产表新增一条资产记录。"
+            "若 identifier 已存在则拒绝新增（返回 action=exists），提示改用 update_asset。"
+            "extra_fields 接收 JSON 对象，存储知识库中特有但标准字段未覆盖的属性（灵活字段）。"
+            "录入来源：对话录入用 source=agent_add，KB 梳理用 source=kb_ingest。"
+        ),
+        "parameters_schema": [
+            {"name": "identifier", "type": "String", "required": True, "description": "资产唯一标识（IP/主机名/工号/资产编号等，由智能体判断）"},
+            {"name": "identifier_type", "type": "String", "required": False, "description": "标识类型：ip/hostname/asset_name/employee_id/mac/custom，默认 custom"},
+            {"name": "name", "type": "String", "required": False, "description": "资产名称（展示用）"},
+            {"name": "asset_type", "type": "String", "required": False, "description": "资产类型：服务器/工作站/网络设备/应用/账号等"},
+            {"name": "department", "type": "String", "required": False, "description": "归属部门"},
+            {"name": "owner", "type": "String", "required": False, "description": "负责人"},
+            {"name": "location", "type": "String", "required": False, "description": "物理位置"},
+            {"name": "ip", "type": "String", "required": False, "description": "IP 地址"},
+            {"name": "criticality", "type": "String", "required": False, "description": "重要性：low/medium/high/critical，默认 medium"},
+            {"name": "kb_id", "type": "Number", "required": False, "description": "来源知识库 ID（对话录入可不传）"},
+            {"name": "kb_name", "type": "String", "required": False, "description": "来源知识库名称"},
+            {"name": "source", "type": "String", "required": False, "description": "来源：agent_add（对话录入）/ kb_ingest（KB 梳理）/ manual（手动），默认 agent_add"},
+            {"name": "raw_content", "type": "String", "required": False, "description": "LLM 提取时的原始 KB 片段（溯源审计）"},
+            {"name": "extra_fields", "type": "Object", "required": False, "description": "灵活字段（JSON 对象），存储标准字段未覆盖的属性"},
+        ],
+        "code": (
+            "async def run(**kwargs):\n"
+            "    agent_id = current_agent_id\n"
+            "    if not agent_id:\n"
+            "        return {'error': '未找到当前智能体上下文'}\n"
+            "    identifier = (kwargs.get('identifier') or '').strip()\n"
+            "    if not identifier:\n"
+            "        return {'error': '请提供 identifier 参数（资产唯一标识，如 IP/主机名/工号/资产编号）'}\n"
+            "    identifier_type = (kwargs.get('identifier_type') or 'custom').strip()\n"
+            "    extra = kwargs.get('extra_fields')\n"
+            "    if not isinstance(extra, dict):\n"
+            "        extra = {}\n"
+            "    db = SessionLocal()\n"
+            "    try:\n"
+            "        existing = db.query(Asset).filter(\n"
+            "            Asset.agent_id == agent_id,\n"
+            "            Asset.identifier == identifier,\n"
+            "        ).first()\n"
+            "        if existing:\n"
+            "            return {\n"
+            "                'ok': False,\n"
+            "                'action': 'exists',\n"
+            "                'message': '资产已存在（identifier=' + identifier + '，id=' + str(existing.id) + '），如需修改请改用 update_asset 工具',\n"
+            "                'existing_id': existing.id,\n"
+            "            }\n"
+            "        record = Asset(\n"
+            "            agent_id=agent_id,\n"
+            "            identifier=identifier,\n"
+            "            identifier_type=identifier_type,\n"
+            "            kb_id=int(kwargs.get('kb_id') or 0),\n"
+            "            kb_name=(kwargs.get('kb_name') or '').strip(),\n"
+            "            name=(kwargs.get('name') or '').strip(),\n"
+            "            asset_type=(kwargs.get('asset_type') or '').strip(),\n"
+            "            department=(kwargs.get('department') or '').strip(),\n"
+            "            owner=(kwargs.get('owner') or '').strip(),\n"
+            "            location=(kwargs.get('location') or '').strip(),\n"
+            "            ip=(kwargs.get('ip') or '').strip(),\n"
+            "            criticality=(kwargs.get('criticality') or 'medium').strip(),\n"
+            "            source=(kwargs.get('source') or 'agent_add').strip(),\n"
+            "            raw_content=kwargs.get('raw_content') or '',\n"
+            "            extra_fields=extra,\n"
+            "        )\n"
+            "        db.add(record)\n"
+            "        db.commit()\n"
+            "        db.refresh(record)\n"
+            "        return {\n"
+            "            'ok': True,\n"
+            "            'action': 'created',\n"
+            "            'asset_id': record.id,\n"
+            "            'identifier': identifier,\n"
+            "            'message': '资产已新增: ' + identifier,\n"
+            "        }\n"
+            "    except Exception as exc:\n"
+            "        db.rollback()\n"
+            "        return {'error': '新增资产失败: ' + str(exc)}\n"
+            "    finally:\n"
+            "        db.close()\n"
+        ),
+        "tool_type": "code",
+        "category": "asset",
+        "enabled": True,
+    },
+    {
+        "name": "update_asset",
+        "description": (
+            "更新当前资产智能体资产表中已存在的资产记录（按 identifier 定位）。"
+            "若 identifier 不存在则返回 action=not_found，提示改用 add_asset。"
+            "extra_fields 传入的键值会与已有 extra_fields 合并（不覆盖整个对象）。"
+            "仅更新传入的非空字段，未传字段保持不变。"
+        ),
+        "parameters_schema": [
+            {"name": "identifier", "type": "String", "required": True, "description": "要更新的资产唯一标识（定位记录）"},
+            {"name": "name", "type": "String", "required": False, "description": "资产名称"},
+            {"name": "asset_type", "type": "String", "required": False, "description": "资产类型"},
+            {"name": "department", "type": "String", "required": False, "description": "归属部门"},
+            {"name": "owner", "type": "String", "required": False, "description": "负责人"},
+            {"name": "location", "type": "String", "required": False, "description": "物理位置"},
+            {"name": "ip", "type": "String", "required": False, "description": "IP 地址"},
+            {"name": "criticality", "type": "String", "required": False, "description": "重要性：low/medium/high/critical"},
+            {"name": "identifier_type", "type": "String", "required": False, "description": "标识类型"},
+            {"name": "kb_id", "type": "Number", "required": False, "description": "来源知识库 ID"},
+            {"name": "kb_name", "type": "String", "required": False, "description": "来源知识库名称"},
+            {"name": "raw_content", "type": "String", "required": False, "description": "原始 KB 片段"},
+            {"name": "extra_fields", "type": "Object", "required": False, "description": "灵活字段（JSON 对象），与已有 extra_fields 合并"},
+        ],
+        "code": (
+            "async def run(**kwargs):\n"
+            "    agent_id = current_agent_id\n"
+            "    if not agent_id:\n"
+            "        return {'error': '未找到当前智能体上下文'}\n"
+            "    identifier = (kwargs.get('identifier') or '').strip()\n"
+            "    if not identifier:\n"
+            "        return {'error': '请提供 identifier 参数定位要更新的资产'}\n"
+            "    db = SessionLocal()\n"
+            "    try:\n"
+            "        record = db.query(Asset).filter(\n"
+            "            Asset.agent_id == agent_id,\n"
+            "            Asset.identifier == identifier,\n"
+            "        ).first()\n"
+            "        if not record:\n"
+            "            return {\n"
+            "                'ok': False,\n"
+            "                'action': 'not_found',\n"
+            "                'message': '未找到资产（identifier=' + identifier + '），如需新建请改用 add_asset 工具',\n"
+            "            }\n"
+            "        changed = []\n"
+            "        v = kwargs.get('name')\n"
+            "        if v is not None and str(v).strip():\n"
+            "            record.name = v; changed.append('name')\n"
+            "        v = kwargs.get('asset_type')\n"
+            "        if v is not None and str(v).strip():\n"
+            "            record.asset_type = v; changed.append('asset_type')\n"
+            "        v = kwargs.get('department')\n"
+            "        if v is not None and str(v).strip():\n"
+            "            record.department = v; changed.append('department')\n"
+            "        v = kwargs.get('owner')\n"
+            "        if v is not None and str(v).strip():\n"
+            "            record.owner = v; changed.append('owner')\n"
+            "        v = kwargs.get('location')\n"
+            "        if v is not None and str(v).strip():\n"
+            "            record.location = v; changed.append('location')\n"
+            "        v = kwargs.get('ip')\n"
+            "        if v is not None and str(v).strip():\n"
+            "            record.ip = v; changed.append('ip')\n"
+            "        v = kwargs.get('criticality')\n"
+            "        if v is not None and str(v).strip():\n"
+            "            record.criticality = v; changed.append('criticality')\n"
+            "        v = kwargs.get('identifier_type')\n"
+            "        if v is not None and str(v).strip():\n"
+            "            record.identifier_type = v; changed.append('identifier_type')\n"
+            "        v = kwargs.get('kb_name')\n"
+            "        if v is not None and str(v).strip():\n"
+            "            record.kb_name = v; changed.append('kb_name')\n"
+            "        v = kwargs.get('kb_id')\n"
+            "        if v is not None and v:\n"
+            "            record.kb_id = int(v); changed.append('kb_id')\n"
+            "        v = kwargs.get('raw_content')\n"
+            "        if v is not None and str(v).strip():\n"
+            "            record.raw_content = v; changed.append('raw_content')\n"
+            "        extra = kwargs.get('extra_fields')\n"
+            "        if extra and isinstance(extra, dict):\n"
+            "            cur = dict(record.extra_fields or {})\n"
+            "            cur.update(extra)\n"
+            "            record.extra_fields = cur\n"
+            "            changed.append('extra_fields')\n"
+            "        db.commit()\n"
+            "        db.refresh(record)\n"
+            "        msg = '资产已更新: ' + identifier\n"
+            "        if changed:\n"
+            "            msg = msg + '（变更字段: ' + ', '.join(changed) + '）'\n"
+            "        return {\n"
+            "            'ok': True,\n"
+            "            'action': 'updated',\n"
+            "            'asset_id': record.id,\n"
+            "            'identifier': identifier,\n"
+            "            'changed_fields': changed,\n"
+            "            'message': msg,\n"
+            "        }\n"
+            "    except Exception as exc:\n"
+            "        db.rollback()\n"
+            "        return {'error': '更新资产失败: ' + str(exc)}\n"
+            "    finally:\n"
+            "        db.close()\n"
+        ),
+        "tool_type": "code",
+        "category": "asset",
+        "enabled": True,
+    },
+    {
+        "name": "list_assets",
+        "description": (
+            "列出当前资产智能体的全部资产（分页+筛选）。"
+            "支持按 kb_id / asset_type / department / criticality 精确筛选，"
+            "以及 keyword 模糊匹配 identifier/name/ip/owner。"
+            "返回 total/count/assets 列表，按 id 倒序排列。"
+        ),
+        "parameters_schema": [
+            {"name": "keyword", "type": "String", "required": False, "description": "模糊匹配关键词（identifier/name/ip/owner）"},
+            {"name": "kb_id", "type": "Number", "required": False, "description": "按来源知识库筛选"},
+            {"name": "asset_type", "type": "String", "required": False, "description": "按资产类型筛选"},
+            {"name": "department", "type": "String", "required": False, "description": "按部门筛选"},
+            {"name": "criticality", "type": "String", "required": False, "description": "按重要性筛选：low/medium/high/critical"},
+            {"name": "page", "type": "Number", "required": False, "description": "页码，默认 1"},
+            {"name": "page_size", "type": "Number", "required": False, "description": "每页条数，默认 20，最大 100"},
+        ],
+        "code": (
+            "async def run(**kwargs):\n"
+            "    agent_id = current_agent_id\n"
+            "    if not agent_id:\n"
+            "        return {'error': '未找到当前智能体上下文'}\n"
+            "    keyword = (kwargs.get('keyword') or '').strip()\n"
+            "    kb_id = kwargs.get('kb_id')\n"
+            "    asset_type = (kwargs.get('asset_type') or '').strip()\n"
+            "    department = (kwargs.get('department') or '').strip()\n"
+            "    criticality = (kwargs.get('criticality') or '').strip()\n"
+            "    page = int(kwargs.get('page') or 1)\n"
+            "    if page < 1:\n"
+            "        page = 1\n"
+            "    page_size = int(kwargs.get('page_size') or 20)\n"
+            "    if page_size < 1:\n"
+            "        page_size = 1\n"
+            "    if page_size > 100:\n"
+            "        page_size = 100\n"
+            "    db = SessionLocal()\n"
+            "    try:\n"
+            "        q = db.query(Asset).filter(Asset.agent_id == agent_id)\n"
+            "        if kb_id:\n"
+            "            q = q.filter(Asset.kb_id == int(kb_id))\n"
+            "        if asset_type:\n"
+            "            q = q.filter(Asset.asset_type == asset_type)\n"
+            "        if department:\n"
+            "            q = q.filter(Asset.department == department)\n"
+            "        if criticality:\n"
+            "            q = q.filter(Asset.criticality == criticality)\n"
+            "        if keyword:\n"
+            "            like = '%' + keyword + '%'\n"
+            "            q = q.filter(\n"
+            "                Asset.identifier.like(like) |\n"
+            "                Asset.name.like(like) |\n"
+            "                Asset.ip.like(like) |\n"
+            "                Asset.owner.like(like)\n"
+            "            )\n"
+            "        total = q.count()\n"
+            "        rows = q.order_by(Asset.id.desc()).offset((page - 1) * page_size).limit(page_size).all()\n"
+            "        assets = []\n"
+            "        for a in rows:\n"
+            "            assets.append({\n"
+            "                'id': a.id, 'kb_id': a.kb_id, 'kb_name': a.kb_name,\n"
+            "                'identifier': a.identifier, 'identifier_type': a.identifier_type,\n"
+            "                'name': a.name, 'asset_type': a.asset_type, 'department': a.department,\n"
+            "                'owner': a.owner, 'location': a.location, 'ip': a.ip,\n"
+            "                'criticality': a.criticality, 'extra_fields': a.extra_fields or {},\n"
+            "                'source': a.source, 'raw_content': a.raw_content or '',\n"
+            "                'created_at': str(a.created_at) if a.created_at else '',\n"
+            "                'updated_at': str(a.updated_at) if a.updated_at else '',\n"
+            "            })\n"
+            "        return {\n"
+            "            'agent_id': agent_id,\n"
+            "            'page': page,\n"
+            "            'page_size': page_size,\n"
+            "            'total': total,\n"
+            "            'count': len(assets),\n"
+            "            'assets': assets,\n"
+            "        }\n"
+            "    except Exception as exc:\n"
+            "        return {'error': '列出资产失败: ' + str(exc)}\n"
+            "    finally:\n"
+            "        db.close()\n"
+        ),
+        "tool_type": "code",
+        "category": "asset",
+        "enabled": True,
+    },
 ]
+
+
+# ============================================================================
+# 资产管理智能体推荐系统提示词
+#
+# 用户创建资产管理智能体时可复制此模板作为 system_prompt。
+# 该提示词定义了资产梳理流程（KB→资产表）、对话录入判断逻辑、
+# 字段灵活性策略（标准字段 + extra_fields），以及去重约束。
+# 前端「创建智能体」页面可在 category=asset 时自动预填此模板（待实现）。
+# ============================================================================
+ASSET_AGENT_SYSTEM_PROMPT: str = """你是一个资产管理智能体，负责根据勾选的知识库梳理资产信息、维护资产表，并响应用户的资产录入/查询/更新需求。
+
+## 核心工具
+
+1. **discover_new_kbs** —— 发现已勾选但尚未梳理到资产表的新增知识库
+2. **fetch_kb_content** —— 拉取指定知识库的全部分段内容
+3. **query_asset** —— 查询资产表中是否已存在某资产（按 identifier/ip/name/keyword）
+4. **add_asset** —— 新增资产记录（identifier 已存在时会被拒绝）
+5. **update_asset** —— 更新已有资产记录（按 identifier 定位，extra_fields 合并）
+6. **list_assets** —— 分页列出资产（支持筛选和关键词搜索）
+
+## 资产梳理流程（知识库 → 资产表）
+
+当被要求梳理资产、或主动发现新知识库时，按以下步骤操作：
+1. 调用 discover_new_kbs 检查是否有尚未梳理的知识库
+2. 对每个新知识库，调用 fetch_kb_content 拉取全部分段内容
+3. 逐段分析内容，提取资产信息：
+   - 判断每条资产的唯一标识（identifier）：优先用 IP/主机名/工号/资产编号
+   - 判断 identifier_type：ip/hostname/asset_name/employee_id/mac/custom
+   - 提取标准字段（name/asset_type/department/owner/location/ip/criticality）
+   - 知识库中特有但标准字段未覆盖的属性，放入 extra_fields（JSON 对象）
+4. 对每条提取到的资产，先调用 query_asset 检查是否已存在：
+   - 不存在 → 调用 add_asset 新增（source=kb_ingest）
+   - 已存在 → 调用 update_asset 更新（合并新信息到已有记录）
+
+## 对话录入资产
+
+当用户在对话中提供新的资产信息时：
+1. 从用户消息中提取资产标识（IP/主机名/名称等）
+2. 调用 query_asset 检查该资产是否已存在
+3. 不存在 → add_asset 新增（source=agent_add）
+4. 已存在 → 向用户确认后 update_asset 更新
+
+## 字段灵活性
+
+不同知识库的资产字段可能不同：
+- 标准字段（name/asset_type/department/owner/location/ip/criticality）直接填入对应参数
+- 非标准字段统一放入 extra_fields（如 {"序列号": "SN001", "购入日期": "2024-01-01"}）
+- 你需要根据知识库内容灵活判断哪些字段是标准字段、哪些放入 extra_fields
+
+## 重要约束
+
+- 每条资产必须有 identifier（唯一标识），用于去重
+- 不要重复录入同一资产：录入前务必先 query_asset 检查
+- 资产梳理是增量操作：只处理新知识库，已梳理的不要重复处理
+- 返回结果要简洁清晰，用表格/列表形式展示资产信息
+"""
 
 
 # ============================================================================
@@ -1158,3 +1673,42 @@ def ensure_seed_data() -> None:
 
     # 3. Hermes 工具迁移（每次启动幂等执行，插入缺失的内置/框架级工具）
     ensure_hermes_tools()
+
+    # 4. 内置技能种子（幂等：按 name 查询，不存在才插入）
+    ensure_builtin_skills()
+
+
+# ============================================================================
+# 内置技能种子数据
+# 将资产管理智能体提示词作为 Skill 注入，用户可在「技能」页面直接选用
+# ============================================================================
+BUILTIN_SKILLS: list[dict[str, Any]] = [
+    {
+        "name": "资产管理智能体提示词",
+        "description": "资产管理智能体的系统提示词模板，定义资产梳理、录入、更新流程和字段灵活性规则",
+        "content": ASSET_AGENT_SYSTEM_PROMPT,
+        "category": "角色设定",
+        "tags": ["资产管理", "智能体", "提示词模板"],
+        "enabled": True,
+        "priority": 10,
+    },
+]
+
+
+def ensure_builtin_skills() -> None:
+    """幂等插入内置技能：按 name 查询，不存在才插入，不覆盖用户编辑。"""
+    db: Session = SessionLocal()
+    try:
+        for sk_data in BUILTIN_SKILLS:
+            existing = db.query(Skill).filter(Skill.name == sk_data["name"]).first()
+            if existing:
+                logger.debug("技能「%s」已存在，跳过 seed", sk_data["name"])
+                continue
+            db.add(Skill(**sk_data))
+            logger.info("种入内置技能「%s」", sk_data["name"])
+        db.commit()
+    except Exception as e:  # noqa: BLE001
+        logger.exception("内置技能 seed 失败: %s", e)
+        db.rollback()
+    finally:
+        db.close()

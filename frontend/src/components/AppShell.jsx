@@ -15,12 +15,12 @@ const NAV_GROUPS = [
       { to: '/dashboard', icon: '📊', label: '运营大屏', perm: ['dashboard', 'view'] },
       { to: '/approvals', icon: '🧑‍💻', label: '工作台', perm: ['approval', 'view'] },
       { to: '/chat', icon: '💬', label: '对话', perm: ['agent', 'view'] },
-      { to: '/agents', icon: '🤖', label: '智能体', perm: ['agent', 'view'] },
     ],
   },
   {
     title: '编排与资源',
     items: [
+      { to: '/agents', icon: '🤖', label: '智能体', perm: ['agent', 'view'] },
       {
         to: '/workflows',
         icon: '📁',
@@ -49,6 +49,7 @@ const NAV_GROUPS = [
       { to: '/executions', icon: '📜', label: '执行追溯', perm: ['execution', 'view'] },
       { to: '/monitor', icon: '📈', label: '执行监测', perm: ['execution', 'view'] },
       { to: '/banned-ips', icon: '🚫', label: '已封禁 IP', perm: ['execution', 'view'] },
+      { to: '/assets', icon: '📋', label: '资产管理', perm: ['execution', 'view'] },
       { to: '/notifications', icon: '🔔', label: '通知中心', perm: ['notification', 'view'] },
     ],
   },
@@ -76,7 +77,7 @@ const BREADCRUMB_MAP = {
   '/dashboard': ['运营大屏'],
   '/approvals': ['工作台'],
   '/chat': ['对话'],
-  '/agents': ['智能体'],
+  '/agents': ['编排与资源', '智能体'],
   '/workflows': ['编排与资源', '工作流管理'],
   '/editor': ['编排与资源', '工作流管理', '工作流编排'],
   '/skills': ['编排与资源', '技能'],
@@ -87,6 +88,7 @@ const BREADCRUMB_MAP = {
   '/executions': ['监控追溯', '执行追溯'],
   '/monitor': ['监控追溯', '执行监测'],
   '/banned-ips': ['监控追溯', '已封禁 IP'],
+  '/assets': ['监控追溯', '资产管理'],
   '/notifications': ['监控追溯', '通知中心'],
   '/agent-tutorial': ['智能体', '使用教程'],
   '/users': ['系统配置', '用户管理'],

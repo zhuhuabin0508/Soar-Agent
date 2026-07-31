@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   agents as agentsApi,
@@ -18,6 +18,8 @@ import {
 import { inputCls, textareaCls } from '../components/property/FormControls'
 import MiddlewareConfig from '../components/MiddlewareConfig'
 import ToolSearchStatus from '../components/ToolSearchStatus'
+import InfoTip from '../components/InfoTip'
+import { CATEGORY_META, UNCATEGORIZED, groupToolsByCategory } from '../constants/toolCategories'
 import { useUnsavedChanges } from '../hooks/useUnsavedChanges'
 
 // 语气风格选项
@@ -43,7 +45,7 @@ function Card({ title, icon, children, defaultOpen = true, hint, extra }) {
           <span className="flex items-center gap-2 text-sm font-semibold text-gray-200">
             <span>{icon}</span>
             {title}
-            {hint && <span className="text-[11px] font-normal text-gray-500">{hint}</span>}
+            {hint && <InfoTip text={hint} />}
           </span>
           <span className="text-gray-600">{open ? '▼' : '▶'}</span>
         </button>
@@ -96,6 +98,9 @@ function AgentEditor() {
   // 展开的工具配置项
   const [expandedTool, setExpandedTool] = useState(null)
 
+  // 按分类分组的工具列表（标准模式 + 开发者模式共用）
+  const groupedTools = useMemo(() => groupToolsByCategory(toolOptions), [toolOptions])
+
   // ===== 调试预览状态 =====
   const [testInput, setTestInput] = useState('')
   const [testing, setTesting] = useState(false)
@@ -141,6 +146,7 @@ function AgentEditor() {
           (Array.isArray(tls) ? tls : []).map((t) => ({
             value: t.name || `工具 ${t.id}`,
             label: `${t.name || `工具 ${t.id}`}${t.enabled === false ? '（已禁用）' : ''}`,
+            category: t.category || '',
           }))
         )
         setKbOptions(
@@ -612,8 +618,9 @@ function AgentEditor() {
                 placeholder="你是一名 SOC 高级安全专家。接收到告警后，请利用工具查询源 IP 的白名单状态、资产归属、网段和威胁情报……"
               />
               <div>
-                <div className="mb-1 text-xs font-medium text-gray-400">
-                  变量配置 <span className="text-gray-600">（在提示词中用 {'{{key}}'} 引用）</span>
+                <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-gray-400">
+                  变量配置
+                  <InfoTip text={<>在提示词中用 <code className="rounded bg-gray-800 px-1 text-brand-300">{'{{key}}'}</code> 引用变量值</>} />
                 </div>
                 {varRows.map((row, idx) => (
                   <div key={idx} className="mb-1 flex items-center gap-1.5">
@@ -718,114 +725,138 @@ function AgentEditor() {
                 />
               </div>
               <div>
-                <div className="mb-1 text-xs font-medium text-gray-400">插件 / 工具调用</div>
-                {!devMode ? (
-                  /* 标准模式：简单勾选 */
-                  <CheckboxGroup
-                    value={form.enabled_tools}
-                    onChange={setField('enabled_tools')}
-                    options={toolOptions}
-                    columns={2}
-                  />
-                ) : (
-                  /* 开发者模式：增强工具配置面板 */
-                  <div className="flex flex-col gap-1.5">
-                    {toolOptions.length === 0 && (
-                      <p className="text-[11px] text-gray-600">暂无可用工具</p>
-                    )}
-                    {toolOptions.map((tool) => {
-                      const enabled = form.enabled_tools.includes(tool.value)
-                      const cfg = form.tool_configs[tool.value] || {}
-                      const isExpanded = expandedTool === tool.value
-                      const isSensitive = /send|email|delete|block|ban|exec|shutdown|reboot/i.test(tool.value)
-                      return (
-                        <div key={tool.value} className={`rounded-md border ${enabled ? 'border-gray-700' : 'border-gray-800'} ${isSensitive && enabled ? 'bg-danger-500/5' : 'bg-gray-800/30'}`}>
-                          <div className="flex items-center gap-2 px-2 py-1.5">
-                            <input
-                              type="checkbox"
-                              checked={enabled}
-                              onChange={(e) => {
-                                const next = e.target.checked
-                                  ? [...form.enabled_tools, tool.value]
-                                  : form.enabled_tools.filter((t) => t !== tool.value)
-                                setField('enabled_tools')(next)
-                                if (!next) setExpandedTool(null)
-                              }}
-                              className="h-4 w-4 accent-brand-500"
-                            />
-                            <span className="flex-1 text-xs text-gray-300">{tool.label}</span>
-                            {isSensitive && enabled && (
-                              <span className="rounded bg-danger-500/20 px-1.5 py-0.5 text-[10px] font-medium text-danger-300">
-                                ⚠ 敏感操作
-                              </span>
-                            )}
-                            {enabled && (
-                              <button
-                                type="button"
-                                onClick={() => setExpandedTool(isExpanded ? null : tool.value)}
-                                className="text-[10px] text-brand-400 hover:text-brand-300"
-                              >
-                                {isExpanded ? '收起' : '配置'}
-                              </button>
-                            )}
-                          </div>
-                          {enabled && isExpanded && (
-                            <div className="grid grid-cols-3 gap-2 border-t border-gray-800 p-2">
-                              <label>
-                                <div className="mb-0.5 text-[10px] text-gray-500">超时（秒）</div>
-                                <input
-                                  type="number"
-                                  className={inputCls}
-                                  value={cfg.timeout ?? 10}
-                                  onChange={(e) => {
-                                    const next = { ...form.tool_configs }
-                                    next[tool.value] = { ...next[tool.value], timeout: Number(e.target.value) }
-                                    setField('tool_configs')(next)
-                                  }}
-                                  min={1}
-                                  max={120}
-                                />
-                              </label>
-                              <label>
-                                <div className="mb-0.5 text-[10px] text-gray-500">失败重试</div>
-                                <input
-                                  type="number"
-                                  className={inputCls}
-                                  value={cfg.retry ?? 0}
-                                  onChange={(e) => {
-                                    const next = { ...form.tool_configs }
-                                    next[tool.value] = { ...next[tool.value], retry: Number(e.target.value) }
-                                    setField('tool_configs')(next)
-                                  }}
-                                  min={0}
-                                  max={5}
-                                />
-                              </label>
-                              <label className="flex flex-col">
-                                <div className="mb-0.5 text-[10px] text-gray-500">执行模式</div>
-                                <select
-                                  className={inputCls}
-                                  value={cfg.require_confirm ? 'confirm' : 'auto'}
-                                  onChange={(e) => {
-                                    const next = { ...form.tool_configs }
-                                    next[tool.value] = { ...next[tool.value], require_confirm: e.target.value === 'confirm' }
-                                    setField('tool_configs')(next)
-                                  }}
-                                >
-                                  <option value="auto">自动调用</option>
-                                  <option value="confirm">需用户确认</option>
-                                </select>
-                              </label>
-                              {cfg.require_confirm && (
-                                <div className="col-span-3 rounded bg-amber-500/10 px-2 py-1 text-[10px] text-amber-300">
-                                  ⚠ 此工具标记为"需用户确认"，Agent 调用前会暂停等待确认
-                                </div>
-                              )}
-                            </div>
-                          )}
+                <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-gray-400">
+                  插件 / 工具调用
+                  <InfoTip text="按类型分组展示，勾选后智能体可调用该工具。不勾选则不启用任何工具。" />
+                </div>
+                {toolOptions.length === 0 ? (
+                  <p className="text-[11px] text-gray-600">暂无可用工具</p>
+                ) : !devMode ? (
+                  /* 标准模式：按分类分组勾选 */
+                  <div className="flex flex-col gap-3">
+                    {groupedTools.map((grp) => (
+                      <div key={grp.category}>
+                        <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-gray-500">
+                          <span>{grp.meta.icon}</span>
+                          <span>{grp.meta.label}</span>
+                          <span className="text-gray-700">({grp.tools.length})</span>
                         </div>
-                      )
-                    })}
+                        <CheckboxGroup
+                          value={form.enabled_tools}
+                          onChange={setField('enabled_tools')}
+                          options={grp.tools}
+                          columns={2}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  /* 开发者模式：按分类分组的增强工具配置面板 */
+                  <div className="flex flex-col gap-3">
+                    {groupedTools.map((grp) => (
+                      <div key={grp.category}>
+                        <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-gray-500">
+                          <span>{grp.meta.icon}</span>
+                          <span>{grp.meta.label}</span>
+                          <span className="text-gray-700">({grp.tools.length})</span>
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          {grp.tools.map((tool) => {
+                            const enabled = form.enabled_tools.includes(tool.value)
+                            const cfg = form.tool_configs[tool.value] || {}
+                            const isExpanded = expandedTool === tool.value
+                            const isSensitive = /send|email|delete|block|ban|exec|shutdown|reboot/i.test(tool.value)
+                            return (
+                              <div key={tool.value} className={`rounded-md border ${enabled ? 'border-gray-700' : 'border-gray-800'} ${isSensitive && enabled ? 'bg-danger-500/5' : 'bg-gray-800/30'}`}>
+                                <div className="flex items-center gap-2 px-2 py-1.5">
+                                  <input
+                                    type="checkbox"
+                                    checked={enabled}
+                                    onChange={(e) => {
+                                      const next = e.target.checked
+                                        ? [...form.enabled_tools, tool.value]
+                                        : form.enabled_tools.filter((t) => t !== tool.value)
+                                      setField('enabled_tools')(next)
+                                      if (!next) setExpandedTool(null)
+                                    }}
+                                    className="h-4 w-4 accent-brand-500"
+                                  />
+                                  <span className="flex-1 text-xs text-gray-300">{tool.label}</span>
+                                  {isSensitive && enabled && (
+                                    <span className="rounded bg-danger-500/20 px-1.5 py-0.5 text-[10px] font-medium text-danger-300">
+                                      ⚠ 敏感操作
+                                    </span>
+                                  )}
+                                  {enabled && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setExpandedTool(isExpanded ? null : tool.value)}
+                                      className="text-[10px] text-brand-400 hover:text-brand-300"
+                                    >
+                                      {isExpanded ? '收起' : '配置'}
+                                    </button>
+                                  )}
+                                </div>
+                                {enabled && isExpanded && (
+                                  <div className="grid grid-cols-3 gap-2 border-t border-gray-800 p-2">
+                                    <label>
+                                      <div className="mb-0.5 text-[10px] text-gray-500">超时（秒）</div>
+                                      <input
+                                        type="number"
+                                        className={inputCls}
+                                        value={cfg.timeout ?? 10}
+                                        onChange={(e) => {
+                                          const next = { ...form.tool_configs }
+                                          next[tool.value] = { ...next[tool.value], timeout: Number(e.target.value) }
+                                          setField('tool_configs')(next)
+                                        }}
+                                        min={1}
+                                        max={120}
+                                      />
+                                    </label>
+                                    <label>
+                                      <div className="mb-0.5 text-[10px] text-gray-500">失败重试</div>
+                                      <input
+                                        type="number"
+                                        className={inputCls}
+                                        value={cfg.retry ?? 0}
+                                        onChange={(e) => {
+                                          const next = { ...form.tool_configs }
+                                          next[tool.value] = { ...next[tool.value], retry: Number(e.target.value) }
+                                          setField('tool_configs')(next)
+                                        }}
+                                        min={0}
+                                        max={5}
+                                      />
+                                    </label>
+                                    <label className="flex flex-col">
+                                      <div className="mb-0.5 text-[10px] text-gray-500">执行模式</div>
+                                      <select
+                                        className={inputCls}
+                                        value={cfg.require_confirm ? 'confirm' : 'auto'}
+                                        onChange={(e) => {
+                                          const next = { ...form.tool_configs }
+                                          next[tool.value] = { ...next[tool.value], require_confirm: e.target.value === 'confirm' }
+                                          setField('tool_configs')(next)
+                                        }}
+                                      >
+                                        <option value="auto">自动调用</option>
+                                        <option value="confirm">需用户确认</option>
+                                      </select>
+                                    </label>
+                                    {cfg.require_confirm && (
+                                      <div className="col-span-3 rounded bg-amber-500/10 px-2 py-1 text-[10px] text-amber-300">
+                                        ⚠ 此工具标记为"需用户确认"，Agent 调用前会暂停等待确认
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -839,7 +870,10 @@ function AgentEditor() {
             >
               <div>
                 <div className="mb-1 flex items-center justify-between">
-                  <span className="text-xs font-medium text-gray-400">启用技能</span>
+                  <span className="flex items-center gap-1.5 text-xs font-medium text-gray-400">
+                    启用技能
+                    <InfoTip text={<>技能正文支持 <code className="rounded bg-gray-800 px-1 text-brand-300">{'{{key}}'}</code> 引用下方「变量」中配置的值；按优先级降序注入，禁用或删除的技能会自动从 prompt 移除。</>} />
+                  </span>
                   <span className="text-[10px] text-gray-600">
                     已选 {form.enabled_skills.length} / {skillOptions.length} 个
                   </span>
@@ -856,10 +890,6 @@ function AgentEditor() {
                     columns={2}
                   />
                 )}
-                <p className="mt-2 text-[11px] leading-relaxed text-gray-500">
-                  💡 技能正文支持 <code className="rounded bg-gray-800 px-1 text-brand-300">{'{{key}}'}</code> 引用下方「变量」中配置的值；
-                  按优先级降序注入，禁用或删除的技能会自动从 prompt 移除。
-                </p>
               </div>
             </Card>
 

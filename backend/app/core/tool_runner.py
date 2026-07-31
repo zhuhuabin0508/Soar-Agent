@@ -212,7 +212,7 @@ def recall_agent_memory(key: str = "") -> dict:
     return {"key": key, "value": None, "error": f"未找到记忆: {key}", "available_keys": list(store.keys())}
 
 
-def load_tool_function(tool, enabled_kbs=None) -> Callable:
+def load_tool_function(tool, enabled_kbs=None, agent_id=None) -> Callable:
     """加载工具的 ``run`` 异步函数。
 
     按 ``tool.tool_type`` 分发：
@@ -247,10 +247,13 @@ def load_tool_function(tool, enabled_kbs=None) -> Callable:
             ensure_ascii=False,
         )
     else:
-        # code 工具的缓存键需纳入 enabled_kbs：同一工具在不同智能体下注入的
-        # 知识库列表不同（namespace 中 enabled_kbs / search_kb 闭包捕获的值不同），
-        # 若只用 code 作键会复用旧缓存，导致查到错误智能体的知识库。
-        cache_summary = code + "||enabled_kbs=" + ",".join(str(k) for k in (enabled_kbs or []))
+        # code 工具的缓存键需纳入 enabled_kbs + agent_id：同一工具在不同智能体下注入的
+        # 知识库列表与 agent_id 不同（namespace 中 enabled_kbs / current_agent_id 闭包捕获的值不同），
+        # 若只用 code 作键会复用旧缓存，导致查到错误智能体的知识库/资产表。
+        cache_summary = (
+            code + "||enabled_kbs=" + ",".join(str(k) for k in (enabled_kbs or []))
+            + "||agent_id=" + str(agent_id or "")
+        )
 
     cached = _tool_cache.get(name)
     if cached is not None and cached[1] == cache_summary:
@@ -365,16 +368,21 @@ def load_tool_function(tool, enabled_kbs=None) -> Callable:
 
     # 数据库访问注入：允许工具查询/写入已封禁 IP 表（query_banned_ip / record_ban 等）
     # 同时注入 KnowledgeBase / KnowledgeSegment，供 get_asset_info 查询知识库名称和精确 IP 匹配
+    # 注入 Asset 供资产管理智能体的 query_asset / add_asset / update_asset 等工具读写资产表
     try:
         from app.database import SessionLocal
         from app.models.banned_ip import BannedIP
         from app.models.knowledge_base import KnowledgeBase, KnowledgeSegment
+        from app.models.asset import Asset
         namespace["SessionLocal"] = SessionLocal
         namespace["BannedIP"] = BannedIP
         namespace["KnowledgeBase"] = KnowledgeBase
         namespace["KnowledgeSegment"] = KnowledgeSegment
+        namespace["Asset"] = Asset
     except ImportError:  # pragma: no cover
-        logger.debug("数据库模块未安装，工具命名空间不注入 SessionLocal/BannedIP/KnowledgeBase")
+        logger.debug("数据库模块未安装，工具命名空间不注入 SessionLocal/BannedIP/KnowledgeBase/Asset")
+    # 当前智能体 ID：供资产工具按 agent_id 作用域过滤（agent_id+identifier 去重）
+    namespace["current_agent_id"] = agent_id
 
     try:
         exec(compile(code, f"<tool:{name}>", "exec"), namespace)  # noqa: S102
