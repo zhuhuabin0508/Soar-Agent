@@ -1,0 +1,139 @@
+# ===== SOAR 平台 Vibe Coding 开发编排 =====
+# 设计思路：
+#   1. backend/worker 复用已加载的 soar-backend:latest 镜像（依赖已装好），仅挂载源码 → 秒级启动
+#   2. backend 用 uvicorn --reload 实现热重载；worker 改代码后需 docker restart soar-worker-dev
+#   3. frontend 用 node:20-alpine 起 vite dev server，HMR 热更新
+#   4. dev 容器加入生产网络 config_default，通过容器名直连生产 postgres/redis（数据共享，见下方风险提示）
+#   5. 端口避让生产：dev backend=8002，dev frontend=5173
+#
+# ⚠️ 数据安全提示：
+#   - dev backend 默认连生产数据库 soar，改 models/写操作会直接影响生产数据
+#   - 如需隔离，把下方 POSTGRES_DB 改成 soar_dev，并先执行：
+#     docker exec soar-postgres createdb -U postgres soar_dev
+#
+# 启动：bash dev.sh up
+# 停止：bash dev.sh down
+# 日志：bash dev.sh logs
+# 重启 worker（改完 Celery 代码后）：docker restart soar-worker-dev
+
+services:
+  # ---------- 后端 API（热重载） ----------
+  backend-dev:
+    image: soar-backend:latest
+    container_name: soar-backend-dev
+    working_dir: /app
+    entrypoint: []
+    command:
+      - sh
+      - -c
+      - |
+        echo "==> [dev] ensuring DB tables..."
+        python -c "from app.database import engine, Base; from app.models import Workflow, Execution, ExecutionTrace; Base.metadata.create_all(bind=engine); print('DB tables ensured (dev)')"
+        python -c "from app.core.seed import ensure_seed_data; ensure_seed_data()" || echo "==> [dev] seed skipped"
+        echo "==> [dev] starting uvicorn with --reload on 0.0.0.0:8000"
+        exec uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+    volumes:
+      # 源码挂载：改 ./backend/app 下的 .py 文件，uvicorn 自动重载
+      - ./backend/app:/app/app
+      - ./backend/entrypoint.sh:/app/entrypoint.sh:ro
+      - ./backend/requirements.txt:/app/requirements.txt:ro
+      # 安全工具集（nuclei/subfinder/httpx/dnsx/sqlmap/MSF 等，宿主机持久化）
+      - ./security-tools:/opt/security-tools
+      # 复用生产数据卷：上传文件、备份目录
+      - soaragent_uploads:/app/uploads
+      - soaragent_backups:/app/backups
+      # docker.sock：系统监控页面读取容器日志需要
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      # 安全工具二进制目录加入 PATH（subprocess 封装可直接按名调用）
+      PATH: /opt/security-tools/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@soar-postgres:5432/${POSTGRES_DB:-soar}
+      DB_USER: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_HOST: soar-postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-soar}
+      REDIS_URL: redis://soar-redis:6379/0
+      CELERY_BROKER_URL: redis://soar-redis:6379/0
+      CELERY_RESULT_BACKEND: redis://soar-redis:6379/1
+      TZ: Asia/Shanghai
+      JWT_SECRET: ${JWT_SECRET}
+      SEED_ADMIN_USERNAME: ${SEED_ADMIN_USERNAME:-admin}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-admin123}
+    ports:
+      - "8002:8000"
+    networks:
+      - soar-prod-net
+    restart: unless-stopped
+    mem_limit: 1g
+    memswap_limit: 1g
+
+  # ---------- Celery Worker（手动重启） ----------
+  worker-dev:
+    image: soar-backend:latest
+    container_name: soar-worker-dev
+    working_dir: /app
+    entrypoint: []
+    # Celery 5.x 的 --autoreload 不稳定，改代码后手动 docker restart soar-worker-dev
+    command: ["celery", "-A", "app.core.celery_app", "worker", "-l", "info"]
+    volumes:
+      - ./backend/app:/app/app
+      # 安全工具集（与 backend-dev 共享同一宿主机目录）
+      - ./security-tools:/opt/security-tools
+    environment:
+      # 安全工具二进制目录加入 PATH（subprocess 封装可直接按名调用）
+      PATH: /opt/security-tools/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@soar-postgres:5432/${POSTGRES_DB:-soar}
+      REDIS_URL: redis://soar-redis:6379/0
+      CELERY_BROKER_URL: redis://soar-redis:6379/0
+      CELERY_RESULT_BACKEND: redis://soar-redis:6379/1
+      TZ: Asia/Shanghai
+    networks:
+      - soar-prod-net
+    restart: unless-stopped
+    # worker 会跑 nuclei/sqlmap 等安全工具，上限放宽到 2g
+    mem_limit: 2g
+    memswap_limit: 2g
+
+  # ---------- 前端 Vite Dev Server（HMR） ----------
+  frontend-dev:
+    image: node:20-alpine-arm64
+    container_name: soar-frontend-dev
+    working_dir: /app
+    command:
+      - sh
+      - -c
+      - |
+        npm config set registry https://registry.npmmirror.com
+        if [ ! -d node_modules/.bin ]; then
+          echo "==> [dev] installing npm deps (首次较慢，~1-2 分钟)..."
+          npm install --legacy-peer-deps
+        fi
+        echo "==> [dev] starting vite dev server on 0.0.0.0:5173"
+        exec npx vite --config vite.config.dev.js --host 0.0.0.0 --port 5173
+    volumes:
+      # 整个 frontend 目录挂载（含 node_modules）：改 .tsx/.jsx 文件 HMR 即时生效
+      # node_modules 在开发机用 ARM64 容器预装后随源码一起挂载，离线环境无需容器内 npm install
+      - ./frontend:/app
+    ports:
+      - "5173:5173"
+    networks:
+      - soar-prod-net
+    depends_on:
+      - backend-dev
+    restart: unless-stopped
+    mem_limit: 1g
+    memswap_limit: 1g
+
+networks:
+  soar-prod-net:
+    external: true
+    name: config_default
+
+volumes:
+  soaragent_uploads:
+    external: true
+    name: soaragent_uploads
+  soaragent_backups:
+    external: true
+    name: soaragent_backups

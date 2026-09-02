@@ -1,0 +1,390 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+ * 设计令牌（Design Tokens）
+ * 语义色映射到 oklch 色彩空间，:root 为亮色、.dark 为暗色。
+ * 需要透明度修饰符的颜色（primary/success/warning/destructive/info/chart）
+ * 以「L C H 分量」形式存储，配合 tailwind.config 的 oklch(var(--x) / <alpha-value>)
+ * 实现 bg-primary/15 等透明度工具类。
+ * 其它色（background/foreground/card/accent/border 等）不与透明度搭配，存为完整值。
+ * 默认 <html class="dark"> 保持暗色科技风。提炼自 QuantumNous/new-api 设计体系。
+ * ============================================================ */
+
+:root {
+  /* 基准圆角（卡片/弹窗），按钮等通过 tailwind borderRadius 派生 */
+  --radius: 0.75rem;
+  /* 顶栏高度，用于内容区视口高度计算 */
+  --app-header-height: 2.75rem;
+
+  /* —— 亮色主题 —— */
+  --background: oklch(0.98 0.002 240);
+  --foreground: oklch(0.18 0.01 250);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.01 250);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.01 250);
+  /* 需透明度的色：存 L C H 分量 */
+  --primary: 0.62 0.15 245;
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.96 0.005 240);
+  --secondary-foreground: oklch(0.4 0.12 250);
+  --muted: oklch(0.96 0.005 240);
+  --muted-foreground: oklch(0.52 0.01 250);
+  --accent: color-mix(in oklch, oklch(var(--primary)) 12%, var(--background));
+  --accent-foreground: oklch(0.3 0.1 250);
+  --destructive: 0.58 0.22 27;
+  --destructive-foreground: oklch(0.98 0 0);
+  --success: 0.6 0.14 163;
+  --success-foreground: oklch(0.98 0 0);
+  --warning: 0.7 0.16 76;
+  --warning-foreground: oklch(0.2 0 0);
+  --info: 0.6 0.15 242;
+  --info-foreground: oklch(0.98 0 0);
+  --neutral: oklch(0.72 0 0);
+  --neutral-foreground: oklch(0.18 0 0);
+  --border: oklch(0.9 0.005 240);
+  --input: oklch(0.9 0.005 240);
+  --ring: oklch(0.62 0.15 245);
+
+  /* 图表色板（L C H 分量，便于透明度） */
+  --chart-1: 0.62 0.15 245;
+  --chart-2: 0.6 0.13 200;
+  --chart-3: 0.62 0.12 285;
+  --chart-4: 0.62 0.17 330;
+  --chart-5: 0.62 0.14 155;
+
+  /* 侧边栏专用 */
+  --sidebar: oklch(0.99 0.002 240);
+  --sidebar-foreground: oklch(0.2 0.01 250);
+  --sidebar-primary: 0.62 0.15 245;
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: color-mix(in oklch, oklch(var(--primary)) 10%, var(--sidebar));
+  --sidebar-accent-foreground: oklch(0.4 0.12 250);
+  --sidebar-border: oklch(0.9 0.005 240);
+  --sidebar-ring: oklch(0.62 0.15 245);
+
+  /* 骨架屏 */
+  --skeleton-base: oklch(0.94 0.005 240);
+  --skeleton-highlight: oklch(1 0 0);
+
+  /* 表格 */
+  --table-row: var(--background);
+  --table-header: color-mix(in oklch, var(--foreground) 2%, var(--background));
+  --table-header-hover: color-mix(in oklch, var(--foreground) 4%, var(--background));
+}
+
+.dark {
+  /* —— 暗色主题（默认，科技风 charcoal 画布） —— */
+  /* 三层背景：侧边栏(0.12 最暗) → 主背景(0.16 中) → 卡片(0.22 前景) */
+  --background: oklch(0.16 0.008 250);
+  --foreground: oklch(0.96 0.004 240);
+  --card: oklch(0.22 0.01 250);
+  --card-foreground: oklch(0.96 0.004 240);
+  --popover: oklch(0.24 0.01 250);
+  --popover-foreground: oklch(0.96 0.004 240);
+  --primary: 0.72 0.14 200; /* cyan 科技蓝绿 */
+  --primary-foreground: oklch(0.16 0.008 250);
+  --secondary: oklch(0.27 0.01 250);
+  --secondary-foreground: oklch(0.88 0.04 200);
+  --muted: oklch(0.25 0.008 250);
+  --muted-foreground: oklch(0.68 0.01 250);
+  --accent: color-mix(in oklch, oklch(var(--primary)) 16%, var(--background));
+  --accent-foreground: oklch(0.82 0.08 200);
+  --destructive: 0.7 0.19 22;
+  --destructive-foreground: oklch(0.98 0 0);
+  --success: 0.7 0.16 162;
+  --success-foreground: oklch(0.16 0.008 250);
+  --warning: 0.78 0.16 76;
+  --warning-foreground: oklch(0.16 0.008 250);
+  --info: 0.7 0.14 240;
+  --info-foreground: oklch(0.16 0.008 250);
+  --neutral: oklch(0.72 0 0);
+  --neutral-foreground: oklch(0.16 0 0);
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.72 0.14 200);
+
+  /* 图表色板（暗色下提亮） */
+  --chart-1: 0.76 0.14 200;
+  --chart-2: 0.74 0.13 240;
+  --chart-3: 0.74 0.13 285;
+  --chart-4: 0.74 0.16 330;
+  --chart-5: 0.76 0.14 155;
+
+  /* 侧边栏：显著深于主背景（0.12 vs 0.16），形成后退层次 */
+  --sidebar: oklch(0.12 0.006 250);
+  --sidebar-foreground: oklch(0.94 0.004 240);
+  --sidebar-primary: 0.72 0.14 200;
+  --sidebar-primary-foreground: oklch(0.16 0.008 250);
+  --sidebar-accent: color-mix(in oklch, oklch(var(--primary)) 14%, var(--sidebar));
+  --sidebar-accent-foreground: oklch(0.82 0.08 200);
+  --sidebar-border: oklch(1 0 0 / 7%);
+  --sidebar-ring: oklch(0.72 0.14 200);
+
+  /* 骨架屏 */
+  --skeleton-base: oklch(0.27 0.01 250);
+  --skeleton-highlight: oklch(0.38 0.01 250);
+
+  /* 表格 */
+  --table-row: var(--background);
+  --table-header: color-mix(in oklch, var(--foreground) 5%, var(--background));
+  --table-header-hover: color-mix(in oklch, var(--foreground) 8%, var(--background));
+}
+
+/* ===== 基础重置：三栏布局与画布填满视口 ===== */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+  background-color: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ===== 细滚动条（hover 显形） ===== */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklch, var(--foreground) 25%, transparent);
+}
+
+/* ===== 全局 focus 样式（无障碍 + 视觉一致） ===== */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* 按钮默认指针 */
+button:not(:disabled),
+[role="button"]:not(:disabled) {
+  cursor: pointer;
+}
+
+/* 移动端输入框 16px，防止 iOS 聚焦缩放 */
+@media screen and (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* ===== 骨架屏流光（Vercel 风格） ===== */
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--skeleton-base) 0%,
+    var(--skeleton-base) 33%,
+    var(--skeleton-highlight) 50%,
+    var(--skeleton-base) 67%,
+    var(--skeleton-base) 100%
+  );
+  background-size: 300% 100%;
+  animation: skeleton-shimmer 1.8s ease-in-out infinite;
+}
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: -100% 50%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shimmer {
+    animation: none !important;
+    background: var(--skeleton-base) !important;
+  }
+}
+
+/* ===== 微交互：卡片 hover 微抬 / 按钮按下回缩（尊重 reduced-motion） ===== */
+@media (prefers-reduced-motion: no-preference) {
+  .card-hover {
+    transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
+  }
+  @media (min-width: 641px) {
+    .card-hover:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgb(0 0 0 / 0.08);
+    }
+  }
+  button:not(:disabled):active,
+  [role="button"]:not(:disabled):active {
+    transform: scale(0.98);
+  }
+  /* 表格行 hover 过渡 */
+  .table-row-hover {
+    transition: background-color 120ms ease;
+  }
+  /* 表格行入场阶梯动画 */
+  .table-stagger tbody tr {
+    animation: table-row-enter 0.2s cubic-bezier(0.33, 1, 0.68, 1) both;
+  }
+  .table-stagger tbody tr:nth-child(2) { animation-delay: 25ms; }
+  .table-stagger tbody tr:nth-child(3) { animation-delay: 50ms; }
+  .table-stagger tbody tr:nth-child(4) { animation-delay: 75ms; }
+  .table-stagger tbody tr:nth-child(5) { animation-delay: 100ms; }
+  .table-stagger tbody tr:nth-child(6) { animation-delay: 125ms; }
+  .table-stagger tbody tr:nth-child(7) { animation-delay: 150ms; }
+  .table-stagger tbody tr:nth-child(8) { animation-delay: 175ms; }
+  .table-stagger tbody tr:nth-child(n + 9) { animation-delay: 200ms; }
+}
+@keyframes table-row-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .table-stagger tbody tr {
+    animation: none !important;
+  }
+}
+
+/* 数字等宽（统计/表格数字列） */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 渐隐遮罩（提示可滚动） */
+.fade-bottom {
+  mask-image: linear-gradient(to top, transparent 0%, black 35%);
+}
+
+/* ===== 通用工具类 ===== */
+@layer components {
+  /* 页面容器：统一外层 padding 与高度 */
+  .page-container {
+    @apply min-h-full bg-background p-6 text-foreground;
+  }
+
+  /* 卡片：统一容器样式（圆角令牌 + 语义边框/背景） */
+  .card {
+    @apply rounded-lg border border-border bg-card text-card-foreground;
+  }
+
+  /* 卡片内体：统一内边距 */
+  .card-body {
+    @apply p-4;
+  }
+
+  /* 主按钮（品牌色） */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  /* 次按钮（描边） */
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-border bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground transition hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  /* 危险按钮 */
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  /* 幽灵按钮（无边框，仅 hover 背景） */
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  /* 小尺寸按钮 */
+  .btn-sm {
+    @apply px-3 py-1.5 text-xs;
+  }
+
+  /* 输入框统一样式 */
+  .input-base {
+    @apply w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground transition focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary;
+  }
+
+  /* 表格容器：统一 overflow 与边框 */
+  .table-wrap {
+    @apply overflow-x-auto rounded-lg border border-border;
+  }
+
+  /* 表头不换行：所有 th 默认不换行，避免列标题折行 */
+  th {
+    white-space: nowrap;
+  }
+
+  /* 表格行 hover 高亮（accent 已是 12-16% 淡色，全强度即足够柔和） */
+  .table-row-hover {
+    @apply hover:bg-accent;
+  }
+
+  /* 标签 / 徽章 */
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium;
+  }
+}
+
+/* 导入进度条：处理阶段的不确定动画（左右滑动的亮色块） */
+@keyframes indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+.animate-indeterminate {
+  animation: indeterminate 1.2s ease-in-out infinite;
+}
+
+/* ===== 模态 / 抽屉 进场动画（尊重 reduced-motion） ===== */
+@media (prefers-reduced-motion: no-preference) {
+  .modal-overlay-enter {
+    animation: modal-overlay-in 180ms ease-out;
+  }
+  .modal-enter {
+    animation: modal-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .drawer-enter {
+    animation: drawer-in 240ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+@keyframes modal-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.96) translateY(-4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes drawer-in {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* ===== 节点运行状态：脉冲动画（运行中的节点边框呼吸高亮） ===== */
+.node-running {
+  animation: node-pulse 1.2s ease-in-out infinite;
+  border-radius: 0.5rem;
+}
+@keyframes node-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 oklch(var(--info) / 0.65); }
+  50% { box-shadow: 0 0 0 8px oklch(var(--info) / 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .node-running {
+    animation: none !important;
+  }
+}

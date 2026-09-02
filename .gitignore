@@ -1,0 +1,33 @@
+# ===== 环境配置与密钥（严禁提交） =====
+.env
+.env.*
+!.env.example
+backend/.env
+*.pem
+*.key
+
+# ===== 敏感数据 =====
+# 真实弱密码清单等业务数据不入库
+*.xlsx
+
+# ===== 依赖与构建产物 =====
+node_modules/
+frontend/dist/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# ===== 安全工具二进制（1.3GB，按需单独下载） =====
+security-tools/
+
+# ===== 历史压缩包与日志 =====
+*.tar.gz
+*.log
+
+# ===== 编辑器与系统 =====
+.vscode/
+.idea/
+.DS_Store
+*.swp

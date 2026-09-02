@@ -1,0 +1,751 @@
+"""安全模块：密码哈希、JWT 签发/校验、API Key 生成、轻量数据库迁移。
+
+设计要点：
+- 密码使用 passlib + bcrypt 哈希，永不存明文。
+- JWT 使用 PyJWT（HS256），承载 user_id / username / role。
+- Webhook secret 使用 secrets.token_hex 生成 32 字节十六进制串。
+- 轻量迁移：由于未引入 Alembic（P1-5 待办），此处提供 ``ensure_columns``
+  在启动时检查并 ALTER ADD 缺失列，保证新增字段在老库上可用。
+- 工作流环境变量使用 XOR + base64 轻量对称加密（基于 JWT_SECRET 派生 key），
+  避免明文落库；读取需经授权接口解密。
+"""
+import base64
+import hashlib
+import logging
+import secrets
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+import jwt
+from passlib.context import CryptContext
+from sqlalchemy import inspect, text
+
+from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+# passlib 上下文：bcrypt 哈希（自动处理 salt 与版本）
+_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+# ============ 密码哈希 ============
+
+def hash_password(plain: str) -> str:
+    """对明文密码做 bcrypt 哈希。"""
+    return _pwd_context.hash(plain)
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    """校验明文密码与哈希是否匹配。"""
+    try:
+        return _pwd_context.verify(plain, hashed)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("密码校验异常: %s", exc)
+        return False
+
+
+# ============ JWT ============
+
+def create_access_token(
+    user_id: int,
+    username: str,
+    role: str,
+    session_id: Optional[str] = None,
+    expires_minutes: Optional[int] = None,
+) -> tuple[str, str, str]:
+    """签发 JWT 访问令牌。
+
+    payload 包含 ``sub``（user_id）、``username``、``role``、``jti``（唯一标识）、
+    ``sid``（会话 ID）、``exp``、``iat``。
+
+    会话管理设计：
+    - ``jti`` 每次签发都不同，用于精确标识和吊销单个 token（登出/刷新时拉黑）。
+    - ``sid`` 在同一会话刷新时保持不变，用于会话连续性追踪与「登录设备管理」。
+    - 登录时 sid 默认 = jti（新会话）；刷新时传入旧 sid 保持会话连续性。
+
+    Args:
+        user_id: 用户 ID。
+        username: 用户名。
+        role: 角色名。
+        session_id: 会话 ID（刷新时传入旧 sid；登录时不传则自动生成）。
+        expires_minutes: 有效期（分钟），默认用 ``settings.JWT_EXPIRE_MINUTES``。
+
+    Returns:
+        ``(token, jti, sid)`` 三元组：JWT 字符串、唯一标识、会话 ID。
+    """
+    now = datetime.now(timezone.utc)
+    jti = secrets.token_urlsafe(16)
+    sid = session_id or jti
+    exp_minutes = expires_minutes if expires_minutes is not None else settings.JWT_EXPIRE_MINUTES
+    payload = {
+        "sub": str(user_id),
+        "username": username,
+        "role": role,
+        "jti": jti,
+        "sid": sid,
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=exp_minutes)).timestamp()),
+    }
+    token = jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+    logger.info("签发 JWT: user_id=%s, username=%s, role=%s, jti=%s", user_id, username, role, jti)
+    return token, jti, sid
+
+
+def decode_access_token(token: str) -> Optional[dict]:
+    """解码并校验 JWT，返回 payload；失败返回 None。"""
+    try:
+        payload = jwt.decode(
+            token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM]
+        )
+        return payload
+    except jwt.ExpiredSignatureError:
+        logger.warning("JWT 已过期")
+        return None
+    except jwt.InvalidTokenError as exc:
+        logger.warning("JWT 无效: %s", exc)
+        return None
+
+
+def create_otp_pending_token(user_id: int, username: str) -> str:
+    """签发 OTP 待验证临时 token（5 分钟有效）。
+
+    密码验证通过后、用户启用了 OTP 时签发此 token。
+    前端携带此 token + OTP 动态码调用 ``/auth/login/otp`` 完成第二步验证。
+    此 token **不能**用于 API 鉴权（payload 中 type="otp_pending"），
+    ``get_current_user`` 会拒绝此类 token。
+    """
+    now = datetime.now(timezone.utc)
+    jti = secrets.token_urlsafe(16)
+    payload = {
+        "sub": str(user_id),
+        "username": username,
+        "type": "otp_pending",
+        "jti": jti,
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=5)).timestamp()),
+    }
+    token = jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+    logger.info("签发 OTP 待验证 token: user_id=%s, username=%s", user_id, username)
+    return token
+
+
+def verify_otp_pending_token(token: str) -> Optional[dict]:
+    """验证 OTP 待验证 token，返回 payload；失败返回 None。"""
+    payload = decode_access_token(token)
+    if not payload:
+        return None
+    if payload.get("type") != "otp_pending":
+        return None
+    return payload
+
+
+def get_token_ttl_seconds(payload: dict) -> int:
+    """从 JWT payload 计算剩余有效期（秒），用于黑名单 TTL。
+
+    若 token 已过期或解析失败返回 0。
+    """
+    exp = payload.get("exp")
+    if not exp:
+        return 0
+    try:
+        remaining = int(exp) - int(datetime.now(timezone.utc).timestamp())
+        return max(0, remaining)
+    except (TypeError, ValueError):
+        return 0
+
+
+# ============ API Key / Webhook Secret ============
+
+def generate_webhook_secret() -> str:
+    """生成 32 字节十六进制 webhook 密钥（64 字符）。"""
+    return secrets.token_hex(32)
+
+
+def generate_api_key() -> str:
+    """生成带前缀的 API Key（用于未来 per-user API Key 场景）。"""
+    return f"soar_{secrets.token_urlsafe(32)}"
+
+
+# ============ 工作流环境变量对称加密 ============
+
+# 加密前缀，用于识别密文与历史明文兼容
+_ENV_ENC_PREFIX = "enc:"
+
+
+def _derive_env_key() -> bytes:
+    """从 JWT_SECRET 派生 32 字节对称密钥（用于环境变量加解密）。
+
+    使用 SHA-256 派生，与 JWT 签名密钥同源但用途隔离。
+    """
+    return hashlib.sha256(("env:" + settings.JWT_SECRET).encode("utf-8")).digest()
+
+
+def encrypt_env_value(plaintext: Optional[str]) -> str:
+    """加密单个环境变量值（XOR + base64）。
+
+    None 或空字符串原样返回（不加密）。
+    已加密的值（``enc:`` 前缀）不会重复加密。
+    """
+    if not plaintext:
+        return ""
+    if isinstance(plaintext, str) and plaintext.startswith(_ENV_ENC_PREFIX):
+        return plaintext
+    key = _derive_env_key()
+    data = plaintext.encode("utf-8")
+    encrypted = bytes(b ^ key[i % len(key)] for i, b in enumerate(data))
+    return _ENV_ENC_PREFIX + base64.b64encode(encrypted).decode("ascii")
+
+
+def decrypt_env_value(ciphertext: Optional[str]) -> str:
+    """解密单个环境变量值。
+
+    非密文（无 ``enc:`` 前缀，兼容历史明文）原样返回。
+    解密失败返回空字符串，避免泄露异常信息。
+    """
+    if not ciphertext:
+        return ""
+    if not isinstance(ciphertext, str) or not ciphertext.startswith(_ENV_ENC_PREFIX):
+        # 兼容历史明文
+        return ciphertext
+    try:
+        key = _derive_env_key()
+        encrypted = base64.b64decode(ciphertext[len(_ENV_ENC_PREFIX):])
+        decrypted = bytes(b ^ key[i % len(key)] for i, b in enumerate(encrypted))
+        return decrypted.decode("utf-8")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("环境变量解密失败: %s", exc)
+        return ""
+
+
+# ============ 轻量数据库迁移 ============
+
+def ensure_columns(engine, table_name: str, columns: dict[str, str]) -> None:
+    """检查并补齐缺失列（轻量迁移，避免引入 Alembic）。
+
+    Args:
+        engine: SQLAlchemy 引擎。
+        table_name: 表名。
+        columns: ``{列名: "SQL 类型定义"}``，如 ``{"enabled": "BOOLEAN NOT NULL DEFAULT TRUE"}``。
+            仅当列不存在时执行 ``ALTER TABLE ... ADD COLUMN ...``。
+    """
+    insp = inspect(engine)
+    if not insp.has_table(table_name):
+        # 表不存在（create_all 会创建），跳过
+        return
+    existing = {col["name"] for col in insp.get_columns(table_name)}
+    with engine.begin() as conn:
+        for col_name, col_def in columns.items():
+            if col_name in existing:
+                continue
+            stmt = f'ALTER TABLE "{table_name}" ADD COLUMN "{col_name}" {col_def}'
+            logger.info("轻量迁移: %s", stmt)
+            conn.execute(text(stmt))
+    logger.info("轻量迁移完成: table=%s, checked=%d", table_name, len(columns))
+
+
+def run_lightweight_migrations(engine) -> None:
+    """运行所有轻量迁移（启动时调用）。
+
+    当前覆盖：
+    - workflows 表新增 webhook_secret / enabled 列。
+    - users 表新增 role_id / failed_login_count / locked_until 列。
+    - executions 表新增 agent_id 列（智能体执行记录关联）。
+    - knowledge_bases 表新增 Dify 风格配置列（分段/索引/检索）。
+    - knowledge_documents 表新增 updated_at / segment_count 列。
+    - agents 表新增 enabled_skills 列（启用的技能 id 列表，注入 system prompt）。
+    - tools 表新增 tool_type / http_config / category 列。
+
+    线程安全：使用 PostgreSQL advisory lock 防止多实例并发执行 DDL。
+    锁 ID 77001 为本项目专用，避免与其他应用冲突。
+    """
+    # advisory lock：使用独立 raw connection 防止多实例并发 DDL
+    # pg_try_advisory_lock 是 session 级锁，必须用同一连接解锁，所以不能用连接池
+    lock_conn = engine.raw_connection()
+    locked = False
+    try:
+        cursor = lock_conn.cursor()
+        cursor.execute("SELECT pg_try_advisory_lock(77001)")
+        locked = cursor.fetchone()[0]
+        cursor.close()
+        if not locked:
+            logger.info("轻量迁移：另一实例正在执行，跳过")
+            return
+        ensure_columns(
+            engine,
+            "workflows",
+            {
+                "webhook_secret": "VARCHAR(64)",
+                "enabled": "BOOLEAN NOT NULL DEFAULT TRUE",
+            },
+        )
+        # workflows 表新增工作流管理增强字段：触发方式/分类/标签/收藏/状态/描述
+        ensure_columns(
+            engine,
+            "workflows",
+            {
+                "trigger_type": "VARCHAR(32) NOT NULL DEFAULT 'webhook'",
+                "category": "VARCHAR(64)",
+                "tags": "JSON",
+                "favorite": "BOOLEAN NOT NULL DEFAULT FALSE",
+                "status": "VARCHAR(32) NOT NULL DEFAULT 'published'",
+                "description": "TEXT",
+            },
+        )
+        # workflows 表新增 env_vars 列（环境变量 JSON 数组，value 加密存储）
+        ensure_columns(
+            engine,
+            "workflows",
+            {"env_vars": "JSON"},
+        )
+        # users 表新增 role_id 列（关联 roles 表）
+        ensure_columns(
+            engine,
+            "users",
+            {"role_id": "INTEGER"},
+        )
+        # users 表新增等保安全字段：登录失败计数与锁定截止时间
+        ensure_columns(
+            engine,
+            "users",
+            {
+                "failed_login_count": "INTEGER NOT NULL DEFAULT 0",
+                "locked_until": "TIMESTAMP WITHOUT TIME ZONE",
+            },
+        )
+        # users 表新增个人资料扩展字段：手机/部门/语言/时区/简介/头像
+        ensure_columns(
+            engine,
+            "users",
+            {
+                "phone": "VARCHAR(32)",
+                "department": "VARCHAR(128)",
+                "language": "VARCHAR(16) NOT NULL DEFAULT 'zh-CN'",
+                "timezone": "VARCHAR(64) NOT NULL DEFAULT 'Asia/Shanghai'",
+                "bio": "TEXT",
+                "avatar": "TEXT",
+            },
+        )
+        # users 表新增 OTP / SSO / 登录方式字段
+        ensure_columns(
+            engine,
+            "users",
+            {
+                "otp_secret": "VARCHAR(255)",
+                "otp_enabled": "BOOLEAN NOT NULL DEFAULT FALSE",
+                "sso_subject": "VARCHAR(255)",
+                "allowed_login_methods": "JSON",
+            },
+        )
+        # users 表新增首次登录强制改密标记
+        ensure_columns(
+            engine,
+            "users",
+            {"must_change_password": "BOOLEAN NOT NULL DEFAULT FALSE"},
+        )
+        # resource_shares 表新增权限级别字段（view/edit）
+        ensure_columns(
+            engine,
+            "resource_shares",
+            {"permission": "VARCHAR(16) NOT NULL DEFAULT 'edit'"},
+        )
+        # executions 表新增 agent_id 列（智能体测试执行记录关联）
+        ensure_columns(
+            engine,
+            "executions",
+            {"agent_id": "INTEGER"},
+        )
+        # alert_events 表新增 Sangfor XDR 策略覆盖列（账号/上报时间原始串/攻击状态/区域 ID）
+        ensure_columns(
+            engine,
+            "alert_events",
+            {
+                "account_id": "VARCHAR(128) NOT NULL DEFAULT ''",
+                "upload_timestamp": "TIMESTAMP WITHOUT TIME ZONE",
+                "upload_time_raw": "VARCHAR(64) NOT NULL DEFAULT ''",
+                "attack_state": "INTEGER NOT NULL DEFAULT -1",
+                "attack_state_name": "VARCHAR(32) NOT NULL DEFAULT ''",
+                "src_region_id": "VARCHAR(128) NOT NULL DEFAULT ''",
+                "dst_region_id": "VARCHAR(128) NOT NULL DEFAULT ''",
+                "relate_asset_type_name": "VARCHAR(16) NOT NULL DEFAULT ''",
+                "src_ip_tag_name": "VARCHAR(16) NOT NULL DEFAULT ''",
+                "direction_name": "VARCHAR(16) NOT NULL DEFAULT ''",
+            },
+        )
+        # knowledge_bases 表新增 Dify 风格配置列
+        ensure_columns(
+            engine,
+            "knowledge_bases",
+            {
+                "chunk_mode": "VARCHAR(32) NOT NULL DEFAULT 'auto'",
+                "chunk_size": "INTEGER NOT NULL DEFAULT 500",
+                "chunk_overlap": "INTEGER NOT NULL DEFAULT 50",
+                "chunk_delimiter": "VARCHAR(256)",
+                "ocr_enabled": "BOOLEAN NOT NULL DEFAULT FALSE",
+                "index_mode": "VARCHAR(32) NOT NULL DEFAULT 'keyword'",
+                "embedding_model": "VARCHAR(128) NOT NULL DEFAULT 'text-embedding-ada-002'",
+                "embedding_dimension": "INTEGER NOT NULL DEFAULT 1536",
+                "retrieval_top_k": "INTEGER NOT NULL DEFAULT 5",
+                "score_threshold": "INTEGER NOT NULL DEFAULT 0",
+                "rerank_enabled": "INTEGER NOT NULL DEFAULT 0",
+                "rerank_model": "VARCHAR(128)",
+                "hybrid_vector_weight": "INTEGER NOT NULL DEFAULT 70",
+                "hybrid_keyword_weight": "INTEGER NOT NULL DEFAULT 30",
+            },
+        )
+        # knowledge_documents 表新增 updated_at / segment_count 列 + 元数据/状态/权重
+        ensure_columns(
+            engine,
+            "knowledge_documents",
+            {
+                "updated_at": "TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()",
+                "segment_count": "INTEGER NOT NULL DEFAULT 1",
+                "description": "TEXT",
+                "category": "VARCHAR(255)",
+                "tags": "JSON",
+                "effective_from": "TIMESTAMP WITHOUT TIME ZONE",
+                "effective_to": "TIMESTAMP WITHOUT TIME ZONE",
+                "status": "VARCHAR(32) NOT NULL DEFAULT 'available'",
+                "retrieval_weight": "INTEGER NOT NULL DEFAULT 1",
+                "file_path": "VARCHAR(512)",
+            },
+        )
+        # agents 表新增基础形象 / 模型参数扩展 / 记忆与高级机制字段
+        ensure_columns(
+            engine,
+            "agents",
+            {
+                "avatar": "VARCHAR(512)",
+                "greeting": "TEXT",
+                "suggested_questions": "JSON",
+                "context_turns": "INTEGER NOT NULL DEFAULT 10",
+                "enable_memory": "BOOLEAN NOT NULL DEFAULT FALSE",
+                "tone_style": "VARCHAR(32) NOT NULL DEFAULT 'professional'",
+                "variables": "JSON",
+                "tool_configs": "JSON",
+                # 启用的技能 id 列表（注入到 system prompt，见 app/agent/prompt_assembler.py）
+                "enabled_skills": "JSON",
+                # 启用的资产类型 code 列表（关联 AssetTypeTemplate.code）
+                "enabled_asset_types": "JSON",
+                # 执行引擎选择：langgraph（默认）| hermes
+                "engine": "VARCHAR(16) NOT NULL DEFAULT 'langgraph'",
+            },
+        )
+        # tools 表新增声明式 HTTP 工具支持：tool_type + http_config + category + is_preset + tags
+        ensure_columns(
+            engine,
+            "tools",
+            {
+                "tool_type": "VARCHAR(32) NOT NULL DEFAULT 'code'",
+                "http_config": "JSON",
+                "category": "VARCHAR(64)",
+                # 内置工具标记：is_preset=True 的工具不可硬删除（只能禁用），
+                # 防止容器重启后种子逻辑重新插入已被用户删除的内置工具
+                "is_preset": "BOOLEAN NOT NULL DEFAULT FALSE",
+                # 多标签：JSON 数组，如 ["安全运营", "网络资产"]，支持自定义
+                "tags": "JSON",
+            },
+        )
+        # llm_configs 表新增 model_type 列（chat / embedding），区分对话模型与向量化模型
+        ensure_columns(
+            engine,
+            "llm_configs",
+            {"model_type": "VARCHAR(32) NOT NULL DEFAULT 'chat'"},
+        )
+        # llm_configs 表新增健康状态 + 高级参数 + 启用开关（模型设置页面增强）
+        ensure_columns(
+            engine,
+            "llm_configs",
+            {
+                "health_status": "VARCHAR(32) NOT NULL DEFAULT 'untested'",
+                "last_test_at": "TIMESTAMP WITHOUT TIME ZONE",
+                "last_test_error": "TEXT",
+                "last_test_latency_ms": "INTEGER",
+                "temperature": "FLOAT",
+                "max_tokens": "INTEGER",
+                "top_p": "FLOAT",
+                "timeout": "INTEGER",
+                "max_retries": "INTEGER",
+                "org_id": "VARCHAR(128)",
+                "project_id": "VARCHAR(128)",
+                "enabled": "BOOLEAN NOT NULL DEFAULT TRUE",
+            },
+        )
+        # model_call_logs 表新增明细增强字段（请求/响应摘要、错误堆栈、来源 IP、用户、会话）
+        ensure_columns(
+            engine,
+            "model_call_logs",
+            {
+                "prompt_summary": "TEXT",
+                "response_summary": "TEXT",
+                "error_stack": "TEXT",
+                "source_ip": "VARCHAR(64)",
+                "user_id": "INTEGER",
+                "session_id": "VARCHAR(64)",
+            },
+        )
+        # skills 表新增 tags / priority 列（多标签 + 注入顺序，老库补齐）
+        ensure_columns(
+            engine,
+            "skills",
+            {
+                "tags": "JSON",
+                "priority": "INTEGER NOT NULL DEFAULT 0",
+            },
+        )
+        # backup_records 表新增备份策略相关列（名称/范围/校验/耗时/版本/过期）
+        ensure_columns(
+            engine,
+            "backup_records",
+            {
+                "completed_at": "TIMESTAMP",
+                "name": "VARCHAR(200)",
+                "note": "TEXT",
+                "scope": "VARCHAR(500) NOT NULL DEFAULT 'full'",
+                "storage_location": "VARCHAR(20) NOT NULL DEFAULT 'local'",
+                "is_encrypted": "BOOLEAN NOT NULL DEFAULT FALSE",
+                "checksum": "VARCHAR(128)",
+                "checksum_algo": "VARCHAR(20)",
+                "duration_seconds": "FLOAT",
+                "version": "VARCHAR(50)",
+                "expired": "BOOLEAN NOT NULL DEFAULT FALSE",
+            },
+        )
+        # banned_ips 表新增 source 列（来源标识：manual=手动添加，agent=智能体添加）
+        ensure_columns(
+            engine,
+            "banned_ips",
+            {"source": "VARCHAR(20) NOT NULL DEFAULT 'agent'"},
+        )
+        # banned_ips 表新增 device_id / device_name / action_response 列
+        # （手动新增/CSV 导入时调用设备 block_ip 动作，记录封禁设备与响应）
+        ensure_columns(
+            engine,
+            "banned_ips",
+            {
+                "device_id": "INTEGER",
+                "device_name": "VARCHAR(255)",
+                "action_response": "TEXT",
+            },
+        )
+        # assets 表（资产管理智能体）：首次由 create_all 建表，此处为老库补列
+        ensure_columns(
+            engine,
+            "assets",
+            {
+                "agent_id": "INTEGER NOT NULL",
+                "kb_id": "INTEGER NOT NULL DEFAULT 0",
+                "kb_name": "VARCHAR(255)",
+                "identifier": "VARCHAR(255) NOT NULL",
+                "identifier_type": "VARCHAR(32)",
+                "name": "VARCHAR(255)",
+                "asset_type": "VARCHAR(64)",
+                "department": "VARCHAR(128)",
+                "owner": "VARCHAR(128)",
+                "location": "VARCHAR(128)",
+                "ip": "VARCHAR(128)",
+                "criticality": "VARCHAR(16)",
+                "status": "VARCHAR(32) NOT NULL DEFAULT 'in_use'",
+                "extra_fields": "JSON",
+                "source": "VARCHAR(20) NOT NULL DEFAULT 'agent_add'",
+                "raw_content": "TEXT",
+                "created_at": "TIMESTAMP WITHOUT TIME ZONE",
+                "updated_at": "TIMESTAMP WITHOUT TIME ZONE",
+            },
+        )
+        # assets 表新增 type_code 列（资产类型模板代码）
+        ensure_columns(
+            engine,
+            "assets",
+            {"type_code": "VARCHAR(64)"},
+        )
+        # asset_tags 表新增 category 列（标签分类）
+        ensure_columns(
+            engine,
+            "asset_tags",
+            {"category": "VARCHAR(64)"},
+        )
+        # assets 表索引变更：从唯一索引改为普通索引
+        # 聚合模式（allow_aggregate=True）下同一标识可有多条不同部门记录，
+        # 唯一性由应用层根据模板配置控制，不再用 DB 唯一约束。
+        try:
+            with engine.begin() as conn:
+                # 删除旧索引（可能是唯一索引或普通索引）
+                conn.execute(text("DROP INDEX IF EXISTS idx_assets_agent_identifier"))
+                conn.execute(text("DROP INDEX IF EXISTS idx_assets_type_identifier"))
+                # 创建普通索引（非唯一）
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_assets_type_identifier "
+                    "ON assets (type_code, identifier)"
+                ))
+                logger.info("轻量迁移: assets 索引已变更为普通索引 (type_code, identifier)")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("assets 索引变更失败: %s", exc)
+        # asset_type_templates 表新增 allow_aggregate 列（标识聚合开关）
+        ensure_columns(
+            engine,
+            "asset_type_templates",
+            {"allow_aggregate": "BOOLEAN DEFAULT FALSE"},
+        )
+        # 一次性迁移：为 network_segment 预设模板设置 allow_aggregate=True
+        # 用 system_configs 表的标记记录是否已迁移，避免覆盖用户后续在 UI 上的修改
+        try:
+            with engine.begin() as conn:
+                row = conn.execute(
+                    text("SELECT value FROM system_configs WHERE key = 'asset_agg_migrated'")
+                ).first()
+                if not row:
+                    # 首次迁移：把 network_segment 模板的 allow_aggregate 设为 True
+                    conn.execute(text(
+                        "UPDATE asset_type_templates SET allow_aggregate = TRUE "
+                        "WHERE code = 'network_segment'"
+                    ))
+                    conn.execute(text(
+                        "INSERT INTO system_configs (key, value, description) "
+                        "VALUES ('asset_agg_migrated', '1', "
+                        "'资产标识聚合功能首次迁移标记：network_segment 默认开启聚合')"
+                    ))
+                    logger.info("轻量迁移: network_segment 模板 allow_aggregate 已设为 True (一次性)")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("network_segment allow_aggregate 迁移失败: %s", exc)
+        # knowledge_bases 表新增 embedding_config_id 列（关联 embedding 类型 LLMConfig）
+        ensure_columns(
+            engine,
+            "knowledge_bases",
+            {"embedding_config_id": "INTEGER"},
+        )
+        # knowledge_bases 表新增 asset_mapping_config 列（资产精准录入映射配置，JSON）
+        # 启用后资产扫描走受控提取引擎从分段精准提取资产
+        ensure_columns(
+            engine,
+            "knowledge_bases",
+            {"asset_mapping_config": "JSON"},
+        )
+        # agent_memories 表 GIN 索引（中文全文检索）
+        # 表本身由 Base.metadata.create_all 创建，但 GIN 索引需原生 SQL
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_agent_memories_tsv "
+                    "ON agent_memories USING gin(to_tsvector('chinese', content))"
+                ))
+                logger.info("轻量迁移: agent_memories GIN 索引已确保存在")
+        except Exception as exc:  # noqa: BLE001
+            # 中文分词配置可能不存在（如 SQLite 测试环境），降级用 ILIKE
+            logger.warning("agent_memories GIN 索引创建失败（降级为 ILIKE 检索）: %s", exc)
+        # devices 表新增连接状态、心跳、标签、认证方式、连接参数等（设备对接页面增强）
+        ensure_columns(
+            engine,
+            "devices",
+            {
+                "status": "VARCHAR(32) NOT NULL DEFAULT 'unconfigured'",
+                "last_heartbeat": "TIMESTAMP WITHOUT TIME ZONE",
+                "last_test_error": "TEXT",
+                "last_test_latency_ms": "INTEGER",
+                "tags": "TEXT NOT NULL DEFAULT '[]'",
+                "auth_type": "VARCHAR(32) NOT NULL DEFAULT 'api_key'",
+                "timeout": "INTEGER",
+                "max_retries": "INTEGER",
+                "verify_tls": "BOOLEAN NOT NULL DEFAULT FALSE",
+                "icon": "VARCHAR(32) NOT NULL DEFAULT ''",
+            },
+        )
+        # device_actions 表新增分类、风险等级、版本、调用统计、示例数据
+        ensure_columns(
+            engine,
+            "device_actions",
+            {
+                "category": "VARCHAR(32) NOT NULL DEFAULT 'other'",
+                "risk_level": "VARCHAR(32) NOT NULL DEFAULT 'readonly'",
+                "version": "INTEGER NOT NULL DEFAULT 1",
+                "last_call_at": "TIMESTAMP WITHOUT TIME ZONE",
+                "call_count_24h": "INTEGER NOT NULL DEFAULT 0",
+                "success_count_24h": "INTEGER NOT NULL DEFAULT 0",
+                "avg_latency_ms": "INTEGER",
+                "example_payload": "TEXT",
+                "example_response": "TEXT",
+            },
+        )
+        # 资源级 owner 权限控制：5 个资源表新增 created_by 列（创建者用户ID）
+        # resource_shares 表由 Base.metadata.create_all 自动创建（新表）
+        for _owner_tbl in ("workflows", "agents", "tools", "skills", "knowledge_bases"):
+            ensure_columns(engine, _owner_tbl, {"created_by": "INTEGER"})
+        # 历史数据迁移：created_by 为 NULL 的记录回填为 admin（id=1），
+        # 保证老数据有明确 owner（默认归属 admin），避免历史资源无人可编辑。
+        try:
+            with engine.begin() as conn:
+                for _owner_tbl in ("workflows", "agents", "tools", "skills", "knowledge_bases"):
+                    conn.execute(text(
+                        f"UPDATE {_owner_tbl} SET created_by = 1 WHERE created_by IS NULL"
+                    ))
+                logger.info("轻量迁移: 5 个资源表 created_by 历史数据已回填为 admin(id=1)")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("资源表 created_by 历史数据回填失败: %s", exc)
+        # service_categories 表新增 parent_id / level 列（树形目录，最多 10 级）
+        ensure_columns(
+            engine,
+            "service_categories",
+            {
+                "parent_id": "INTEGER",
+                "level": "INTEGER NOT NULL DEFAULT 1",
+            },
+        )
+        # service_categories 表 name 唯一约束 → 同级唯一（parent_id + name 普通索引）
+        # 旧表 name 列上有 unique 约束/唯一索引，需删除后改为普通索引。
+        # 同级唯一性由应用层校验，避免不同父级下同名子目录被误拒。
+        try:
+            with engine.begin() as conn:
+                # 删除 name 列上的唯一约束/索引（多种可能名称，逐一尝试）
+                for _idx_drop in (
+                    "DROP INDEX IF EXISTS ix_service_categories_name",
+                    "ALTER TABLE service_categories DROP CONSTRAINT IF EXISTS service_categories_name_key",
+                ):
+                    conn.execute(text(_idx_drop))
+                # 创建 parent_id 普通索引（ensure_columns 已建列，此处补索引）
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS ix_service_categories_parent_id "
+                    "ON service_categories (parent_id)"
+                ))
+                logger.info("轻量迁移: service_categories 树形目录列/索引已就绪")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("service_categories 索引调整失败: %s", exc)
+        # duty_leave_logs 表新增 approve_reason 列（审批意见，nullable）
+        ensure_columns(
+            engine,
+            "duty_leave_logs",
+            {"approve_reason": "TEXT"},
+        )
+        # agent_files 表新增归属隔离列：agent_id（归属智能体，NULL=公共）、
+        # created_by（上传用户 id，NULL=非用户上传）；旧文件保持 agent_id NULL 即公共
+        ensure_columns(
+            engine,
+            "agent_files",
+            {
+                "agent_id": "INTEGER",
+                "created_by": "INTEGER",
+            },
+        )
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS ix_agent_files_agent_id "
+                    "ON agent_files (agent_id)"
+                ))
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS ix_agent_files_created_by "
+                    "ON agent_files (created_by)"
+                ))
+                logger.info("轻量迁移: agent_files 归属隔离列/索引已就绪")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("agent_files 索引调整失败: %s", exc)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("轻量迁移失败（忽略继续）: %s", exc)
+    finally:
+        if locked:
+            try:
+                cursor = lock_conn.cursor()
+                cursor.execute("SELECT pg_advisory_unlock(77001)")
+                cursor.close()
+                lock_conn.commit()
+            except Exception:  # noqa: BLE001
+                pass
+        lock_conn.close()

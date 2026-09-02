@@ -1,0 +1,119 @@
+{
+  "strategy_name": "Sangfor XDR 安全告警 v1.30",
+  "device_type": "sangfor_xdr",
+  "status": "enabled",
+  "version": "1.30",
+  "route_rules": {
+    "match_type": "exact",
+    "match_field": "type",
+    "match_value": "security_alert"
+  },
+  "outer_wrapper": {
+    "data_path": "data",
+    "header_fields": ["sendTime", "tenant", "type", "version", "refreshTime", "alertType"],
+    "uuid_source": "data.uuId"
+  },
+  "field_mappings": [
+    {"source": "uuId", "target": "uuid", "type": "string", "required": true},
+    {"source": "v", "target": "data_version", "type": "int"},
+    {"source": "seqId", "target": "seq_id", "type": "string"},
+    {"source": "tenant", "target": "tenant", "type": "string"},
+    {"source": "customer", "target": "customer", "type": "string"},
+
+    {"source": "devices", "target": "devices", "type": "json_object_to_string"},
+    {"source": "agentId", "target": "agent_id", "type": "string"},
+
+    {"source": "hostIp", "target": "host_ip", "type": "comma_split_to_json"},
+    {"source": "groupId", "target": "group_id", "type": "string"},
+
+    {"source": "assetId", "target": "asset_id", "type": "string"},
+    {"source": "regionId", "target": "region_id", "type": "string"},
+    {"source": "relateAssetType", "target": "relate_asset_type", "type": "enum_int", "enum_map": "RELATE_ASSET_TYPE", "enum_target": "relate_asset_type_name"},
+    {"source": "subjectType", "target": "subject_type", "type": "json_array_to_string"},
+    {"source": "xUserName", "target": "user_name", "type": "string"},
+    {"source": "accountId", "target": "account_id", "type": "string"},
+    {"source": "accountName", "target": "account_name", "type": "string"},
+
+    {"source": "firstTimestamp", "target": "first_timestamp", "type": "timestamp_to_datetime", "timezone_field": "timeRegion"},
+    {"source": "lastTimestamp", "target": "last_timestamp", "type": "timestamp_to_datetime", "timezone_field": "timeRegion"},
+    {"source": "occurTimestamp", "target": "occur_timestamp", "type": "timestamp_to_datetime", "timezone_field": "timeRegion"},
+    {"source": "uploadTimestamp", "target": "upload_timestamp", "type": "timestamp_to_datetime", "timezone_field": "timeRegion"},
+    {"source": "uploadTime", "target": "upload_time_raw", "type": "string"},
+    {"source": "timeRegion", "target": "time_region", "type": "string"},
+
+    {"source": "attackState", "target": "attack_state", "type": "enum_int", "enum_map": "ATTACK_STATE", "enum_target": "attack_state_name"},
+    {"source": "name", "target": "alert_name", "type": "string"},
+    {"source": "description", "target": "description", "type": "string"},
+    {"source": "recommendation", "target": "recommendation", "type": "string"},
+    {"source": "riskTag", "target": "risk_tag", "type": "json_array_to_string"},
+
+    {"source": "srcIp", "target": "src_ip", "type": "json_array_to_string"},
+    {"source": "srcPort", "target": "src_port", "type": "string"},
+    {"source": "srcAssetId", "target": "src_asset_id", "type": "string"},
+    {"source": "srcIpTag", "target": "src_ip_tag", "type": "enum_int", "enum_map": "SRC_IP_TAG", "enum_target": "src_ip_tag_name"},
+    {"source": "srcRegionId", "target": "src_region_id", "type": "string"},
+    {"source": "srcRegionName", "target": "src_region_name", "type": "string"},
+    {"source": "dstIp", "target": "dst_ip", "type": "json_array_to_string"},
+    {"source": "dstPort", "target": "dst_port", "type": "string"},
+    {"source": "dstAssetId", "target": "dst_asset_id", "type": "string"},
+    {"source": "dstRegionId", "target": "dst_region_id", "type": "string"},
+    {"source": "dstRegionName", "target": "dst_region_name", "type": "string"},
+    {"source": "direction", "target": "direction", "type": "enum_int", "enum_map": "DIRECTION", "enum_target": "direction_name"},
+    {"source": "protocol", "target": "protocol", "type": "string"},
+    {"source": "xffClientIp", "target": "xff_client_ip", "type": "json_array_to_string"},
+    {"source": "xffClientIpCountry", "target": "src_country", "type": "string"},
+    {"source": "xffClientIpProvince", "target": "src_province", "type": "string"},
+    {"source": "xffClientIpCity", "target": "src_city", "type": "string"},
+
+    {"source": "riskLevel", "target": "risk_level", "type": "enum_int", "enum_map": "RISK_LEVEL", "enum_target": "risk_level_name"},
+    {"source": "severity", "target": "severity", "type": "int"},
+    {"source": "confidence", "target": "confidence", "type": "int"},
+
+    {"source": "threatClass", "target": "threat_class", "type": "string"},
+    {"source": "threatType", "target": "threat_type", "type": "string"},
+    {"source": "threatSubType", "target": "threat_sub_type", "type": "string"},
+    {"source": "threatDefine", "target": "threat_define", "type": "json_array_to_string"},
+    {"source": "stage", "target": "stage", "type": "enum_int", "enum_map": "STAGE", "enum_target": "stage_name"},
+    {"source": "attckTechnique", "target": "attck_technique", "type": "json_array_to_string"},
+
+    {"source": "dealStatus", "target": "deal_status", "type": "enum_int", "enum_map": "DEAL_STATUS", "enum_target": "deal_status_name"},
+
+    {"source": "proofType", "target": "proof_type", "type": "json_array_to_string"},
+    {"source": "proofDescription", "target": "proof_description", "type": "string"},
+    {"source": "baseContent", "target": "base_content", "type": "string"}
+  ],
+  "enum_maps": {
+    "RISK_LEVEL": {"0": "严重", "1": "高危", "2": "中危", "3": "低危", "4": "信息", "5": "未知"},
+    "RELATE_ASSET_TYPE": {"0": "主机", "1": "容器"},
+    "ATTACK_STATE": {"0": "尝试", "1": "失败", "2": "成功", "3": "失利"},
+    "SRC_IP_TAG": {"0": "内网", "1": "外网"},
+    "DIRECTION": {"0": "无", "1": "内到外", "2": "外到内", "3": "内对内"},
+    "STAGE": {"0": "默认", "10": "存在风险", "20": "扫描探测", "30": "遭受攻击", "40": "主机异常", "50": "内网扩散", "60": "C&C通信", "70": "黑产牟利", "80": "窃取数据"},
+    "DEAL_STATUS": {"0": "未处置", "10": "生成事件", "20": "已完成", "30": "已加白", "40": "已驳回", "50": "已忽略", "60": "已遏制", "70": "处置中", "80": "误报"},
+    "COMBINE_TYPE": {"0": "单N", "10": "单E", "20": "N+N", "30": "E+E", "40": "N+E"}
+  },
+  "validations": [
+    {"field": "uuid", "rule": "regex", "pattern": "^alert-\\d{10}-\\w{5}$", "severity": "warning"},
+    {"field": "src_ip", "rule": "ip_list_valid", "severity": "warning"},
+    {"field": "dst_ip", "rule": "ip_list_valid", "severity": "warning"},
+    {"field": "risk_level", "rule": "range", "min": 0, "max": 5, "severity": "warning"},
+    {"field": "severity", "rule": "range", "min": 0, "max": 100, "severity": "warning"},
+    {"field": "confidence", "rule": "range", "min": 0, "max": 100, "severity": "warning"},
+    {"field": "occur_timestamp", "rule": "positive_int", "severity": "warning"}
+  ],
+  "extension_fields": [
+    "devUId", "devUName", "logIds", "logCount",
+    "groupMapFlag", "groupMapReference",
+    "xUserUId", "xUserId", "xUserGroup", "xUserGroupId", "xUserDomain",
+    "containerName", "containerId", "clusterName", "clusterNamespace",
+    "clusterNodeName", "clusterPodName", "imageName", "imageId",
+    "srcAssetTag",
+    "srcGreIp", "srcVxlanIp", "srcVlanId", "srcMplsLabel",
+    "dstGreIp", "dstVxlanIp", "dstVlanId", "dstMplsLabel",
+    "alertRuleId", "alertEngine", "ruleIds",
+    "responseAction", "threatDetail",
+    "analysisInfo", "clusterId", "combineType", "highlight", "dealMsg",
+    "versionDetails", "pName", "processPathDetails", "extensions",
+    "logSampled", "logTraceInfo", "startCloudTs", "endCloudTs"
+  ]
+}

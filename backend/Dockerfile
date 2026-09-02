@@ -1,0 +1,54 @@
+# ===== SOAR 后端镜像 =====
+# Python 3.11 slim 基础镜像
+FROM python:3.11-slim
+
+# 设置工作目录
+WORKDIR /app
+
+# 环境变量：避免生成 .pyc、不缓冲输出（日志即时可见）
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# 安装系统依赖
+# libpq-dev：PostgreSQL 客户端库头文件（psycopg2-binary 为预编译，但保留以确保兼容）
+# gcc + libc6-dev：部分依赖（jieba 等）在 ARM64 上无预编译 wheel，需从源码编译，需要 C 标准库头文件
+# postgresql-client：pg_dump / psql 命令行工具（数据备份与恢复）
+# libjpeg-dev + zlib1g-dev：Pillow（图形验证码）编译所需的 JPEG/PNG 库头文件
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libpq-dev \
+        gcc \
+        libc6-dev \
+        postgresql-client \
+        libjpeg-dev \
+        zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# 先单独复制 requirements.txt 安装依赖，利用 Docker 缓存层
+# --mount=type=cache：pip 下载缓存跨构建持久化（QEMU 交叉构建中断后重试可复用已下载包）
+# --prefer-binary：优先使用预编译 wheel，避免在 QEMU 下从源码编译
+# --only-binary psutil：强制 psutil 使用 wheel（5.9.8 有 aarch64 abi3 wheel），避免 ~15min 的 C 编译
+# 使用国内 pip 镜像源加速下载（离线构建环境无法直连 pypi.org）
+COPY requirements.txt .
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --prefer-binary --only-binary psutil \
+        -i https://mirrors.aliyun.com/pypi/simple/ \
+        --trusted-host mirrors.aliyun.com \
+        -r requirements.txt
+
+# 构建时间戳（用于破坏缓存，确保每次构建都使用最新代码）
+ARG BUILD_DATE=unknown
+ENV BUILD_DATE=${BUILD_DATE}
+
+# 复制应用代码与入口脚本
+COPY app ./app
+COPY entrypoint.sh ./entrypoint.sh
+
+# 赋予入口脚本可执行权限
+RUN chmod +x ./entrypoint.sh
+
+# 暴露 FastAPI 服务端口
+EXPOSE 8000
+
+# 入口：等待 PG 就绪并建表，随后启动 uvicorn
+ENTRYPOINT ["./entrypoint.sh"]

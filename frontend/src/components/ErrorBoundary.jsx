@@ -1,0 +1,140 @@
+// 全局错误边界：捕获子树渲染期异常，提供友好降级 UI，避免白屏。
+//
+// 用法 1（推荐，普通包裹）：把 ErrorBoundary 包在任意子树外层
+//   import { ErrorBoundary } from './components/ErrorBoundary'
+//   <ErrorBoundary><MyWidget /></ErrorBoundary>
+//
+// 用法 2（路由级）：作为 react-router 的 errorElement
+//   import { RouteErrorFallback } from './components/ErrorBoundary'
+//   { path: '/x', element: <Page />, errorElement: <RouteErrorFallback /> }
+//
+// 用法 3（全局兜底）：包在 RouterProvider 外层
+//   <ErrorBoundary><App /></ErrorBoundary>
+//
+// 设计要点：
+// - 控制台与生产环境区分：开发环境直接显示完整错误栈，生产环境仅显示摘要
+// - 提供「重试」（reset 内部 state）与「刷新页面」（location.reload）两个动作
+// - 提供错误栈复制（剪贴板）便于反馈
+// - 尊重 prefers-reduced-motion
+import { Component, useState, useEffect } from 'react'
+import { useRouteError, useNavigate } from 'react-router-dom'
+import { AlertTriangle, RefreshCw, Copy, Check } from 'lucide-react'
+
+// 友好降级 UI：错误图标 + 标题 + 摘要 + 操作按钮
+function ErrorFallback({ error, onReset, onReload }) {
+  const isDev = import.meta.env?.DEV
+  const [copied, setCopied] = useState(false)
+  const copyStack = async () => {
+    try {
+      await navigator.clipboard.writeText(error?.stack || String(error || ''))
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // 剪贴板不可用时静默
+    }
+  }
+  return (
+    <div className="flex min-h-[60vh] w-full flex-col items-center justify-center gap-4 px-6 py-12 text-center">
+      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+        <AlertTriangle className="h-7 w-7" />
+      </div>
+      <div className="max-w-md">
+        <h2 className="text-base font-semibold text-foreground">页面出现异常</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          抱歉，页面渲染时发生错误。可尝试重试当前操作，或刷新页面后继续。
+        </p>
+      </div>
+      {isDev && error?.message && (
+        <pre className="max-h-40 w-full max-w-2xl overflow-auto rounded-md border border-border bg-muted/40 p-3 text-left text-xs text-destructive">
+          {error.message}
+          {error?.stack ? '\n\n' + error.stack : ''}
+        </pre>
+      )}
+      <div className="flex items-center gap-2">
+        {onReset && (
+          <button type="button" onClick={onReset} className="btn-secondary btn-sm">
+            <RefreshCw className="h-3.5 w-3.5" /> 重试
+          </button>
+        )}
+        <button type="button" onClick={onReload || (() => window.location.reload())} className="btn-primary btn-sm">
+          <RefreshCw className="h-3.5 w-3.5" /> 刷新页面
+        </button>
+        <button type="button" onClick={copyStack} className="btn-ghost btn-sm">
+          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+          {copied ? '已复制' : '复制错误信息'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// class 形式的错误边界（React 仍要求 class 才能使用 getDerivedStateFromError）
+export class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false, error: null }
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error }
+  }
+  componentDidCatch(error, info) {
+    // 上报到控制台，便于调试；可在此扩展远程上报
+    // eslint-disable-next-line no-console
+    console.error('[ErrorBoundary]', error, info)
+  }
+  handleReset = () => {
+    this.setState({ hasError: false, error: null })
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <ErrorFallback
+          error={this.state.error}
+          onReset={this.handleReset}
+        />
+      )
+    }
+    return this.props.children
+  }
+}
+
+// 路由级错误降级：用 useRouteError 取错误
+// 作为 react-router errorElement 使用
+export function RouteErrorFallback() {
+  const error = useRouteError()
+  const navigate = useNavigate()
+  useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.error('[RouteError]', error)
+  }, [error])
+  // 401 → 跳登录（与全局 token 失效语义对齐）
+  if (error?.status === 401) {
+    setTimeout(() => navigate('/login', { replace: true }), 0)
+    return null
+  }
+  // 404 → 显示专门的「页面不存在」
+  if (error?.status === 404) {
+    return (
+      <div className="flex min-h-[60vh] w-full flex-col items-center justify-center gap-4 px-6 py-12 text-center">
+        <div className="text-5xl font-bold text-muted-foreground/40">404</div>
+        <div className="max-w-md">
+          <h2 className="text-base font-semibold text-foreground">页面不存在</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            你访问的页面可能已被移除或地址有误。
+          </p>
+        </div>
+        <button type="button" onClick={() => navigate('/dashboard', { replace: true })} className="btn-primary btn-sm">
+          返回运营大屏
+        </button>
+      </div>
+    )
+  }
+  return (
+    <ErrorFallback
+      error={error}
+      onReload={() => navigate('/dashboard', { replace: true })}
+    />
+  )
+}
+
+export default ErrorBoundary

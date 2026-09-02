@@ -1,0 +1,178 @@
+# ============================================================================
+# SOAR 平台安全服务栈：DefectDojo 漏洞管理 + BloodHound CE 攻击路径分析
+#
+# 说明：
+#   - 与 dev 环境共享外部网络 config_default，SOAR 后端容器可按容器名直连
+#     （security_tools.py 中 DEFECTDOJO_URL / BLOODHOUND_URL 默认地址）
+#   - 数据使用独立命名卷，与业务库（soar-postgres）完全隔离
+#   - 启动：docker compose -f docker-compose.security-tools.yml up -d
+#   - 首次启动 defectdojo-initializer 会建库并创建管理员（一次性任务）
+#
+# 默认账号（开发环境，请按需修改）：
+#   DefectDojo  admin / DefectDojo@2024
+#   BloodHound  admin / BloodHound@2024
+# ============================================================================
+services:
+  # ---------- DefectDojo：PostgreSQL ----------
+  defectdojo-db:
+    image: postgres:15
+    container_name: soar-defectdojo-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: defectdojo
+      POSTGRES_PASSWORD: defectdojo
+      POSTGRES_DB: defectdojo
+    volumes:
+      - defectdojo_pgdata:/var/lib/postgresql/data
+    networks: [soar-net]
+
+  # ---------- DefectDojo：Redis ----------
+  defectdojo-redis:
+    image: redis:7.4-alpine
+    container_name: soar-defectdojo-redis
+    restart: unless-stopped
+    networks: [soar-net]
+
+  # ---------- DefectDojo：RabbitMQ ----------
+  defectdojo-rabbitmq:
+    image: rabbitmq:3.13-alpine
+    container_name: soar-defectdojo-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: defectdojo
+      RABBITMQ_DEFAULT_PASS: defectdojo
+    networks: [soar-net]
+
+  # ---------- DefectDojo：初始化（一次性） ----------
+  defectdojo-initializer:
+    image: defectdojo/defectdojo-django:latest
+    container_name: soar-defectdojo-initializer
+    depends_on: [defectdojo-db, defectdojo-rabbitmq, defectdojo-redis]
+    entrypoint: ['/bin/sh', '-c',
+                 '/wait-for-it.sh soar-defectdojo-db:5432 -t 60 -s && /wait-for-it.sh soar-defectdojo-rabbitmq:5672 -t 60 -s -- /entrypoint-initializer.sh']
+    environment: &dd-env
+      DD_DATABASE_URL: postgres://defectdojo:defectdojo@soar-defectdojo-db:5432/defectdojo
+      DD_CELERY_BROKER_USER: defectdojo
+      DD_CELERY_BROKER_PASSWORD: defectdojo
+      DD_CELERY_BROKER_HOST: soar-defectdojo-rabbitmq
+      DD_SECRET_KEY: soar-dd-secret-key-2024-dev
+      DD_CREDENTIAL_AES_256_KEY: 'c2VjdXJpdHlfdG9vbHNfYWVzXzI1Nl9rZXlfZGV2'
+      DD_ADMIN_FIRST_NAME: Admin
+      DD_ADMIN_LAST_NAME: User
+      DD_ADMIN_MAIL: admin@example.com
+      DD_ADMIN_USERNAME: admin
+      DD_ADMIN_PASSWORD: DefectDojo@2024
+      DD_ALLOWED_HOSTS: '*'
+    restart: 'no'
+    networks: [soar-net]
+
+  # ---------- DefectDojo：uWSGI 应用 ----------
+  defectdojo-uwsgi:
+    image: defectdojo/defectdojo-django:latest
+    container_name: soar-defectdojo-uwsgi
+    depends_on: [defectdojo-initializer, defectdojo-db, defectdojo-rabbitmq, defectdojo-redis]
+    entrypoint: ['/wait-for-it.sh', 'soar-defectdojo-db:5432', '-t', '60', '-s', '--', '/entrypoint-uwsgi.sh']
+    environment: *dd-env
+    restart: unless-stopped
+    # 内存上限：uwsgi master 长期运行会慢性增长（ORM 缓存驻留），
+    # 超限时内核只杀本容器（自动重启），不会拖垮宿主机
+    mem_limit: 4g
+    memswap_limit: 4g
+    networks:
+      soar-net:
+        aliases:
+          # nginx 容器内 upstream 配置引用 "uwsgi:3031"，需 DNS 别名
+          - uwsgi
+
+  # ---------- DefectDojo：Celery Worker ----------
+  defectdojo-celeryworker:
+    image: defectdojo/defectdojo-django:latest
+    container_name: soar-defectdojo-celeryworker
+    depends_on: [defectdojo-uwsgi]
+    entrypoint: ['/wait-for-it.sh', 'soar-defectdojo-rabbitmq:5672', '-t', '60', '-s', '--', '/entrypoint-celery-worker.sh']
+    environment: *dd-env
+    restart: unless-stopped
+    mem_limit: 1g
+    memswap_limit: 1g
+    networks: [soar-net]
+
+  # ---------- DefectDojo：Celery Beat ----------
+  defectdojo-celerybeat:
+    image: defectdojo/defectdojo-django:latest
+    container_name: soar-defectdojo-celerybeat
+    depends_on: [defectdojo-uwsgi]
+    entrypoint: ['/wait-for-it.sh', 'soar-defectdojo-rabbitmq:5672', '-t', '60', '-s', '--', '/entrypoint-celery-beat.sh']
+    environment: *dd-env
+    restart: unless-stopped
+    mem_limit: 512m
+    memswap_limit: 512m
+    networks: [soar-net]
+
+  # ---------- DefectDojo：Nginx 入口（SOAR 后端从此访问） ----------
+  defectdojo-nginx:
+    image: defectdojo/defectdojo-nginx:latest
+    container_name: soar-defectdojo
+    depends_on: [defectdojo-uwsgi]
+    restart: unless-stopped
+    mem_limit: 256m
+    ports:
+      - '127.0.0.1:8090:8080'
+    networks: [soar-net]
+
+  # ---------- BloodHound CE：应用状态库 PostgreSQL ----------
+  bloodhound-appdb:
+    # BloodHound CE 迁移要求 PostgreSQL 16+（STORAGE 子句兼容性）
+    image: postgres:16
+    container_name: soar-bloodhound-appdb
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bloodhound
+      POSTGRES_PASSWORD: bloodhoundcommunityedition
+      POSTGRES_DB: bloodhound
+    volumes:
+      - bloodhound_pgdata:/var/lib/postgresql/data
+    networks: [soar-net]
+
+  # ---------- BloodHound CE：Neo4j 图数据库 ----------
+  bloodhound-neo4j:
+    image: neo4j:4.4.42
+    container_name: soar-bloodhound-neo4j
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: neo4j/bloodhoundcommunityedition
+      NEO4J_dbms_memory_pagecache_size: 1G
+      NEO4J_dbms_memory_heap_max__size: 1G
+      NEO4J_dbms_allow__upgrade: 'true'
+    volumes:
+      - bloodhound_neo4j:/data
+    # Neo4j 已配置 heap 1G + pagecache 1G，容器上限留出余量防超发
+    mem_limit: 2g
+    memswap_limit: 2g
+    networks: [soar-net]
+
+  # ---------- BloodHound CE：应用（SOAR 后端从此访问） ----------
+  # 官方镜像已从 ghcr.io 迁至 Docker Hub（specterops/bloodhound）
+  bloodhound:
+    image: specterops/bloodhound:latest
+    container_name: soar-bloodhound
+    depends_on: [bloodhound-appdb, bloodhound-neo4j]
+    restart: unless-stopped
+    environment:
+      bhe_graph_driver: neo4j
+      bhe_database_connection: 'user=bloodhound password=bloodhoundcommunityedition dbname=bloodhound host=soar-bloodhound-appdb'
+      bhe_neo4j_connection: 'neo4j://neo4j:bloodhoundcommunityedition@soar-bloodhound-neo4j:7687/'
+      bhe_default_admin_email_address: admin
+      bhe_default_admin_password: BloodHound@2024
+    ports:
+      - '127.0.0.1:8091:8080'
+    networks: [soar-net]
+
+networks:
+  soar-net:
+    external: true
+    name: config_default
+
+volumes:
+  defectdojo_pgdata:
+  bloodhound_neo4j:
+  bloodhound_pgdata:

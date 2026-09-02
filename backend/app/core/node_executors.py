@@ -1,0 +1,1252 @@
+"""节点执行器集合。
+
+为工作流图中的每种节点类型实现异步执行器，签名统一为::
+
+    async def execute_xxx(node_data, input_data, ctx, log) -> dict
+
+其中 ``log`` 为 ``Callable[[str, str, str], None]``，参数依次为
+``(node_id, level, message)``。执行器从 ``node_data`` 读取节点配置，
+从 ``input_data`` / ``ctx`` 读取输入，返回输出字典。
+"""
+import logging
+from typing import Any, Callable
+
+from app.devices.firewall import block_ip_on_firewall
+
+logger = logging.getLogger(__name__)
+
+# 日志级别常量
+_INFO = "info"
+_WARN = "warning"
+_ERROR = "error"
+
+# 时长单位 -> 缩写映射（用于 block_ip duration 拼装）
+_UNIT_ABBR = {
+    "seconds": "s", "second": "s", "sec": "s", "s": "s",
+    "minutes": "m", "minute": "m", "min": "m", "m": "m",
+    "hours": "h", "hour": "h", "h": "h",
+    "days": "d", "day": "d", "d": "d",
+}
+
+
+def _node_id(node_data: dict) -> str:
+    """从 node_data 安全取节点 id（由 runner 注入）。"""
+    return str(node_data.get("id", "") or node_data.get("node_id", "") or "unknown")
+
+
+def _resolve_variable(ctx: dict, path: str) -> Any:
+    """按点号路径从 ctx 取值，如 ``agent_decision.target_ip``。
+
+    支持字典与对象属性。任一段缺失返回 ``None``。
+    """
+    if not path:
+        return None
+    current: Any = ctx
+    for segment in str(path).split("."):
+        if current is None:
+            return None
+        if isinstance(current, dict):
+            current = current.get(segment)
+        else:
+            current = getattr(current, segment, None)
+    return current
+
+
+def _safe_ctx(ctx: dict) -> dict:
+    """返回 ctx 的可序列化浅拷贝（过滤内部字段，转 JSON 安全类型）。"""
+    import json
+
+    if not isinstance(ctx, dict):
+        return {}
+    safe = {k: v for k, v in ctx.items() if not k.startswith("_")}
+    try:
+        # 用 json.dumps + loads 规范化（剔除不可序列化对象）
+        return json.loads(json.dumps(safe, default=str, ensure_ascii=False))
+    except Exception:  # noqa: BLE001
+        return {k: str(v) for k, v in safe.items()}
+
+
+def _compare(actual: Any, operator: str, expected: Any) -> bool:
+    """按操作符比较 actual 与 expected，返回布尔结果。
+
+    支持 ==,!=,>,<,>=,<=,contains,not_contains,starts_with,ends_with,
+    is_empty,is_not_empty。
+    """
+    if operator == "==":
+        return str(actual) == str(expected)
+    if operator == "!=":
+        return str(actual) != str(expected)
+    if operator in (">", "<", ">=", "<="):
+        try:
+            a = float(actual)
+            b = float(expected)
+        except (TypeError, ValueError):
+            return False
+        if operator == ">":
+            return a > b
+        if operator == "<":
+            return a < b
+        if operator == ">=":
+            return a >= b
+        if operator == "<=":
+            return a <= b
+    if operator == "contains":
+        return str(expected) in str(actual) if actual is not None else False
+    if operator == "not_contains":
+        return str(expected) not in str(actual) if actual is not None else True
+    if operator == "starts_with":
+        return str(actual).startswith(str(expected)) if actual is not None else False
+    if operator == "ends_with":
+        return str(actual).endswith(str(expected)) if actual is not None else False
+    if operator == "is_empty":
+        return actual in (None, "", [], {}, ())
+    if operator == "is_not_empty":
+        return actual not in (None, "", [], {}, ())
+    logger.warning("未知操作符，按 False 处理: %s", operator)
+    return False
+
+
+async def execute_webhook_trigger(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    """webhook_trigger：记录收到数据并返回 payload。"""
+    nid = _node_id(node_data)
+    log(nid, _INFO, f"webhook_trigger 收到数据: {input_data}")
+    return {"payload": input_data}
+
+
+async def execute_http_request(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    """http_request：用 httpx 真实发起 HTTP 请求，支持超时与重试。
+
+    node_data 字段：method/url/headers/query/body/auth/timeout/retry。
+    """
+    nid = _node_id(node_data)
+    try:
+        import httpx
+    except ImportError as exc:  # noqa: BLE001
+        log(nid, _ERROR, "httpx 未安装，无法发起 HTTP 请求")
+        return {"error": "httpx not installed", "status": None}
+
+    method = (node_data.get("method") or "GET").upper()
+    url = node_data.get("url") or ""
+    headers = node_data.get("headers") or {}
+    query = node_data.get("query") or None
+    body = node_data.get("body")
+    auth_cfg = node_data.get("auth")
+    timeout = node_data.get("timeout") or 10
+    retry = int(node_data.get("retry") or 0)
+
+    log(nid, _INFO, f"HTTP {method} -> {url}")
+
+    # 组装 auth
+    auth = None
+    if auth_cfg and isinstance(auth_cfg, dict):
+        if auth_cfg.get("type") == "basic":
+            auth = (auth_cfg.get("username", ""), auth_cfg.get("password", ""))
+        elif auth_cfg.get("type") == "bearer":
+            headers = {**headers, "Authorization": f"Bearer {auth_cfg.get('token', '')}"}
+
+    last_error: str = ""
+    for attempt in range(retry + 1):
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.request(
+                    method, url, headers=headers, params=query, json=body if body is not None else None, auth=auth
+                )
+            log(nid, _INFO, f"HTTP 响应 status={resp.status_code}")
+            try:
+                resp_body = resp.json()
+            except Exception:  # noqa: BLE001
+                resp_body = resp.text
+            return {
+                "status": resp.status_code,
+                "headers": dict(resp.headers),
+                "body": resp_body,
+            }
+        except Exception as exc:  # noqa: BLE001
+            last_error = str(exc)
+            log(nid, _WARN, f"HTTP 请求失败(第{attempt + 1}次): {exc}")
+            if attempt >= retry:
+                break
+    log(nid, _ERROR, f"HTTP 请求最终失败: {last_error}")
+    return {"error": last_error, "status": None}
+
+
+async def execute_ai_agent(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    """ai_agent：调用**已创建的智能体**进行推理，返回响应。
+
+    工作流的 AI 智能体节点不再在节点内重新配置模型/提示词/工具，而是引用
+    「智能体管理」中已创建的 Agent（``agent_id``），复用其完整配置（模型、
+    系统提示词、工具、知识库、技能等）。节点仅需配置：
+    - ``agent_id``：要调用的智能体 ID
+    - ``user_prompt``：输入提示词，支持 ``${node_id.field}`` 引用上游节点输出
+
+    执行流程：
+    1. 解析 user_prompt 中的 ``${node.field}`` 变量引用。
+    2. 从 DB 加载 Agent。
+    3. 根据 ``agent.engine`` 走对应路径：
+       - ``hermes``：``HermesAgentExecutor.run()`` 收集 done 事件 content
+       - ``langgraph``：无工具走纯对话，有工具走 ``run_agent_decision``
+    4. 返回 ``{"response": <回复文本>, "messages": [...]}``，并合并到 ctx。
+
+    向后兼容：若 node_data 仍含旧字段（system_prompt/model 等）且无 agent_id，
+    回退到旧的 run_agent_decision 调用，避免存量工作流中断。
+    """
+    import json
+    import re
+
+    nid = _node_id(node_data)
+    agent_id = node_data.get("agent_id")
+    user_prompt_template = node_data.get("user_prompt") or ""
+
+    # 变量解析：${node.field} → ctx 中的值
+    var_pattern = re.compile(r"\$\{([\w.]+)\}")
+
+    def _render(text: str) -> str:
+        if not text:
+            return ""
+        return var_pattern.sub(
+            lambda m: str(_resolve_variable(ctx, m.group(1)) or ""), text
+        )
+
+    user_message = _render(user_prompt_template)
+    if not user_message:
+        # user_prompt 留空时，用上游输入作为消息内容
+        if isinstance(input_data, str):
+            user_message = input_data
+        elif isinstance(input_data, dict):
+            user_message = json.dumps(input_data, ensure_ascii=False, default=str)
+        else:
+            user_message = str(input_data or "")
+
+    # ===== 旧逻辑兼容：无 agent_id 时回退到 run_agent_decision =====
+    if not agent_id:
+        log(nid, _WARN, "ai_agent 节点未配置 agent_id，回退到旧决策逻辑（建议选择已创建的智能体）")
+        from app.agent.decision import run_agent_decision
+
+        result = await run_agent_decision(
+            alert_data=input_data,
+            enabled_tools=node_data.get("enabled_tools"),
+            system_prompt=node_data.get("system_prompt") or None,
+            temperature=node_data.get("temperature"),
+            max_tokens=node_data.get("max_tokens"),
+            max_iterations=node_data.get("max_iterations"),
+            model_name=node_data.get("model") or None,
+        )
+        ctx["decision"] = result.get("decision")
+        ctx["agent_decision"] = result
+        ctx["agent_messages"] = result.get("messages", [])
+        return result
+
+    # ===== 新逻辑：按 agent_id 加载智能体并执行 =====
+    from app.database import SessionLocal
+    from app.models.agent import Agent
+
+    db = SessionLocal()
+    try:
+        agent = db.query(Agent).filter(Agent.id == int(agent_id)).first()
+        if agent is None:
+            log(nid, _ERROR, f"智能体不存在: agent_id={agent_id}")
+            return {"response": "", "error": f"Agent {agent_id} not found"}
+
+        log(nid, _INFO, f"调用智能体: id={agent.id}, name={agent.name}, engine={agent.engine}, msg_len={len(user_message)}")
+
+        engine = (agent.engine or "langgraph").lower()
+        if engine == "hermes":
+            result = await _run_hermes_agent(db, agent, user_message, nid, log)
+        else:
+            result = await _run_langgraph_agent(db, agent, user_message, nid, log)
+
+        # 合并到 ctx，供下游 condition_branch / block_ip 等节点引用
+        ctx["agent_response"] = result.get("response")
+        ctx["agent_decision"] = result
+        ctx["decision"] = result.get("decision") or result.get("response")
+        ctx["agent_messages"] = result.get("messages", [])
+        return result
+    finally:
+        db.close()
+
+
+async def _run_hermes_agent(db, agent, user_message: str, nid: str, log) -> dict:
+    """Hermes 引擎：迭代 SSE 事件，提取最终 done 事件的 content 作为回复。
+
+    工作流执行无具体 HTTP 请求上下文，取 DB 中第一个用户作为系统用户
+    （仅用于记忆/权限隔离的分区键），失败则用占位用户。
+    """
+    from types import SimpleNamespace
+
+    from app.agent.hermes import HermesAgentExecutor
+
+    # 取系统用户作为执行主体（工作流无具体用户）
+    try:
+        from app.models.user import User
+
+        sys_user = db.query(User).first()
+    except Exception:  # noqa: BLE001
+        sys_user = None
+    if sys_user is None:
+        sys_user = SimpleNamespace(id=0, username="workflow-system")
+
+    try:
+        executor = HermesAgentExecutor(db=db, agent=agent, user=sys_user)
+    except Exception as exc:  # noqa: BLE001
+        log(nid, _ERROR, f"Hermes 执行器创建失败: {exc}")
+        return {"response": "", "error": str(exc)}
+
+    final_text = ""
+    try:
+        async for event in executor.run(user_message, session_id=f"wf_agent_{agent.id}"):
+            etype = event.get("type")
+            if etype == "done":
+                final_text = event.get("content", "") or final_text
+            elif etype == "error":
+                msg = event.get("message", "hermes error")
+                log(nid, _ERROR, f"Hermes 执行错误: {msg}")
+                return {"response": "", "error": msg}
+    except Exception as exc:  # noqa: BLE001
+        log(nid, _ERROR, f"Hermes 执行异常: {exc}")
+        return {"response": "", "error": str(exc)}
+
+    log(nid, _INFO, f"Hermes 智能体执行完成, response_len={len(final_text)}")
+    return {"response": final_text, "messages": []}
+
+
+async def _run_langgraph_agent(db, agent, user_message: str, nid: str, log) -> dict:
+    """LangGraph 引擎：无工具走纯对话，有工具走 run_agent_decision。
+
+    复用 agents.py 的 ``_create_llm`` 与 ``assemble_system_prompt``，保证与
+    智能体测试/对话端点的行为一致。
+    """
+    from app.agent.decision import run_agent_decision
+    from app.agent.prompt_assembler import assemble_system_prompt
+    from app.api.v1.agents import _create_llm
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    has_tools = bool(agent.enabled_tools) or bool(agent.enabled_kbs)
+
+    # ===== 无工具：纯 LLM 对话 =====
+    if not has_tools:
+        llm, err = _create_llm(agent, db)
+        if llm is None:
+            log(nid, _ERROR, f"LLM 创建失败: {err}")
+            return {"response": "", "error": err}
+        system_prompt = assemble_system_prompt(
+            db, agent, fallback_prompt="你是一个智能助手，请根据用户输入给出有帮助的回答。"
+        )
+        messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_message)]
+        try:
+            ai_msg = await llm.ainvoke(messages)
+            reply = ai_msg.content if hasattr(ai_msg, "content") else str(ai_msg)
+        except Exception as exc:  # noqa: BLE001
+            log(nid, _ERROR, f"LLM 调用失败: {exc}")
+            return {"response": "", "error": str(exc)}
+        log(nid, _INFO, f"纯对话完成, response_len={len(reply)}")
+        return {"response": reply, "messages": []}
+
+    # ===== 有工具：Agent 决策 =====
+    import json
+
+    alert_data = {"input": user_message}
+    try:
+        parsed = json.loads(user_message)
+        if isinstance(parsed, dict):
+            alert_data = parsed
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    log(nid, _INFO, f"Agent 决策模式, tools={agent.enabled_tools}, kbs={agent.enabled_kbs}")
+    try:
+        result = await run_agent_decision(
+            alert_data=alert_data,
+            enabled_tools=agent.enabled_tools or [],
+            enabled_kbs=agent.enabled_kbs or [],
+            model_config_id=agent.model_config_id,
+            system_prompt=assemble_system_prompt(db, agent, allow_none=True),
+            temperature=agent.temperature,
+            max_tokens=agent.max_tokens,
+            max_iterations=agent.max_iterations,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log(nid, _ERROR, f"Agent 决策失败: {exc}")
+        return {"response": "", "error": str(exc)}
+
+    # 提取回复文本：优先 response，其次 decision，最后从 messages 取 AI 消息
+    response = result.get("response") or result.get("decision") or ""
+    if not response:
+        for m in reversed(result.get("messages", [])):
+            if m.get("role") in ("ai", "assistant") and m.get("content"):
+                response = m["content"]
+                break
+    log(nid, _INFO, f"Agent 决策完成, decision={result.get('decision')}, response_len={len(response)}")
+    return {
+        "response": response,
+        "decision": result.get("decision"),
+        "messages": result.get("messages", []),
+    }
+
+
+async def execute_condition_branch(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    """condition_branch：if_else / switch 两种模式，输出 ``_route``。
+
+    _route 值与前端 Handle ID 对齐：
+    - switch 模式：命中第 i 个 case → ``br_{i}``；未命中 → ``default``
+    - if_else 模式：满足 → ``true``；不满足 → ``false``
+    这样 edge.sourceHandle 与 _route 能正确匹配。
+    """
+    nid = _node_id(node_data)
+    mode = node_data.get("mode") or "if_else"
+
+    if mode == "switch":
+        cases = node_data.get("cases") or []
+        for idx, case in enumerate(cases):
+            variable = case.get("variable", "")
+            operator = case.get("operator", "==")
+            value = case.get("value")
+            actual = _resolve_variable(ctx, variable)
+            if _compare(actual, operator, value):
+                label = case.get("label", f"分支{idx + 1}")
+                route = f"br_{idx}"
+                log(nid, _INFO, f"switch 命中分支: {label} → {route}")
+                ctx["_route"] = route
+                return {"_route": route, "_matched_label": label}
+        log(nid, _INFO, "switch 未命中任何 case，走 default")
+        ctx["_route"] = "default"
+        return {"_route": "default"}
+
+    # if_else 模式
+    conditions = node_data.get("conditions") or []
+    logic = (node_data.get("logic") or "AND").upper()
+    results = []
+    for cond in conditions:
+        variable = cond.get("variable", "")
+        operator = cond.get("operator", "==")
+        value = cond.get("value")
+        actual = _resolve_variable(ctx, variable)
+        results.append(_compare(actual, operator, value))
+    if logic == "OR":
+        satisfied = any(results)
+    else:
+        satisfied = all(results) if results else False
+    route = "true" if satisfied else "false"
+    log(nid, _INFO, f"if_else 评估结果={satisfied}, route={route}")
+    ctx["_route"] = route
+    return {"_route": route, "_satisfied": satisfied}
+
+
+async def execute_block_ip(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    """block_ip：调用防火墙封禁/解封。
+
+    node_data 字段：target_ip/value/unit/reason/action(block|unblock)。
+    target_ip 缺省时从 ctx.agent_decision 或 input_data.src_ip 取。
+    """
+    nid = _node_id(node_data)
+    agent_decision = ctx.get("agent_decision") or {}
+    target_ip = (
+        node_data.get("target_ip")
+        or agent_decision.get("target_ip")
+        or (input_data or {}).get("src_ip")
+        or "unknown"
+    )
+    reason = node_data.get("reason") or agent_decision.get("reason") or "auto block by SOAR"
+    value = node_data.get("value")
+    unit = node_data.get("unit") or "h"
+    duration = f"{value}{_UNIT_ABBR.get(unit, 'h')}" if value is not None else agent_decision.get("duration", "24h")
+    action = (node_data.get("action") or "block").lower()
+
+    if action == "unblock":
+        # 当前防火墙 mock 未提供解封能力，记录日志即可
+        log(nid, _WARN, f"解封 IP {target_ip}：当前设备未实现解封接口，仅记录")
+        return {"status": "logged", "action": "unblock", "ip": target_ip, "reason": reason}
+
+    log(nid, _INFO, f"封禁 IP: {target_ip}, duration={duration}, reason={reason}")
+    result = await block_ip_on_firewall(target_ip, duration, reason)
+    log(nid, _INFO, f"封禁结果: {result.get('status')}, rule_id={result.get('rule_id')}")
+    ctx["block_result"] = result
+    return result
+
+
+async def execute_send_notification(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    """send_notification：按 channel 发送通知。
+
+    支持渠道：
+    - **email**：通过 SMTP 真实发送邮件。需配置 smtp_host/port/use_ssl/username/
+      password（QQ 邮箱填授权码）/from_email/recipients/cc/subject/body。
+      subject/body 中的 ``{{变量路径}}`` 会从 ctx 解析后替换。
+    - **webhook**：用 httpx POST 到指定 URL（含 auth headers）。
+    - **im** / **sms**：记录日志，预留对接企业微信/钉钉/短信网关。
+
+    node_data 字段（email）：smtp_host/smtp_port/use_ssl/smtp_username/smtp_password/
+    from_email/recipients/cc/subject/body/charset。
+    """
+    nid = _node_id(node_data)
+    channel = node_data.get("channel") or "email"
+    severity = node_data.get("severity") or "info"
+
+    # 变量解析辅助：把 {{a.b.c}} 替换为 ctx 中的值
+    def _render(text: str) -> str:
+        if not text or not isinstance(text, str):
+            return text or ""
+        import re
+        pattern = re.compile(r"\{\{\s*([\w.]+)\s*\}\}")
+
+        def repl(m):
+            return str(_resolve_variable(ctx, m.group(1)) or "")
+
+        return pattern.sub(repl, text)
+
+    subject = _render(node_data.get("subject") or "")
+    body = _render(node_data.get("body") or "")
+
+    if channel == "email":
+        smtp_host = node_data.get("smtp_host") or ""
+        smtp_port = int(node_data.get("smtp_port") or 465)
+        use_ssl = node_data.get("use_ssl")
+        # use_ssl 可能是 bool 或字符串；兼容前端传 "true"/"false"
+        if isinstance(use_ssl, str):
+            use_ssl = use_ssl.lower() in ("true", "1", "yes", "on")
+        use_ssl = bool(use_ssl) if use_ssl is not None else (smtp_port == 465)
+        smtp_username = node_data.get("smtp_username") or ""
+        smtp_password = node_data.get("smtp_password") or ""
+        from_email = node_data.get("from_email") or smtp_username
+        recipients_raw = node_data.get("recipients") or ""
+        cc_raw = node_data.get("cc") or ""
+        charset = node_data.get("charset") or "utf-8"
+
+        recipients = [r.strip() for r in str(recipients_raw).split(",") if r.strip()]
+        cc = [r.strip() for r in str(cc_raw).split(",") if r.strip()]
+
+        if not smtp_host:
+            log(nid, _ERROR, "邮件发送失败：未配置 SMTP 服务器")
+            return {"sent": False, "error": "SMTP host not configured", "channel": channel}
+        if not recipients:
+            log(nid, _ERROR, "邮件发送失败：未配置收件人")
+            return {"sent": False, "error": "no recipients", "channel": channel}
+        if not smtp_username or not smtp_password:
+            log(nid, _ERROR, "邮件发送失败：未配置 SMTP 用户名/密码（QQ 邮箱需填授权码）")
+            return {"sent": False, "error": "SMTP credentials not configured", "channel": channel}
+
+        log(
+            nid,
+            _INFO,
+            f"发送邮件: host={smtp_host}:{smtp_port}, ssl={use_ssl}, "
+            f"from={from_email}, to={recipients}, cc={cc}, subject={subject}",
+        )
+
+        try:
+            import smtplib
+            import ssl
+            import socket
+            from email.mime.multipart import MIMEMultipart
+            from email.mime.text import MIMEText
+        except ImportError as exc:  # noqa: BLE001
+            log(nid, _ERROR, f"邮件依赖未安装: {exc}")
+            return {"sent": False, "error": "smtplib not installed", "channel": channel}
+
+        # 构造 MIME 邮件
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = from_email
+        msg["To"] = ", ".join(recipients)
+        if cc:
+            msg["Cc"] = ", ".join(cc)
+        msg.attach(MIMEText(body, "plain", charset))
+
+        # 同步发送邮件的内部函数（在 thread pool 中执行，避免阻塞事件循环）
+        # 改用标准库 smtplib 替代 aiosmtplib，解决 Docker 容器中 TLS 握手
+        # 不稳定 / Connection lost 问题（QQ 邮箱 465 端口需 SMTP_SSL 直连）
+        # 每一步都记录日志，便于定位「Connection unexpectedly closed」的失败阶段
+        def _send_smtp_sync():
+            smtp_timeout = 30
+            # 注意：不使用 socket.setdefaulttimeout()（全局副作用），仅用连接级 timeout
+            context = ssl.create_default_context()
+            server = None
+            try:
+                # 步骤 1：建立连接
+                if use_ssl:
+                    server = smtplib.SMTP_SSL(
+                        smtp_host, smtp_port, timeout=smtp_timeout, context=context
+                    )
+                else:
+                    server = smtplib.SMTP(smtp_host, smtp_port, timeout=smtp_timeout)
+                log(nid, _INFO, "SMTP 步骤1: 连接建立成功")
+
+                # 步骤 2：EHLO
+                code, _resp = server.ehlo()
+                log(nid, _INFO, f"SMTP 步骤2: EHLO 返回码={code}")
+                if code != 250:
+                    raise RuntimeError(f"EHLO 失败, 返回码={code}")
+
+                # 非 SSL 需升级 STARTTLS
+                if not use_ssl:
+                    server.starttls(context=context)
+                    server.ehlo()
+                    log(nid, _INFO, "SMTP 步骤2b: STARTTLS 升级完成")
+
+                # 步骤 3：登录（QQ 邮箱此处最易失败：授权码错误 / SMTP 未开启）
+                try:
+                    server.login(smtp_username, smtp_password)
+                except smtplib.SMTPAuthenticationError as auth_exc:
+                    log(nid, _ERROR, f"SMTP 步骤3: 认证失败 {auth_exc}")
+                    raise RuntimeError(
+                        f"SMTP 认证失败（请检查：1)QQ邮箱设置→账户→开启SMTP服务；"
+                        f"2)密码栏填16位授权码而非QQ密码；3)发件人地址与登录账号一致）"
+                    ) from auth_exc
+                except smtplib.SMTPServerDisconnected as disc_exc:
+                    log(nid, _ERROR, f"SMTP 步骤3: 登录时连接被关闭 {disc_exc}")
+                    raise RuntimeError(
+                        f"SMTP 登录时服务器关闭连接（常见原因：授权码错误、SMTP服务未开启、"
+                        f"或账号被临时锁定。请到QQ邮箱→设置→账户→POP3/SMTP服务 确认已开启并使用最新授权码）"
+                    ) from disc_exc
+                log(nid, _INFO, "SMTP 步骤3: 登录成功")
+
+                # 步骤 4：发送邮件
+                server.sendmail(from_email, recipients + cc, msg.as_string())
+                log(nid, _INFO, "SMTP 步骤4: 邮件投递成功")
+            finally:
+                if server:
+                    try:
+                        server.quit()
+                    except Exception:  # noqa: BLE001
+                        pass
+
+        try:
+            import asyncio
+            # 在默认线程池中执行同步 SMTP 调用，避免阻塞 async 工作流执行
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, _send_smtp_sync)
+            log(nid, _INFO, f"邮件发送成功: {len(recipients)} 收件人")
+            return {
+                "sent": True,
+                "channel": "email",
+                "subject": subject,
+                "recipients": recipients,
+                "cc": cc,
+                "severity": severity,
+            }
+        except Exception as exc:  # noqa: BLE001
+            import traceback
+            log(nid, _ERROR, f"邮件发送失败: {type(exc).__name__}: {exc}")
+            log(nid, _ERROR, f"SMTP 详情: host={smtp_host}:{smtp_port}, tls={use_ssl}, user={smtp_username}")
+            log(nid, _ERROR, traceback.format_exc(limit=3))
+            return {"sent": False, "error": str(exc), "error_type": type(exc).__name__, "channel": "email"}
+
+    if channel == "webhook":
+        url = node_data.get("webhook_url") or ""
+        if not url:
+            log(nid, _ERROR, "webhook 发送失败：未配置 URL")
+            return {"sent": False, "error": "no webhook url", "channel": channel}
+        try:
+            import httpx
+        except ImportError as exc:  # noqa: BLE001
+            log(nid, _ERROR, f"httpx 未安装: {exc}")
+            return {"sent": False, "error": "httpx not installed", "channel": channel}
+        payload = {
+            "subject": subject,
+            "body": body,
+            "severity": severity,
+            "context": _safe_ctx(ctx),
+        }
+        log(nid, _INFO, f"发送 webhook: url={url}, severity={severity}")
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(url, json=payload)
+            log(nid, _INFO, f"webhook 响应 status={resp.status_code}")
+            return {
+                "sent": resp.status_code < 400,
+                "channel": "webhook",
+                "status": resp.status_code,
+                "url": url,
+            }
+        except Exception as exc:  # noqa: BLE001
+            log(nid, _ERROR, f"webhook 发送失败: {exc}")
+            return {"sent": False, "error": str(exc), "channel": "webhook"}
+
+    # im / sms 渠道：记录日志，预留对接
+    log(nid, _WARN, f"{channel} 渠道尚未对接真实发送，仅记录")
+    return {
+        "sent": True,
+        "channel": channel,
+        "subject": subject,
+        "body": body,
+        "severity": severity,
+        "note": f"{channel} 渠道为模拟发送，需对接企业微信/钉钉/短信网关",
+    }
+
+
+async def execute_tool_node(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    """tool：执行 DB 工具节点。
+
+    node_data 字段：``tool_name`` (str) 与 ``parameters`` (dict)。
+    ``parameters`` 中的值若为 ``"{{path}}"`` 形式则从 ``ctx`` 按点号路径解析变量，
+    否则原样传递。查 DB 找到启用工具后调 ``run_tool`` 执行。
+
+    返回 ``{"result": <工具返回>, "error": <错误或 None>, "tool_name": <名>}``。
+    """
+    # 延迟导入避免循环依赖
+    from app.core.tool_runner import run_tool
+    from app.database import SessionLocal
+    from app.models.tool import Tool
+
+    nid = _node_id(node_data)
+    tool_name = node_data.get("tool_name") or ""
+    parameters = dict(node_data.get("parameters") or {})
+
+    # 变量解析：值若为 "{{path}}" 形式则从 ctx 解析
+    resolved: dict[str, Any] = {}
+    for k, v in parameters.items():
+        if isinstance(v, str) and v.startswith("{{") and v.endswith("}}"):
+            path = v[2:-2].strip()
+            resolved[k] = _resolve_variable(ctx, path)
+        else:
+            resolved[k] = v
+
+    log(nid, _INFO, f"执行工具节点: tool={tool_name}, params={resolved}")
+
+    db = SessionLocal()
+    try:
+        tool = db.query(Tool).filter(Tool.name == tool_name, Tool.enabled.is_(True)).first()
+    finally:
+        db.close()
+
+    if tool is None:
+        log(nid, _ERROR, f"工具未找到或未启用: {tool_name}")
+        return {"error": f"工具未找到或未启用: {tool_name}", "tool_name": tool_name}
+
+    result = await run_tool(tool, resolved)
+    if "error" in result:
+        log(nid, _ERROR, f"工具执行失败: {result['error']}")
+        return {"error": result["error"], "tool_name": tool_name}
+    log(nid, _INFO, f"工具执行完成: {result.get('result')}")
+    return {"result": result.get("result"), "tool_name": tool_name}
+
+
+async def execute_human_review_node(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    """human_review：人工介入节点。
+
+    创建审批工单（Execution 记录，status=waiting_for_approval）到数据库，
+    使其出现在工作台的待审批列表中。工作人员可在工作台点击「同意」或「拒绝」。
+
+    同步测试模式下不阻塞等待，仅创建工单并返回工单信息。
+    线上 Celery 执行时会通过 Redis brpop 阻塞等待审批结果。
+
+    node_data 字段：``title`` / ``instructions`` / ``description``。
+    """
+    nid = _node_id(node_data)
+    title = node_data.get("title") or node_data.get("label") or "人工审批工单"
+    instructions = node_data.get("instructions") or ""
+
+    log(nid, _INFO, f"人工介入节点: title={title}")
+
+    # 创建审批工单到数据库（使工作台可见）
+    from datetime import datetime
+    from app.core.timezone import beijing_now
+    from app.database import SessionLocal
+    from app.models import Execution
+
+    workflow_id = ctx.get("workflow_id")
+    execution_id = None
+    try:
+        db = SessionLocal()
+        execution = Execution(
+            workflow_id=workflow_id,
+            status="waiting_for_approval",
+            result={
+                "alert_data": input_data,
+                "review_meta": {
+                    "title": title,
+                    "instructions": instructions,
+                    "node_id": nid,
+                },
+                "context": {k: v for k, v in ctx.items() if k != "_loop_config"} if ctx else None,
+            },
+            created_at=beijing_now(),
+        )
+        db.add(execution)
+        db.commit()
+        db.refresh(execution)
+        execution_id = execution.id
+        db.close()
+        log(nid, _INFO, f"已创建审批工单: execution_id={execution_id}")
+
+        # 产生待审批任务时走通知规则路由派发通知
+        try:
+            from app.core.notification_dispatch import dispatch_notification
+
+            db2 = SessionLocal()
+            try:
+                dispatch_notification(
+                    db2,
+                    event_type="approval_pending",
+                    title=f"待审批：{title}",
+                    content=(
+                        f"产生新的待审批任务。\n"
+                        f"标题：{title}\n"
+                        f"执行 ID：{execution_id}\n"
+                        f"说明：{instructions or '无'}\n"
+                        f"时间：{beijing_now().strftime('%Y-%m-%d %H:%M:%S')}"
+                    ),
+                    related_type="execution",
+                    related_id=execution_id,
+                    created_by="system",
+                )
+                log(nid, _INFO, "approval_pending 通知已派发")
+            finally:
+                db2.close()
+        except Exception as exc:  # noqa: BLE001
+            log(nid, _ERROR, f"派发 approval_pending 通知失败: {exc}")
+    except Exception as exc:  # noqa: BLE001
+        log(nid, _ERROR, f"创建审批工单失败: {exc}")
+
+    return {
+        "status": "waiting_for_approval",
+        "message": "人工审批节点，等待工作人员处理",
+        "title": title,
+        "instructions": instructions,
+        "execution_id": execution_id,
+    }
+
+
+async def execute_device_action(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    """device_action：调用安全设备执行动作。
+
+    根据节点配置的 device_id 和 action_id，查找设备和动作配置，
+    实际调用设备 API 执行封禁/解封/隔离等操作。
+    """
+    nid = _node_id(node_data)
+    device_id = node_data.get("device_id")
+    action_id = node_data.get("action_id")
+    params = node_data.get("params") or {}
+
+    if not device_id or not action_id:
+        log(nid, _ERROR, "设备动作节点：未配置设备或动作")
+        return {"error": "未配置设备或动作", "output": None}
+
+    from app.database import SessionLocal
+    from app.models.device import Device, DeviceAction
+    import httpx
+    import json
+
+    db = SessionLocal()
+    try:
+        device = db.query(Device).filter(Device.id == device_id).first()
+        action = db.query(DeviceAction).filter(DeviceAction.id == action_id, DeviceAction.device_id == device_id).first()
+
+        if not device:
+            return {"error": f"设备不存在: id={device_id}", "output": None}
+        if not action:
+            return {"error": f"动作不存在: id={action_id}", "output": None}
+
+        # 解析变量引用 (${node_id.field} 格式)
+        resolved_params = {}
+        for k, v in params.items():
+            if isinstance(v, str) and v.startswith("${") and v.endswith("}"):
+                # 从 ctx 或 input_data 解析变量
+                ref = v[2:-1]  # 去掉 ${ }
+                parts = ref.split(".", 1)
+                node_ref = parts[0]
+                field_path = parts[1] if len(parts) > 1 else "output"
+                # 从 ctx 中查找
+                if node_ref in ctx:
+                    val = ctx[node_ref]
+                    for p in field_path.split("."):
+                        if isinstance(val, dict):
+                            val = val.get(p)
+                        elif hasattr(val, p):
+                            val = getattr(val, p)
+                    resolved_params[k] = val
+                else:
+                    resolved_params[k] = v  # 保持原值
+            else:
+                resolved_params[k] = v
+
+        # 拼接 URL
+        base_url = (device.api_url or "").rstrip("/")
+        api_path = (action.api_path or "").lstrip("/")
+        url = f"{base_url}/{api_path}" if api_path else base_url
+
+        # 构造请求头
+        headers = {"Content-Type": "application/json"}
+        try:
+            extra_headers = json.loads(action.headers or "{}")
+            headers.update(extra_headers)
+        except Exception:  # noqa: BLE001
+            pass
+
+        # 认证
+        auth_type = action.auth_type or "api_key"
+        if auth_type == "api_key":
+            headers["Authorization"] = f"Bearer {device.api_key}"
+        elif auth_type == "bearer":
+            headers["Authorization"] = f"Bearer {device.api_key}"
+        elif auth_type == "basic":
+            # httpx 的 auth 参数
+            pass  # 用 auth 参数
+
+        # 构造请求体
+        if action.body_template:
+            body = action.body_template
+            for k, v in resolved_params.items():
+                body = body.replace(f"{{{{{k}}}}}", str(v))
+            try:
+                body = json.loads(body)
+            except Exception:  # noqa: BLE001
+                pass  # 保持字符串
+        else:
+            body = resolved_params
+
+        log(nid, _INFO, f"设备动作: device={device.name}, action={action.name}, url={url}, method={action.http_method}")
+
+        # 调用设备 API
+        def _call_api():
+            auth = (device.username, device.password) if auth_type == "basic" else None
+            with httpx.Client(timeout=30, verify=False) as client:  # verify=False 兼容自签证书
+                r = client.request(
+                    method=action.http_method or "POST",
+                    url=url,
+                    headers=headers,
+                    json=body if isinstance(body, (dict, list)) else None,
+                    data=body if isinstance(body, str) else None,
+                    auth=auth,
+                )
+            return r
+
+        import asyncio
+        loop = asyncio.get_event_loop()
+        r = await loop.run_in_executor(None, _call_api)
+
+        try:
+            resp_body = r.json()
+        except Exception:  # noqa: BLE001
+            resp_body = r.text
+
+        if r.status_code < 400:
+            log(nid, _INFO, f"设备动作成功: status={r.status_code}")
+            return {"output": resp_body, "status_code": r.status_code, "success": True}
+        else:
+            log(nid, _ERROR, f"设备动作失败: status={r.status_code}, body={str(resp_body)[:200]}")
+            return {"error": f"HTTP {r.status_code}", "output": resp_body, "status_code": r.status_code, "success": False}
+
+    except Exception as exc:  # noqa: BLE001
+        import traceback
+        log(nid, _ERROR, f"设备动作执行异常: {type(exc).__name__}: {exc}")
+        log(nid, _ERROR, traceback.format_exc(limit=3))
+        return {"error": str(exc), "output": None, "success": False}
+    finally:
+        db.close()
+
+
+async def execute_end_node(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    """end：工作流结束节点。
+
+    标记工作流正常结束。``end_type`` 可选 success / failed / cancelled。
+    """
+    nid = _node_id(node_data)
+    end_type = node_data.get("end_type") or "success"
+    log(nid, _INFO, f"工作流结束节点: end_type={end_type}")
+    return {"status": "ended", "end_type": end_type}
+
+
+async def execute_code_execute(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    """code_execute：执行用户自定义 Python3 代码。
+
+    在受限命名空间中执行，支持通过 input_data 和 ctx 访问上游数据。
+    代码中可用变量：input_data（上游输入）、ctx（工作流上下文）、result（输出变量）。
+    """
+    nid = _node_id(node_data)
+    code = node_data.get("code") or ""
+    if not code.strip():
+        log(nid, _ERROR, "代码执行节点：未配置代码")
+        return {"error": "no code", "output": None}
+
+    log(nid, _INFO, f"代码执行节点启动, 代码长度={len(code)}")
+
+    # 安全执行：受限命名空间，禁用危险内置
+    import asyncio
+
+    forbidden = {"open": None, "eval": None, "exec": None, "compile": None,
+                 "__import__": None, "globals": None, "locals": None}
+    safe_globals = {"__builtins__": {k: v for k, v in __builtins__.items() if k not in forbidden
+                                     if isinstance(__builtins__, dict)}}
+    # 如果 __builtins__ 不是 dict（某些环境），用安全子集
+    if not isinstance(safe_globals["__builtins__"], dict):
+        safe_builtins = {}
+        for name in ["print", "len", "str", "int", "float", "bool", "list", "dict",
+                     "set", "tuple", "range", "enumerate", "zip", "map", "filter",
+                     "sorted", "reversed", "sum", "min", "max", "abs", "round",
+                     "isinstance", "type", "None", "True", "False", "Exception",
+                     "ValueError", "TypeError", "KeyError", "IndexError", "ImportError",
+                     "json", "re", "math", "datetime", "time", "os.path", "hashlib",
+                     "base64", "urllib", "requests"]:
+            try:
+                if name in __builtins__:
+                    safe_builtins[name] = __builtins__[name]
+            except Exception:  # noqa: BLE001
+                pass
+        safe_globals["__builtins__"] = safe_builtins
+
+    # 提供常用模块
+    local_vars = {"input_data": input_data, "ctx": ctx, "result": None}
+    safe_globals.update({
+        "json": __import__("json"), "re": __import__("re"), "math": __import__("math"),
+        "datetime": __import__("datetime"), "hashlib": __import__("hashlib"),
+        "base64": __import__("base64"),
+    })
+
+    def _run_sync():
+        exec(code, safe_globals, local_vars)  # noqa: S102
+        return local_vars.get("result")
+
+    try:
+        loop = asyncio.get_event_loop()
+        output = await loop.run_in_executor(None, _run_sync)
+        log(nid, _INFO, f"代码执行完成, output={str(output)[:200]}")
+        return {"output": output}
+    except Exception as exc:  # noqa: BLE001
+        import traceback
+        log(nid, _ERROR, f"代码执行失败: {type(exc).__name__}: {exc}")
+        log(nid, _ERROR, traceback.format_exc(limit=3))
+        return {"error": str(exc), "output": None}
+
+
+async def execute_loop(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    """loop：循环节点。支持两种模式：count（固定次数）和 while（条件循环）。
+
+    循环体不在本节点内执行，而是由 workflow_runner 识别 loop 节点后，
+    对其子图重复执行。本节点仅设置循环参数到 ctx 供 runner 使用。
+    """
+    nid = _node_id(node_data)
+    mode = node_data.get("loop_mode") or "count"
+    if mode == "count":
+        count = int(node_data.get("count") or 1)
+        log(nid, _INFO, f"循环节点: count 模式, 次数={count}")
+        ctx["_loop_config"] = {"mode": "count", "count": count, "node_id": nid}
+        return {"loop_mode": "count", "count": count}
+    else:
+        # while 模式：条件表达式存储，由 runner 每轮评估
+        condition = node_data.get("loop_condition") or ""
+        max_iter = int(node_data.get("max_iterations") or 100)
+        log(nid, _INFO, f"循环节点: while 模式, condition={condition}, max={max_iter}")
+        ctx["_loop_config"] = {"mode": "while", "condition": condition,
+                               "max_iterations": max_iter, "node_id": nid}
+        return {"loop_mode": "while", "condition": condition, "max_iterations": max_iter}
+
+
+async def execute_iteration(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    """iteration：迭代节点。遍历一个数组/列表，对每个元素执行子流程。
+
+    数据源可以是：上游节点输出、ctx 中的变量、或直接配置的 JSON 数组。
+    """
+    nid = _node_id(node_data)
+    # 解析数据源
+    data_source = node_data.get("data_source") or "input"
+    if data_source == "input":
+        items = input_data if isinstance(input_data, list) else [input_data]
+    elif data_source == "ctx":
+        var_name = node_data.get("ctx_var") or ""
+        items = _resolve_variable(ctx, var_name) or []
+    else:  # custom
+        import json
+        try:
+            items = json.loads(node_data.get("custom_data") or "[]")
+        except Exception:  # noqa: BLE001
+            items = []
+
+    if not isinstance(items, list):
+        items = [items]
+
+    log(nid, _INFO, f"迭代节点: 数据源={data_source}, 元素数={len(items)}")
+    ctx["_iteration_config"] = {"items": items, "node_id": nid, "index": 0}
+    return {"iteration_count": len(items), "items": items}
+
+
+async def execute_llm(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    """llm：纯大模型文本生成节点（对标 Dify LLM 节点）。
+
+    与 ``ai_agent`` 的区别：不携带工具调用循环，仅做一次模型推理，
+    适用于文本摘要 / 翻译 / 分类 / 信息抽取等场景。
+
+    node_data 字段：
+    - model_config_id：关联 LLMConfig.id（优先级最高）
+    - model：模型名（model_config_id 为空时配合默认配置使用）
+    - system_prompt：系统提示词（支持 ${node.field} 变量引用）
+    - user_prompt：用户提示词（支持 ${node.field} 变量引用）
+    - temperature / max_tokens
+    """
+    import re
+
+    nid = _node_id(node_data)
+    model_config_id = node_data.get("model_config_id")
+    system_prompt = node_data.get("system_prompt") or ""
+    user_prompt = node_data.get("user_prompt") or ""
+    temperature = node_data.get("temperature")
+    max_tokens = node_data.get("max_tokens") or 1024
+
+    # 变量解析：把 ${node.field} 替换为 ctx 中的值
+    var_pattern = re.compile(r"\$\{([\w.]+)\}")
+
+    def _render(text: str) -> str:
+        if not text:
+            return ""
+        return var_pattern.sub(
+            lambda m: str(_resolve_variable(ctx, m.group(1)) or ""), text
+        )
+
+    system_prompt = _render(system_prompt)
+    user_prompt = _render(user_prompt)
+
+    if not user_prompt:
+        log(nid, _WARN, "LLM 节点：user_prompt 为空，跳过执行")
+        return {"text": "", "error": "user_prompt is empty"}
+
+    # 加载 LLM 配置
+    from app.database import SessionLocal
+    from app.models.llm_config import LLMConfig
+
+    db = SessionLocal()
+    try:
+        cfg = None
+        if model_config_id:
+            cfg = db.query(LLMConfig).filter(LLMConfig.id == int(model_config_id)).first()
+        if cfg is None:
+            # 回退到默认配置
+            cfg = db.query(LLMConfig).filter(LLMConfig.is_default.is_(True)).first()
+        if cfg is None:
+            log(nid, _ERROR, "LLM 节点：未找到可用的模型配置")
+            return {"text": "", "error": "no LLM config available"}
+    finally:
+        db.close()
+
+    api_key = (cfg.api_key or "").strip()
+    if not api_key:
+        log(nid, _ERROR, "LLM 节点：API Key 为空")
+        return {"text": "", "error": "API key is empty"}
+
+    provider = (cfg.provider or "openai").lower()
+    model_name = node_data.get("model") or cfg.model_name or "gpt-3.5-turbo"
+    log(nid, _INFO, f"LLM 节点：调用 {provider}/{model_name}")
+
+    try:
+        if provider == "anthropic":
+            # Anthropic 原生 API
+            from langchain_anthropic import ChatAnthropic
+            from langchain_core.messages import HumanMessage, SystemMessage
+
+            llm_kwargs = {
+                "model": model_name,
+                "api_key": api_key,
+                "max_tokens": int(max_tokens),
+            }
+            if temperature is not None:
+                llm_kwargs["temperature"] = float(temperature)
+            if cfg.base_url:
+                llm_kwargs["anthropic_api_url"] = cfg.base_url
+            llm = ChatAnthropic(**llm_kwargs)
+            msgs = []
+            if system_prompt:
+                msgs.append(SystemMessage(content=system_prompt))
+            msgs.append(HumanMessage(content=user_prompt))
+            resp = llm.invoke(msgs)
+            text = str(resp.content)
+        else:
+            # OpenAI 兼容接口
+            import httpx
+
+            base = (cfg.base_url or "https://api.openai.com/v1").strip()
+            if base.endswith("/chat/completions"):
+                url = base
+            elif re.search(r"/v\d+$", base):
+                url = f"{base}/chat/completions"
+            else:
+                url = f"{base}/v1/chat/completions"
+
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": user_prompt})
+
+            payload = {
+                "model": model_name,
+                "messages": messages,
+                "max_tokens": int(max_tokens),
+            }
+            if temperature is not None:
+                payload["temperature"] = float(temperature)
+
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            }
+            with httpx.Client(timeout=60) as client:
+                r = client.post(url, json=payload, headers=headers)
+            if r.status_code != 200:
+                log(nid, _ERROR, f"LLM 节点：HTTP {r.status_code}: {r.text[:300]}")
+                return {"text": "", "error": f"HTTP {r.status_code}: {r.text[:400]}"}
+            data = r.json()
+            text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+    except Exception as exc:  # noqa: BLE001
+        log(nid, _ERROR, f"LLM 节点调用失败: {exc}")
+        return {"text": "", "error": str(exc)[:500]}
+
+    log(nid, _INFO, f"LLM 节点：生成完成，长度={len(text)}")
+    return {"text": text}
+
+
+# 节点类型 -> 执行器映射表，供 workflow_runner 查找
+NODE_EXECUTORS: dict[str, Callable] = {
+    "webhook_trigger": execute_webhook_trigger,
+    "http_request": execute_http_request,
+    "ai_agent": execute_ai_agent,
+    "llm": execute_llm,
+    "condition_branch": execute_condition_branch,
+    "block_ip": execute_block_ip,
+    "send_notification": execute_send_notification,
+    "tool": execute_tool_node,
+    "human_review": execute_human_review_node,
+    "device_action": execute_device_action,
+    "end": execute_end_node,
+    "code_execute": execute_code_execute,
+    "loop": execute_loop,
+    "iteration": execute_iteration,
+}
+
+
+async def execute_node(
+    node_type: str,
+    node_data: dict,
+    input_data: dict,
+    ctx: dict,
+    log: Callable[[str, str, str], None],
+) -> dict:
+    """根据节点类型分发到对应执行器；未知类型透传返回。"""
+    executor = NODE_EXECUTORS.get(node_type)
+    if executor is None:
+        nid = _node_id(node_data)
+        log(nid, _INFO, f"未知节点类型 {node_type}，透传执行")
+        return {"executed": True, "node_type": node_type}
+    return await executor(node_data, input_data, ctx, log)

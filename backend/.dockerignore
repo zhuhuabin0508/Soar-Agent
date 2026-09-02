@@ -1,0 +1,27 @@
+# Python 缓存与字节码
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+# 本地环境变量（防止密钥泄漏）
+.env
+.env.local
+
+# 版本控制
+.git
+.gitignore
+
+# 虚拟环境
+.venv
+venv
+env
+
+# 构建产物与缓存
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# 系统文件
+.DS_Store
