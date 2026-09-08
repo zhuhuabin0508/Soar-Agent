@@ -15,6 +15,7 @@
 文本上限 5MB（5*1024*1024 字符），超长则尾部加 ``...[内容已截断]``。
 分段（chunking）在 ``app/core/chunker.py`` 中按知识库配置进一步切分。
 """
+import asyncio
 import logging
 import os
 import re

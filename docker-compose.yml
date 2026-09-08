@@ -29,8 +29,12 @@ services:
   redis:
     image: redis:7.4-alpine
     container_name: soar-redis
-    ports:
-      - "6379:6379"
+    # 设置访问密码，修复 Redis 未授权访问漏洞（CNNVD-201511-230）
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-12345678}"]
+    environment:
+      # 供 healthcheck 的 redis-cli 自动认证，避免密码出现在命令行
+      REDISCLI_AUTH: ${REDIS_PASSWORD:-12345678}
+    # 不暴露 6379 端口到宿主机，仅容器内部网络访问（backend/worker/beat 通过服务名 redis 直连）
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -51,9 +55,9 @@ services:
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: ${POSTGRES_DB:-soar}
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      REDIS_URL: redis://:${REDIS_PASSWORD:-12345678}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-12345678}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-12345678}@redis:6379/1
       # JWT 签名密钥：生产环境务必通过 .env 注入强随机值（>=32 字节）
       JWT_SECRET: ${JWT_SECRET:-soar-dev-secret-change-me-in-production-please}
       # 初始管理员账号（首次启动 seed 时创建）
@@ -86,9 +90,9 @@ services:
     container_name: soar-worker
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-soar}
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      REDIS_URL: redis://:${REDIS_PASSWORD:-12345678}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-12345678}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-12345678}@redis:6379/1
     depends_on:
       redis:
         condition: service_healthy
@@ -109,9 +113,9 @@ services:
     container_name: soar-beat
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-soar}
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      REDIS_URL: redis://:${REDIS_PASSWORD:-12345678}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-12345678}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-12345678}@redis:6379/1
     depends_on:
       redis:
         condition: service_healthy

@@ -114,6 +114,17 @@ def _save_special_dates(db: Session, overrides: dict[str, str]) -> None:
     db.commit()
 
 
+def _sync_records_is_holiday(db: Session, dates: set[date]) -> None:
+    """特殊日期变更后，同步刷新受影响日期的排班记录 is_holiday。"""
+    if not dates:
+        return
+    overrides = _load_special_dates(db)
+    recs = db.query(DutyRecord).filter(DutyRecord.duty_date.in_(dates)).all()
+    for r in recs:
+        r.is_holiday = is_holiday(r.duty_date, overrides)
+    db.commit()
+
+
 def _active_members_by_category(db: Session, category: str) -> list[DutyMember]:
     """取某类别下启用且未删除的人员，按 sort_order、id 排序（轮换顺序）。"""
     return (
@@ -747,6 +758,11 @@ def month_schedule(
                 "is_today": d == today,
             })
         else:
+            # 实时套用特殊日期覆盖重新计算，避免排班生成后设置的特殊日期不生效
+            is_hol = is_holiday(d, overrides)
+            item["is_holiday"] = is_hol
+            item["day_type"] = "非工作日" if is_hol else "工作日"
+            item["holiday_name"] = get_holiday_name(d) if is_hol else None
             item["is_today"] = d == today
             days.append(item)
     return {"year": year, "month": month, "days": days}
@@ -1239,6 +1255,7 @@ def delete_special_date(
     if key in overrides:
         del overrides[key]
         _save_special_dates(db, overrides)
+        _sync_records_is_holiday(db, {d})
     return {"deleted": True, "total": len(overrides)}
 
 

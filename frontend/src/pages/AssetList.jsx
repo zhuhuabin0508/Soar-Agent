@@ -869,6 +869,36 @@ export default function AssetList() {
     assetsApi.fieldOptions(activeTypeCode || undefined).then((r) => setDeptOptions(r.departments || [])).catch(() => {})
   }, [activeTypeCode])
 
+  // 一键全选：先同步全选本页保证立即反馈；多页时再拉取全量 ID 升级为“全选所有匹配结果”
+  const handleHeaderSelectAll = useCallback(async () => {
+    const allSelected = selectAllMode !== false && items.length > 0 && items.every((it) => selected.has(it.id))
+    const filter = {
+      type_code: activeTypeCode || undefined,
+      keyword, status: fStatus, criticality: fCrit, department: fDept, tag_id: fTag,
+    }
+    if (allSelected) {
+      // 已全选 → 取消全部
+      setSelected(new Set())
+      setSelectAllMode(false)
+      return
+    }
+    // 1) 先同步全选本页，保证点击立即有反馈（当前页 checkbox 立即勾上）
+    setSelected(new Set(items.map((it) => it.id)))
+    setSelectAllMode('page')
+    // 2) 多页时再拉取全量匹配 ID 升级为“全选所有匹配结果”
+    if (total > items.length) {
+      try {
+        const r = await assetsApi.listIds(filter)
+        const ids = (r.ids || []).filter((id) => typeof id !== 'undefined')
+        setSelected(new Set(ids))
+        setSelectAllMode('all')
+      } catch {
+        // 拉取全量失败时不阻塞，保留“仅当前页”，并提示
+        toast.error('跨页全选失败，本次仅选中当前页')
+      }
+    }
+  }, [selectAllMode, items, selected, total, activeTypeCode, keyword, fStatus, fCrit, fDept, fTag])
+
   // 动态列：根据模板字段 show_in_list 生成
   const columns = useMemo(() => {
     const cols = []
@@ -879,16 +909,7 @@ export default function AssetList() {
         <input
           type="checkbox"
           checked={selectAllMode !== false && items.length > 0 && items.every((it) => selected.has(it.id))}
-          onChange={() => {
-            if (selectAllMode !== false && items.every((it) => selected.has(it.id))) {
-              // 取消当前页
-              setSelected(new Set())
-              setSelectAllMode(false)
-            } else {
-              setSelected(new Set(items.map((it) => it.id)))
-              setSelectAllMode('page')
-            }
-          }}
+          onChange={handleHeaderSelectAll}
         />
       ),
       render: (row) => (
@@ -979,7 +1000,7 @@ export default function AssetList() {
       ),
     })
     return cols
-  }, [activeTemplate, items, selected, selectAllMode])
+  }, [activeTemplate, items, selected, selectAllMode, handleHeaderSelectAll])
 
   // 新增/编辑提交
   const handleSubmit = async ({ fields, tag_ids }) => {

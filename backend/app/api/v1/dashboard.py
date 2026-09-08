@@ -382,6 +382,9 @@ def get_ai_usage_stats(
 
     agents_map = {a.id: a for a in db.query(Agent).filter(Agent.id.in_(agent_ids)).all()} if agent_ids else {}
 
+    # 已删除的智能体不再参与统计（排行中不显示）
+    agent_ids = {aid for aid in agent_ids if aid in agents_map}
+
     # 按智能体聚合
     exec_by_agent: dict[int, list] = defaultdict(list)
     for e in executions:

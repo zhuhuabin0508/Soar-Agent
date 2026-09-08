@@ -16,18 +16,10 @@ const C = {
   normal: '#10B981',
 }
 
-// 判断周末（周六/周日）
-function isWeekendDay(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00')
-  const w = d.getDay()
-  return w === 0 || w === 6
-}
-
-// 节假日/周末背景色
+// 节假日背景色（非工作日=紫色；周末调休上班日按工作日处理）
 function dayBgStyle(day) {
   if (!day) return {}
   if (day.is_holiday) return { background: 'rgba(139,92,246,0.12)', borderColor: 'rgba(139,92,246,0.35)' }
-  if (isWeekendDay(day.duty_date)) return { background: 'rgba(245,158,11,0.08)', borderColor: 'rgba(245,158,11,0.25)' }
   return {}
 }
 
@@ -35,7 +27,6 @@ function dayBgStyle(day) {
 function dateColor(day) {
   if (!day) return '#94A3B8'
   if (day.is_holiday) return '#A78BFA'
-  if (isWeekendDay(day.duty_date)) return '#FBBF24'
   return '#E2E8F0'
 }
 
@@ -380,7 +371,6 @@ export default function DutyDashboard({ onSwitchTab }) {
             <div className="grid grid-cols-7 gap-2">
               {upcoming7.map((d, i) => {
                 const bg = dayBgStyle(d)
-                const isWk = d ? isWeekendDay(d.duty_date) : false
                 return (
                   <div
                     key={i}
@@ -407,9 +397,6 @@ export default function DutyDashboard({ onSwitchTab }) {
                       <div className="mb-1.5 text-[10px] font-medium" style={{ color: '#A78BFA' }}>
                         {d.holiday_name || '休'}
                       </div>
-                    )}
-                    {!d?.is_holiday && isWk && (
-                      <div className="mb-1.5 text-[10px] font-medium" style={{ color: '#FBBF24' }}>周末</div>
                     )}
 
                     {/* 白班 */}
@@ -490,7 +477,6 @@ export default function DutyDashboard({ onSwitchTab }) {
                     <tr key={wi}>
                       {week.map((d, di) => {
                         const bg = dayBgStyle(d)
-                        const isWk = d ? isWeekendDay(d.duty_date) : false
                         return (
                           <td
                             key={di}
@@ -511,8 +497,8 @@ export default function DutyDashboard({ onSwitchTab }) {
                                   <span className="text-xs font-bold" style={{ color: dateColor(d) }}>
                                     {Number(d.duty_date.slice(8))}
                                   </span>
-                                  <span className="text-[9px]" style={{ color: d.is_holiday ? '#A78BFA' : isWk ? '#FBBF24' : '#64748B' }}>
-                                    {d.is_holiday ? '休' : isWk ? '休' : '班'}
+                                  <span className="text-[9px]" style={{ color: d.is_holiday ? '#A78BFA' : '#64748B' }}>
+                                    {d.is_holiday ? '休' : '班'}
                                   </span>
                                 </div>
                                 {d.holiday_name && (

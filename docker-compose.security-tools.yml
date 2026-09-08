@@ -30,6 +30,8 @@ services:
   defectdojo-redis:
     image: redis:7.4-alpine
     container_name: soar-defectdojo-redis
+    # 设置访问密码，修复 Redis 未授权访问漏洞（CNNVD-201511-230）
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-12345678}"]
     restart: unless-stopped
     networks: [soar-net]
 

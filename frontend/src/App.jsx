@@ -126,7 +126,7 @@ const router = createBrowserRouter([
           { path: '/duty/schedule', element: <DutySchedule /> },
           { path: '/duty/leaves', element: <DutyLeave /> },
           { path: '/duty/logs', element: <DutyAdjustmentLogs /> },
-          // 告警接入 - 解析策略
+          // 连接配置 - 设备对接（设备列表 / 解析策略 / 告警列表 / 入库监控）
           { path: '/strategies', element: <StrategyList /> },
           { path: '/strategies/new', element: <StrategyEdit /> },
           { path: '/strategies/:id/edit', element: <StrategyEdit /> },

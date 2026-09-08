@@ -31,16 +31,15 @@ PERMISSION_MODULES: dict[str, list[str]] = {
     "asset_list": ["view", "edit", "delete"],
     "asset_templates": ["view", "edit", "delete"],
     "deliverable": ["view", "edit", "delete"],
-    # 连接配置
+    # 连接配置（设备对接下含：设备列表 / 解析策略 / 告警列表 / 入库监控）
     "llm_config": ["view", "edit", "delete"],
     "device": ["view", "edit"],
-    # 运行监控
-    "execution": ["view", "export"],
-    "notification": ["view", "edit"],
-    # 告警接入（解析策略管理 / 告警列表 / 入库监控）
     "strategy": ["view", "edit", "delete"],
     "alert": ["view", "export"],
     "monitor": ["view", "edit"],
+    # 运行监控
+    "execution": ["view", "export"],
+    "notification": ["view", "edit"],
     # 告警自动封禁工作流（实例管理 / 封禁审批 / 封禁工作台 / 触发规则）
     "ban_workflow": ["view", "edit"],
     # 系统管理
@@ -76,16 +75,15 @@ MODULE_LABELS: dict[str, str] = {
     "asset_list": "资产清单",
     "asset_templates": "类型模板",
     "deliverable": "材料管理",
-    # 连接配置
+    # 连接配置（设备对接下含：设备列表 / 解析策略 / 告警列表 / 入库监控）
     "llm_config": "模型设置",
     "device": "设备对接",
-    # 运行监控
-    "execution": "日志中心",
-    "notification": "通知中心",
-    # 告警接入（解析策略管理 / 告警列表 / 入库监控）
     "strategy": "解析策略",
     "alert": "告警列表",
     "monitor": "入库监控",
+    # 运行监控
+    "execution": "日志中心",
+    "notification": "通知中心",
     "ban_workflow": "封禁工作流",
     # 系统管理
     "user": "用户管理",

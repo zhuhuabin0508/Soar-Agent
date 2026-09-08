@@ -24,7 +24,7 @@ const MODULE_GROUPS = [
   {
     key: 'orchestration',
     label: '智能体编排',
-    modules: ['agent', 'workflow_list', 'workflow_editor', 'skill', 'tool', 'knowledge_base'],
+    modules: ['agent', 'workflow_list', 'workflow_editor', 'ban_workflow', 'skill', 'tool', 'knowledge_base'],
   },
   {
     key: 'resources',
@@ -39,7 +39,7 @@ const MODULE_GROUPS = [
   {
     key: 'config',
     label: '连接配置',
-    modules: ['llm_config', 'device'],
+    modules: ['llm_config', 'device', 'strategy', 'alert', 'monitor'],
   },
   {
     key: 'monitor',

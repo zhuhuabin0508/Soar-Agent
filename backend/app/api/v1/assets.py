@@ -1214,13 +1214,29 @@ def _expand_ip_expression(ip_expr: str, max_count: int = 65536) -> list[str]:
     return [ip_expr]
 
 
+def _decode_import_text(raw: bytes) -> str:
+    """解码导入文本字节，兼容 UTF-8(SIG) 与 GBK/GB18030。
+
+    中文环境下的 Excel 常将 CSV 保存为 GBK/GB18030（ANSI）编码；若仅按
+    UTF-8 解码会导致中文表头/值乱码（如「使用单位」变乱码），进而无法匹配
+    模板 label，使用单位落入 extra_fields 而非标准 department 列。
+    故先尝试严格 UTF-8，失败则回退到 GB18030（GBK 超集）。
+    """
+    for enc in ("utf-8-sig", "gb18030"):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", errors="replace")
+
+
 def _parse_import_file(filename: str, raw: bytes) -> list[dict]:
     """解析导入文件为行字典列表（首行作表头）。
 
     支持 .csv / .xlsx / .xls。返回 ``[{列名: 值}, ...]``。
     """
     if filename.endswith(".csv"):
-        text = raw.decode("utf-8-sig", errors="replace")
+        text = _decode_import_text(raw)
         reader = csv.DictReader(io.StringIO(text))
         return [dict(r) for r in reader]
     elif filename.endswith(".xlsx"):

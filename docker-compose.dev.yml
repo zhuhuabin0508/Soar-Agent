@@ -53,9 +53,9 @@ services:
       DB_HOST: soar-postgres
       DB_PORT: 5432
       DB_NAME: ${POSTGRES_DB:-soar}
-      REDIS_URL: redis://soar-redis:6379/0
-      CELERY_BROKER_URL: redis://soar-redis:6379/0
-      CELERY_RESULT_BACKEND: redis://soar-redis:6379/1
+      REDIS_URL: redis://:${REDIS_PASSWORD:-12345678}@soar-redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-12345678}@soar-redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-12345678}@soar-redis:6379/1
       TZ: Asia/Shanghai
       JWT_SECRET: ${JWT_SECRET}
       SEED_ADMIN_USERNAME: ${SEED_ADMIN_USERNAME:-admin}
@@ -84,9 +84,9 @@ services:
       # 安全工具二进制目录加入 PATH（subprocess 封装可直接按名调用）
       PATH: /opt/security-tools/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@soar-postgres:5432/${POSTGRES_DB:-soar}
-      REDIS_URL: redis://soar-redis:6379/0
-      CELERY_BROKER_URL: redis://soar-redis:6379/0
-      CELERY_RESULT_BACKEND: redis://soar-redis:6379/1
+      REDIS_URL: redis://:${REDIS_PASSWORD:-12345678}@soar-redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-12345678}@soar-redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-12345678}@soar-redis:6379/1
       TZ: Asia/Shanghai
     networks:
       - soar-prod-net
