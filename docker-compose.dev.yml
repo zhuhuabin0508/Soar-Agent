@@ -61,7 +61,7 @@ services:
       SEED_ADMIN_USERNAME: ${SEED_ADMIN_USERNAME:-admin}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-admin123}
     ports:
-      - "8002:8000"
+      - "8001:8000"
     networks:
       - soar-prod-net
     restart: unless-stopped
@@ -97,7 +97,7 @@ services:
 
   # ---------- 前端 Vite Dev Server（HMR） ----------
   frontend-dev:
-    image: node:20-alpine-arm64
+    image: node:20-alpine
     container_name: soar-frontend-dev
     working_dir: /app
     command:
@@ -116,7 +116,7 @@ services:
       # node_modules 在开发机用 ARM64 容器预装后随源码一起挂载，离线环境无需容器内 npm install
       - ./frontend:/app
     ports:
-      - "5173:5173"
+      - "8080:5173"
     networks:
       - soar-prod-net
     depends_on:

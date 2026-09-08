@@ -1,5 +1,5 @@
 # ===== SOAR 平台一键启动编排 =====
-# 启动：docker compose up -d --build
+# 启动：docker compose up -d
 # 查看日志：docker compose logs -f
 # 停止（保留数据）：docker compose stop
 # 停止并删除容器（保留数据卷）：docker compose down
@@ -17,7 +17,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "5432:5432"  # 暴露便于本地调试，生产可注释
+      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -29,12 +29,9 @@ services:
   redis:
     image: redis:7.4-alpine
     container_name: soar-redis
-    # 设置访问密码，修复 Redis 未授权访问漏洞（CNNVD-201511-230）
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-12345678}"]
     environment:
-      # 供 healthcheck 的 redis-cli 自动认证，避免密码出现在命令行
       REDISCLI_AUTH: ${REDIS_PASSWORD:-12345678}
-    # 不暴露 6379 端口到宿主机，仅容器内部网络访问（backend/worker/beat 通过服务名 redis 直连）
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -44,8 +41,6 @@ services:
 
   # ---------- 后端 API：FastAPI ----------
   backend:
-    build:
-      context: ./backend
     image: soar-backend:latest
     container_name: soar-backend
     environment:
@@ -58,9 +53,7 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD:-12345678}@redis:6379/0
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-12345678}@redis:6379/0
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-12345678}@redis:6379/1
-      # JWT 签名密钥：生产环境务必通过 .env 注入强随机值（>=32 字节）
       JWT_SECRET: ${JWT_SECRET:-soar-dev-secret-change-me-in-production-please}
-      # 初始管理员账号（首次启动 seed 时创建）
       SEED_ADMIN_USERNAME: ${SEED_ADMIN_USERNAME:-admin}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-admin123}
     depends_on:
@@ -69,23 +62,15 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "8001:8000"  # 宿主机 8000 被占用，改用 8001；容器内仍 8000，nginx 内部代理不受影响
+      - "8001:8000"
     volumes:
-      # 知识库上传文件持久化（容器重建后文件不丢失）
       - uploads:/app/uploads
-      # 数据库备份文件持久化（容器重建后备份不丢失）
       - backups:/app/backups
-      # 挂载 Docker socket，供系统监控页面获取各服务容器日志
-      # Windows Docker Desktop 用双斜杠开头避免路径转换；Linux 下等价于 /var/run/docker.sock
       - //var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
-    # 入口由 Dockerfile 的 entrypoint.sh 提供：建表 + 启动 uvicorn
 
   # ---------- 异步任务：Celery Worker ----------
-  # 复用后端镜像，但清空 entrypoint（worker 不需建表），直接运行 celery
   worker:
-    build:
-      context: ./backend
     image: soar-backend:latest
     container_name: soar-worker
     environment:
@@ -98,17 +83,12 @@ services:
         condition: service_healthy
       backend:
         condition: service_started
-    # 清空 Dockerfile 中的 entrypoint.sh，直接执行 celery 命令
     entrypoint: []
     command: ["celery", "-A", "app.core.celery_app", "worker", "-l", "info"]
     restart: unless-stopped
 
   # ---------- 定时任务调度：Celery Beat ----------
-  # 复用后端镜像，运行 celery beat 调度器，按 beat_schedule 定时投递任务到 Redis
-  # 当前定时任务：scan_asset_agents（每小时整点扫描资产智能体的新知识库）
   beat:
-    build:
-      context: ./backend
     image: soar-backend:latest
     container_name: soar-beat
     environment:
@@ -127,19 +107,16 @@ services:
 
   # ---------- 前端：React + Nginx ----------
   frontend:
-    build:
-      context: ./frontend
+    image: soar-frontend:latest
     container_name: soar-frontend
     depends_on:
       backend:
         condition: service_started
     ports:
-      - "8080:80"  # 宿主机 80 被 Dify 占用，改用 8080
+      - "8080:80"
     restart: unless-stopped
 
 volumes:
-  # 显式命名卷：固定卷名，避免项目目录名/项目名变化导致卷名变化而"丢数据"
-  # 当前数据存放在 soaragent_pgdata，沿用此名以保留已有数据
   pgdata:
     name: soaragent_pgdata
   uploads:

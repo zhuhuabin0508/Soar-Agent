@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
 # =============================================================================
-# SOAR 平台 — 生产更新脚本（Docker Compose 部署）
+# SOAR 平台 — 热重载部署更新脚本（无需重建镜像）
 #
-# 功能：
-#   1. 更新服务器源码（git pull）
-#   2. 重新构建有源码变化的镜像（backend / frontend）
-#   3. 重建配置变化的容器（redis 密码、后端连接串等，compose 自动判断）
-#   4. 重启 frontend 刷新 nginx 上游 DNS（backend 重建后 IP 变化，避免 502）
-#   5. 更新安全工具集（DefectDojo / BloodHound，含 defectdojo-redis 密码变更）
+# 流程：
+#   1. 同步最新源码（git pull）
+#   2. 热重载自动生效（无需额外操作）：
+#      - 后端 backend-dev：uvicorn --reload 监听 .py 变化自动重启
+#      - 前端 frontend-dev：vite HMR 监听前端文件变化自动热更新
+#   3. 检测依赖清单变化并提示（requirements.txt / package.json）
+#   4. 按需重启 worker（改 Celery 代码后）
 #
 # 用法：
-#   sudo bash update.sh            # 常规更新（安全工具集不拉新镜像）
-#   PULL=1 sudo bash update.sh     # 安全工具集同时拉取 latest 镜像（谨慎）
-#   BUILD=1 sudo bash update.sh    # 强制重新构建 backend/frontend 镜像（源码无变化时）
+#   sudo bash update.sh                   # 常规更新（源码热重载自动生效）
+#   RESTART_WORKER=1 sudo bash update.sh  # 同时重启 worker（应用 Celery 代码变更）
 #
 # 注意：
-#   - 更新过程中 redis / backend / worker / beat 会被重建，存在短暂中断
-#   - 切勿使用 docker compose down -v（会清空数据卷）
+#   - 只改源码（.py / .tsx / .jsx / .css 等）无需任何手动操作，热重载自动生效
+#   - 改了 requirements.txt / package.json（增删依赖）热重载不生效，需手动安装依赖并重启容器
 # =============================================================================
 set -euo pipefail
 
@@ -27,7 +27,7 @@ error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 
 # 定位项目根目录：
 #   1. 优先使用 APP_DIR 环境变量（如 APP_DIR=/opt/soar-src bash update.sh）
-#   2. 否则从脚本所在位置向上查找 docker-compose.yml
+#   2. 否则从脚本所在位置向上查找 docker-compose.dev.yml
 if [ -n "${APP_DIR:-}" ]; then
   cd "$APP_DIR"
 else
@@ -35,7 +35,7 @@ else
   _dir="$SCRIPT_DIR"
   _found=""
   while [ "$_dir" != "/" ]; do
-    if [ -f "$_dir/docker-compose.yml" ]; then
+    if [ -f "$_dir/docker-compose.dev.yml" ]; then
       _found="$_dir"
       break
     fi
@@ -44,69 +44,52 @@ else
   if [ -n "$_found" ]; then
     cd "$_found"
   else
-    error "未找到 docker-compose.yml，请用 APP_DIR=/项目路径 指定后重跑"
+    error "未找到 docker-compose.dev.yml，请用 APP_DIR=/项目路径 指定后重跑"
   fi
 fi
-[ -f "docker-compose.yml" ] || error "当前目录 $PWD 未找到 docker-compose.yml，请用 APP_DIR=/项目路径 指定"
+
+[ -f "docker-compose.dev.yml" ] || error "当前目录 $PWD 未找到 docker-compose.dev.yml，请用 APP_DIR=/项目路径 指定"
 info "项目目录：$PWD"
 
-SEC_COMPOSE="docker-compose.security-tools.yml"
-PULL="${PULL:-0}"
-
-command -v docker >/dev/null 2>&1 || error "未找到 docker"
-docker compose version >/dev/null 2>&1 || error "docker compose 不可用"
-
-# ===== 1. 更新源码 =====
-NEED_BUILD=1   # 默认构建（非 git 或无法判断时保守构建）
+# ===== 1. 同步源码 =====
 if [ -d .git ]; then
-  info "拉取最新源码..."
-  GIT_OUTPUT="$(git pull --ff-only 2>&1 || true)"
-  echo "$GIT_OUTPUT"
-  if echo "$GIT_OUTPUT" | grep -qiE "already up to date|已经是最新"; then
-    NEED_BUILD=0
-    info "源码无更新，跳过镜像构建"
-  elif echo "$GIT_OUTPUT" | grep -qiE "fatal|error|CONFLICT|冲突"; then
-    error "git pull 失败：$GIT_OUTPUT"
+  info "同步最新源码..."
+  BEFORE="$(git rev-parse HEAD 2>/dev/null || true)"
+  git pull --ff-only 2>&1 || warn "git pull 失败（若非 git 同步方式，请手动同步源码后重跑）"
+  AFTER="$(git rev-parse HEAD 2>/dev/null || true)"
+else
+  warn "当前目录不是 git 仓库，请先手动同步源码（rsync/scp）后再运行"
+  BEFORE=""
+  AFTER=""
+fi
+
+# ===== 2. 依赖变化检测 =====
+DEPS_CHANGED=0
+if [ -n "$BEFORE" ] && [ -n "$AFTER" ] && [ "$BEFORE" != "$AFTER" ]; then
+  info "本次更新涉及的依赖清单变更："
+  CHANGED="$(git diff --name-only "$BEFORE" "$AFTER" | grep -E "requirements.txt|package.json" || true)"
+  if [ -n "$CHANGED" ]; then
+    DEPS_CHANGED=1
+    echo "$CHANGED"
+  else
+    info "  无（仅源码变更，热重载自动生效）"
   fi
-else
-  warn "当前目录不是 git 仓库，跳过 git 更新（直接使用当前已同步的源码）"
-fi
-[ "${BUILD:-0}" = "1" ] && NEED_BUILD=1
-
-# ===== 2. 重新构建镜像 =====
-# worker / beat 复用 soar-backend:latest 镜像，无需单独构建
-if [ "$NEED_BUILD" = "1" ]; then
-  info "重新构建 backend / frontend 镜像..."
-  docker compose build backend frontend
-else
-  info "跳过镜像构建（源码无变化；如需强制重建用 BUILD=1 bash update.sh）"
 fi
 
-# ===== 3. 重建主系统容器（compose 只重建配置/镜像发生变化的容器）=====
-info "重建主系统容器..."
-docker compose up -d
-
-# ===== 4. 重启 frontend 刷新 nginx 上游 DNS =====
-info "重启 frontend 刷新上游 DNS（避免 502）..."
-docker restart soar-frontend
-
-# ===== 5. 更新安全工具集 =====
-if [ -f "$SEC_COMPOSE" ]; then
-  if [ "$PULL" = "1" ]; then
-    info "拉取安全工具集最新镜像..."
-    docker compose -f "$SEC_COMPOSE" pull
-  fi
-  info "重建安全工具集容器（含 defectdojo-redis 密码变更）..."
-  docker compose -f "$SEC_COMPOSE" up -d
-else
-  warn "未找到 $SEC_COMPOSE，跳过安全工具集"
+if [ "$DEPS_CHANGED" = "1" ]; then
+  warn "检测到依赖清单变化！热重载不会自动安装新依赖，请手动执行："
+  warn "  后端：docker exec soar-backend-dev pip install -r requirements.txt && docker restart soar-backend-dev"
+  warn "  前端：docker exec soar-frontend-dev npm install --legacy-peer-deps && docker restart soar-frontend-dev"
 fi
 
-# ===== 6. 清理无引用镜像 =====
-info "清理无引用镜像..."
-docker image prune -f
+# ===== 3. 重启 worker（Celery 无自动重载，改代码后需手动重启）=====
+if [ "${RESTART_WORKER:-0}" = "1" ]; then
+  info "重启 worker（应用 Celery 代码变更）..."
+  docker restart soar-worker-dev
+else
+  info "跳过 worker 重启（如需应用 Celery 代码变更，用 RESTART_WORKER=1 bash update.sh）"
+fi
 
-# ===== 7. 状态 =====
-info "更新完成，当前容器状态："
-docker compose ps
-[ -f "$SEC_COMPOSE" ] && docker compose -f "$SEC_COMPOSE" ps
+# ===== 4. 状态 =====
+info "更新完成，热重载已自动生效，当前容器状态："
+docker compose --env-file .env.dev -f docker-compose.dev.yml ps

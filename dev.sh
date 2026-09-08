@@ -35,8 +35,8 @@ case "$CMD" in
     $COMPOSE up -d
     echo ""
     echo "✅ dev 环境已启动"
-    echo "   前端：http://$(hostname -I | awk '{print $1}'):5173"
-    echo "   后端 API：http://$(hostname -I | awk '{print $1}'):8002/docs"
+    echo "   前端：http://$(hostname -I | awk '{print $1}'):8080"
+    echo "   后端 API：http://$(hostname -I | awk '{print $1}'):8001/docs"
     echo "   日志：bash dev.sh logs"
     ;;
   down)

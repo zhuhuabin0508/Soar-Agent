@@ -12,7 +12,7 @@ COPY package.json package-lock.json .npmrc ./
 # 安装依赖：优先 npm ci（确定性安装），失败则回退 npm install
 # 使用国内 npm 镜像源加速下载（离线构建环境无法直连 registry.npmjs.org）
 RUN npm config set registry https://registry.npmmirror.com \
-    && (npm ci || npm install)
+    && npm install --legacy-peer-deps
 
 # 构建时间戳（用于破坏缓存，确保每次构建都使用最新代码）
 ARG BUILD_DATE=unknown
