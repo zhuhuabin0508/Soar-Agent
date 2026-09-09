@@ -31,3 +31,9 @@ security-tools/
 .idea/
 .DS_Store
 *.swp
+*.tar
+*.tar.gz
+node_modules/
+__pycache__/
+*.pyc
+.env
