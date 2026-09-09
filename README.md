@@ -25,7 +25,7 @@
 - **PyJWT** + **passlib/bcrypt** — 鉴权与密码哈希
 
 ### 前端
-- **React 19** + **Vite** — UI 框架与构建工具
+- **React 19** + **Vite** — UI 框架与开发服务器（HMR）
 - **TailwindCSS** — 样式
 - **React Flow** — 工作流可视化编排
 - **Zustand** — 状态管理
@@ -33,49 +33,89 @@
 
 ### 基础设施
 - **Docker Compose** — 一键编排（postgres / redis / backend / worker / frontend）
-- **Nginx** — 前端静态资源 + 反向代理（SSE 流式关闭缓冲）
+- **Vite Dev Server** — 前端热更新 + `/api` 反向代理
+
+## 🚀 部署架构
+
+服务器采用**源码挂载 + 热重载**的单环境部署方式，改完即生效，无需重新构建镜像：
+
+| 组件 | 容器 | 机制 |
+|------|------|------|
+| 后端 API | `soar-backend-dev` | 挂载 `./backend/app` + `uvicorn --reload`，改 `.py` 自动重启 |
+| 前端 | `soar-frontend-dev` | 挂载 `./frontend` + Vite HMR，改前端文件自动热更新 |
+| 异步任务 | `soar-worker-dev` | 挂载源码 + Celery（改代码需手动重启） |
+| 数据库 | `soar-postgres` | PostgreSQL 15（数据在 `soar_dev` 库） |
+| 缓存 | `soar-redis` | Redis 7.4 |
+
+端口映射：
+
+- 前端：`8080`（映射容器内 Vite `5173`）
+- 后端 API：`8001`（映射容器内 `8000`）
+- PostgreSQL：`5432`
 
 ## 🚀 快速开始
 
 ### 环境要求
-- Docker & Docker Compose
-- 端口：8080（前端）、8001（后端）、5432（PostgreSQL）、6379（Redis）
 
-### 一键部署
+- Docker & Docker Compose
+- Linux 内核 `fs.inotify` 限制足够（热重载依赖，见下方「inotify 限制」）
+
+### 启动
 
 ```bash
-# 1.（可选）配置环境变量，覆盖开发默认值
-cp .env.example .env
-# 编辑 .env，生产环境务必修改 JWT_SECRET、数据库密码、管理员密码
+# 方式一：使用 dev.sh
+bash dev.sh up
 
-# 2. 构建并启动所有服务
-docker compose up -d --build
-
-# 3. 访问平台
-#    前端：http://localhost:8080
-#    后端 API：http://localhost:8001/docs
-#    默认管理员：admin / admin123（首次启动自动创建）
+# 方式二：直接 compose
+docker compose --env-file .env.dev -f docker-compose.dev.yml up -d
 ```
 
-### 重建后端后的注意事项
+启动后访问：
 
-重建后端容器会改变其容器 IP，前端 Nginx 可能缓存旧 IP 导致 502。重建后需重启前端容器刷新 DNS：
+- 前端：`http://<服务器IP>:8080`
+- 后端 API 文档：`http://<服务器IP>:8001/docs`
+
+默认管理员账号由 `.env.dev` 中的 `SEED_ADMIN_USERNAME` / `SEED_ADMIN_PASSWORD` 决定（首次空库 seed 时创建）。
+
+## 🔄 日常更新部署
+
+本地改代码 → 提交推送 → 服务器执行更新脚本，源码同步后**热重载自动生效**，无需重新构建镜像：
 
 ```bash
-docker compose up -d --build backend
-docker restart soar-frontend
+# 常规更新（源码热重载自动生效）
+sudo bash scripts/update.sh
+
+# 同时重启 worker（改了 Celery 相关代码时）
+RESTART_WORKER=1 sudo bash scripts/update.sh
+```
+
+> **注意**：
+> - 只改源码（`.py` / `.tsx` / `.jsx` / `.css` 等）热重载自动生效，无需任何手动操作。
+> - 改了 `requirements.txt` / `package.json`（增删依赖）热重载**不会**自动安装，`update.sh` 会检测并提示手动执行安装命令。
+> - 改了 docker-compose、环境变量等需手动 `docker compose ... up -d` 重建容器。
+
+### inotify 限制
+
+`uvicorn --reload` 与 Vite 依赖文件监听，若 `fs.inotify.max_user_watches` 过低会报 `OS file watch limit reached` / `ENOSPC`。`update.sh` 每次运行会自动检查并设置（同时永久化写入 `/etc/sysctl.conf`）。手动设置一次：
+
+```bash
+sysctl -w fs.inotify.max_user_watches=524288
+echo "fs.inotify.max_user_watches=524288" >> /etc/sysctl.conf
+sysctl -w fs.inotify.max_user_instances=512
+echo "fs.inotify.max_user_instances=512" >> /etc/sysctl.conf
 ```
 
 ## ⚙️ 配置说明
 
-所有配置项通过环境变量注入，开发默认值见 `.env.example`。主要配置：
+所有配置通过 `.env.dev` 注入（开发/热重载环境专用）。主要配置：
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
-| `POSTGRES_PASSWORD` | 数据库密码 | `postgres`（生产必改）|
-| `JWT_SECRET` | JWT 签名密钥 | 开发占位值（生产必改）|
-| `SEED_ADMIN_PASSWORD` | 初始管理员密码 | `admin123`（生产必改）|
-| `CORS_ORIGINS` | CORS 允许源 | 本地开发地址 |
+| `POSTGRES_DB` | 数据库名 | `soar_dev` |
+| `POSTGRES_PASSWORD` | 数据库密码 | `postgres` |
+| `JWT_SECRET` | JWT 签名密钥 | 见 `.env.dev` |
+| `SEED_ADMIN_USERNAME` | 初始管理员账号 | `admin` |
+| `SEED_ADMIN_PASSWORD` | 初始管理员密码 | 见 `.env.dev` |
 
 > **安全提示**：LLM 的 API Key 在系统「模型设置」页面配置，存储于数据库，不出现在代码或环境变量中。
 
@@ -83,29 +123,35 @@ docker restart soar-frontend
 
 ```
 .
-├── backend/                # FastAPI 后端
+├── backend/                  # FastAPI 后端
 │   ├── app/
-│   │   ├── agent/hermes/   # Hermes ReAct 引擎（执行器、SSE、工具引擎）
-│   │   ├── api/v1/         # REST API 端点
-│   │   ├── core/           # 配置、安全、种子数据、Celery
-│   │   ├── models/         # SQLAlchemy 数据模型
-│   │   ├── tools/          # 工具实现（资产查询、威胁情报、封禁等）
-│   │   └── tasks/          # Celery 异步任务
+│   │   ├── agent/            # Hermes ReAct 引擎
+│   │   ├── api/v1/           # REST API 端点
+│   │   ├── core/             # 配置、安全、种子数据、Celery
+│   │   ├── models/           # SQLAlchemy 数据模型
+│   │   ├── tools/            # 工具实现（资产查询、威胁情报、封禁等）
+│   │   └── tasks/            # Celery 异步任务
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   └── entrypoint.sh
-├── frontend/               # React 前端
+├── frontend/                 # React 前端
 │   ├── src/
-│   │   ├── pages/          # 页面组件
-│   │   ├── components/     # 通用组件
-│   │   ├── api/            # API 客户端
-│   │   └── store/          # Zustand 状态
-│   ├── Dockerfile
+│   │   ├── pages/            # 页面组件
+│   │   ├── components/       # 通用组件
+│   │   ├── api/              # API 客户端
+│   │   └── store/            # Zustand 状态
+│   ├── vite.config.dev.js    # dev server 配置（HMR + /api 代理）
 │   └── package.json
-├── docs/                   # 设计文档
-├── docker-compose.yml      # 一键编排
-├── .env.example            # 环境变量模板
-└── .gitignore
+├── scripts/
+│   ├── update.sh             # 热重载部署更新脚本
+│   ├── build-and-export-images.sh  # 联网构建镜像并导出 tar（离线部署用）
+│   └── ...
+├── docs/                     # 设计文档
+├── docker-compose.dev.yml    # 热重载环境编排（服务器唯一环境）
+├── docker-compose.yml        # 镜像打包编排（备用，可构建离线镜像）
+├── .env.dev                  # 热重载环境变量
+├── .env.example              # 环境变量模板
+└── dev.sh                    # 开发环境便捷脚本
 ```
 
 ## 📖 设计文档
@@ -120,8 +166,8 @@ docker restart soar-frontend
 - 密码使用 bcrypt 哈希存储，永不存明文
 - JWT 鉴权，所有 API 需登录访问
 - 审计日志记录所有写操作（操作人、模块、资源 ID、IP）
-- 数据库凭证、JWT 密钥等均通过环境变量注入，`.env` 已在 `.gitignore` 中
-- 知识库数据存储于 Docker 数据卷，不在代码仓库中
+- 数据库凭证、JWT 密钥等均通过环境变量注入，`.env*` 已在 `.gitignore` 中
+- 业务数据存储于 Docker 数据卷（`soaragent_pgdata`），不在代码仓库中
 
 ## 📄 许可证
 

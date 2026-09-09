@@ -25,6 +25,41 @@ info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 
+# ===== 确保 inotify 限制足够（vite / uvicorn --reload 依赖文件监听）=====
+ensure_inotify_limits() {
+  local need_watches=524288
+  local need_instances=512
+  local cur_watches cur_instances changed=0
+
+  cur_watches=$(cat /proc/sys/fs/inotify/max_user_watches 2>/dev/null || echo 0)
+  cur_instances=$(cat /proc/sys/fs/inotify/max_user_instances 2>/dev/null || echo 0)
+
+  if [ "$cur_watches" -lt "$need_watches" ]; then
+    info "max_user_watches 过低（当前 $cur_watches，需 >= $need_watches），正在设置..."
+    sysctl -w fs.inotify.max_user_watches=$need_watches >/dev/null 2>&1 \
+      || warn "sysctl 设置失败（请确认以 root 运行）"
+    changed=1
+  fi
+
+  if [ "$cur_instances" -lt "$need_instances" ]; then
+    info "max_user_instances 过低（当前 $cur_instances，需 >= $need_instances），正在设置..."
+    sysctl -w fs.inotify.max_user_instances=$need_instances >/dev/null 2>&1 \
+      || warn "sysctl 设置失败（请确认以 root 运行）"
+    changed=1
+  fi
+
+  # 永久化写入 /etc/sysctl.conf（避免宿主机重启后失效）
+  if [ "$changed" = "1" ] && [ -w /etc/sysctl.conf ]; then
+    grep -q "^fs.inotify.max_user_watches" /etc/sysctl.conf 2>/dev/null \
+      || echo "fs.inotify.max_user_watches=$need_watches" >> /etc/sysctl.conf
+    grep -q "^fs.inotify.max_user_instances" /etc/sysctl.conf 2>/dev/null \
+      || echo "fs.inotify.max_user_instances=$need_instances" >> /etc/sysctl.conf
+    info "已写入 /etc/sysctl.conf（宿主机重启后仍生效）"
+  elif [ "$changed" = "1" ]; then
+    warn "/etc/sysctl.conf 不可写，本次仅临时生效（宿主机重启后需重新设置）"
+  fi
+}
+
 # 定位项目根目录：
 #   1. 优先使用 APP_DIR 环境变量（如 APP_DIR=/opt/soar-src bash update.sh）
 #   2. 否则从脚本所在位置向上查找 docker-compose.dev.yml
@@ -50,6 +85,9 @@ fi
 
 [ -f "docker-compose.dev.yml" ] || error "当前目录 $PWD 未找到 docker-compose.dev.yml，请用 APP_DIR=/项目路径 指定"
 info "项目目录：$PWD"
+
+# ===== 0. 确保 inotify 限制足够（热重载依赖文件监听）=====
+ensure_inotify_limits
 
 # ===== 1. 同步源码 =====
 if [ -d .git ]; then
