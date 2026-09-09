@@ -581,6 +581,19 @@ async function _downloadDeliverable(id, filename) {
   URL.revokeObjectURL(url)
 }
 
+async function _fetchPreviewBlob(id) {
+  const token = localStorage.getItem('soar_token')
+  const res = await fetch(`${BASE_URL}/deliverables/${id}/preview`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!res.ok) {
+    let detail = '预览加载失败'
+    try { const d = await res.json(); detail = d.detail || detail } catch { /* ignore */ }
+    throw new Error(detail)
+  }
+  return res.blob()
+}
+
 export const deliverablesApi = {
   // ===== 服务类别（树形，最多 10 级）=====
   categories: () => request('/deliverables/categories'),
@@ -674,7 +687,7 @@ export const deliverablesApi = {
     const s = q.toString()
     return request(`/deliverables${s ? `?${s}` : ''}`)
   },
-  // 上传交付物：multipart（file + category_id + 名称/版本/描述）
+  // 上传交付物：multipart（file + category_id + 名称/版本/描述 + 可选相对路径）
   upload: (categoryId, file, meta = {}) => {
     const fd = new FormData()
     fd.append('category_id', categoryId)
@@ -682,6 +695,7 @@ export const deliverablesApi = {
     if (meta.name) fd.append('name', meta.name)
     if (meta.version) fd.append('version', meta.version)
     if (meta.description) fd.append('description', meta.description)
+    if (meta.relativePath) fd.append('relative_path', meta.relativePath)
     return request('/deliverables', { method: 'POST', body: fd })
   },
   // 更新元数据 / 替换文件（file 可选）
@@ -742,17 +756,13 @@ export const deliverablesApi = {
     }),
   // 获取预览 Blob URL（带 auth fetch → blob → URL，用于 PDF iframe 内嵌预览）
   previewBlob: async (id) => {
-    const token = localStorage.getItem('soar_token')
-    const res = await fetch(`${BASE_URL}/deliverables/${id}/preview`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-    if (!res.ok) {
-      let detail = '预览加载失败'
-      try { const d = await res.json(); detail = d.detail || detail } catch { /* ignore */ }
-      throw new Error(detail)
-    }
-    const blob = await res.blob()
+    const blob = await _fetchPreviewBlob(id)
     return URL.createObjectURL(blob)
+  },
+  // 获取预览文件的 ArrayBuffer（Word / Excel 前端解析）
+  previewArrayBuffer: async (id) => {
+    const blob = await _fetchPreviewBlob(id)
+    return blob.arrayBuffer()
   },
   // 获取文本类文件内容（txt/csv/md）
   getContent: (id) => request(`/deliverables/${id}/content`),

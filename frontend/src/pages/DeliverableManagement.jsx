@@ -1,7 +1,7 @@
 // 材料管理页：左侧树形目录（最多 10 级） + 右侧材料文件列表
 // 功能：树形目录 CRUD / 子目录创建 / 多文件上传(白名单) / 预览 / 在线编辑 / 单/批量下载 / 删除
 // 权限：deliverable.view 可见/预览；.edit 可建目录/上传/编辑/在线修改；.delete 可删除
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   CheckCircle2, ChevronDown, ChevronRight, ChevronsUp, CloudUpload, Download,
   Eye, FileArchive, FileSpreadsheet, FileText, Folder, FolderArchive, FolderOpen,
@@ -15,6 +15,7 @@ import { confirm } from '../components/ConfirmDialog'
 import { hasPermission } from '../utils/permissions'
 import { TutorialButton, TutorialDrawer } from '../components/TutorialDrawer'
 import { DELIVERABLE_TUTORIAL } from '../components/tutorialContent'
+const OfficePreview = lazy(() => import('../components/OfficePreview'))
 
 const PAGE_SIZE = 20
 const MAX_LEVEL = 10
@@ -24,7 +25,10 @@ const MAX_SIZE = 200 * 1024 * 1024
 // 可在线预览的文件扩展名
 const PREVIEW_PDF_EXTS = ['pdf']
 const TEXT_EDIT_EXTS = ['txt', 'csv', 'md']
-const PREVIEWABLE_EXTS = ['pdf', 'txt', 'csv', 'md']
+const OFFICE_PREVIEW_EXTS = ['docx', 'xlsx', 'xls']
+const LEGACY_OFFICE_EXTS = ['doc']
+const PREVIEWABLE_EXTS = ['pdf', 'txt', 'csv', 'md', 'docx', 'xlsx', 'xls', 'doc']
+const OFFICE_PREVIEW_MAX = 25 * 1024 * 1024
 
 // 扩展名 → 图标/颜色
 function FileIcon({ ext, className = 'h-4 w-4' }) {
@@ -61,6 +65,85 @@ function validateFile(file) {
   return ''
 }
 
+const JUNK_FILE_NAMES = new Set(['.ds_store', 'thumbs.db', 'desktop.ini'])
+
+function isJunkFile(name) {
+  const n = (name || '').toLowerCase()
+  return !n || JUNK_FILE_NAMES.has(n) || n.startsWith('~$') || n.startsWith('.')
+}
+
+function normalizeRelPath(file, explicitPath) {
+  const raw = String(explicitPath || file.webkitRelativePath || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
+  if (!raw || !raw.includes('/')) return file.name
+  return raw
+}
+
+function toUploadItem(file, explicitPath) {
+  const relativePath = normalizeRelPath(file, explicitPath)
+  if (isJunkFile(file.name)) return null
+  const err = validateFile(file)
+  return {
+    file,
+    relativePath,
+    status: err ? 'failed' : 'pending',
+    error: err || '',
+  }
+}
+
+function dirKeyOf(relativePath) {
+  const parts = String(relativePath || '').replace(/\\/g, '/').split('/').filter(Boolean)
+  parts.pop()
+  return parts.join('/')
+}
+
+function readAllEntries(reader) {
+  return new Promise((resolve, reject) => {
+    const all = []
+    const pump = () => {
+      reader.readEntries((batch) => {
+        if (!batch.length) return resolve(all)
+        all.push(...batch)
+        pump()
+      }, reject)
+    }
+    pump()
+  })
+}
+
+async function walkEntry(entry, prefix = '') {
+  const items = []
+  if (!entry) return items
+  if (entry.isFile) {
+    const file = await new Promise((res, rej) => entry.file(res, rej))
+    const relativePath = prefix ? `${prefix}/${file.name}` : file.name
+    const item = toUploadItem(file, relativePath)
+    if (item) items.push(item)
+    return items
+  }
+  if (entry.isDirectory) {
+    const dirPath = prefix ? `${prefix}/${entry.name}` : entry.name
+    const children = await readAllEntries(entry.createReader())
+    for (const child of children) {
+      items.push(...await walkEntry(child, dirPath))
+    }
+  }
+  return items
+}
+
+async function collectDroppedItems(dataTransfer) {
+  const entries = Array.from(dataTransfer.items || [])
+    .map((it) => (it.webkitGetAsEntry ? it.webkitGetAsEntry() : null))
+    .filter(Boolean)
+  if (entries.length > 0) {
+    const collected = []
+    for (const entry of entries) {
+      collected.push(...await walkEntry(entry))
+    }
+    return collected
+  }
+  return Array.from(dataTransfer.files || []).map((file) => toUploadItem(file)).filter(Boolean)
+}
+
 // 从扁平列表构建树：{ id, name, parent_id, level, children: [] }
 function buildTree(items) {
   const map = new Map()
@@ -79,11 +162,11 @@ function buildTree(items) {
 }
 
 // 通用小 Modal
-function Modal({ title, children, onClose, footer }) {
+function Modal({ title, children, onClose, footer, wide = false }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div
-        className="w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-xl"
+        className={`w-full rounded-lg border border-border bg-card p-5 shadow-xl ${wide ? 'max-w-xl' : 'max-w-md'}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
@@ -152,7 +235,7 @@ export default function DeliverableManagement() {
   const [editModal, setEditModal] = useState(null)
   const [editSaving, setEditSaving] = useState(false)
 
-  // 预览/编辑弹窗：{ row, type: 'pdf'|'text'|'unsupported', loading, content, blobUrl, error, dirty, saving }
+  // 预览/编辑弹窗：{ row, type: 'pdf'|'text'|'office'|'unsupported', loading, content, blobUrl, arrayBuffer, error, dirty, saving }
   const [previewModal, setPreviewModal] = useState(null)
   const [previewSaving, setPreviewSaving] = useState(false)
   // 移动目录弹窗：{ id, name, description, currentParentId, targetParentId }
@@ -416,22 +499,9 @@ export default function DeliverableManagement() {
   // ===== 材料操作 =====
   const handleUpload = async () => {
     const files = uploadModal?.files || []
-    const pending = files.filter((f) => f.status !== 'success')
+    const pending = files.filter((f) => f.status === 'pending')
     if (pending.length === 0) {
-      toast.warning('请先选择文件')
-      return
-    }
-    // 前端预检全部文件
-    const invalid = pending.find((f) => {
-      const err = validateFile(f.file)
-      if (err) {
-        f._err = err
-        return true
-      }
-      return false
-    })
-    if (invalid) {
-      toast.error(invalid._err)
+      toast.warning('请先选择可上传的文件')
       return
     }
 
@@ -451,6 +521,9 @@ export default function DeliverableManagement() {
           name: item.file.name.replace(/\.[^.]+$/, ''),
           version: uploadModal.version.trim(),
           description: uploadModal.description.trim(),
+          relativePath: item.relativePath && item.relativePath.includes('/')
+            ? item.relativePath
+            : '',
         })
         successCount++
         setUploadModal((prev) => ({
@@ -553,6 +626,30 @@ export default function DeliverableManagement() {
       } catch (err) {
         setPreviewModal((prev) => ({ ...prev, loading: false, error: err.message || '内容加载失败' }))
       }
+    } else if (LEGACY_OFFICE_EXTS.includes(ext)) {
+      setPreviewModal({
+        row,
+        type: 'unsupported',
+        loading: false,
+        error: '旧版 Word（.doc）无法在线预览，请另存为 .docx 后重新上传，或下载后打开',
+      })
+    } else if (OFFICE_PREVIEW_EXTS.includes(ext)) {
+      if (row.file_size && row.file_size > OFFICE_PREVIEW_MAX) {
+        setPreviewModal({
+          row,
+          type: 'unsupported',
+          loading: false,
+          error: `文件超过 25MB（${fmtSize(row.file_size)}），请下载后查看`,
+        })
+        return
+      }
+      setPreviewModal({ row, type: 'office', loading: true, arrayBuffer: null, error: null })
+      try {
+        const buf = await deliverablesApi.previewArrayBuffer(row.id)
+        setPreviewModal((prev) => ({ ...prev, loading: false, arrayBuffer: buf }))
+      } catch (err) {
+        setPreviewModal((prev) => ({ ...prev, loading: false, error: err.message || '预览加载失败' }))
+      }
     } else {
       // 其他类型：不支持预览，提示下载
       setPreviewModal({ row, type: 'unsupported', loading: false, error: null })
@@ -565,6 +662,21 @@ export default function DeliverableManagement() {
     }
     setPreviewModal(null)
   }
+
+  const overlayPreview = previewModal && previewModal.type !== 'text'
+
+  useEffect(() => {
+    if (!overlayPreview) return
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return
+      setPreviewModal((prev) => {
+        if (prev?.blobUrl) URL.revokeObjectURL(prev.blobUrl)
+        return null
+      })
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [overlayPreview])
 
   // ===== 移动目录 =====
   // 计算某节点的所有后代 ID（用于移动时排除不可选目标）
@@ -1620,8 +1732,8 @@ export default function DeliverableManagement() {
           )}
         </section>
 
-        {/* 右：预览面板（仅 previewModal 存在时显示） */}
-        {previewModal && (
+        {/* 右：文本在线编辑仍用侧栏；Word/Excel/PDF 走下方大预览层 */}
+        {previewModal && previewModal.type === 'text' && (
           <aside className="flex w-96 shrink-0 flex-col rounded-lg border border-border bg-card">
             {/* 标题栏 */}
             <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
@@ -1638,7 +1750,7 @@ export default function DeliverableManagement() {
                 )}
               </div>
               <div className="flex shrink-0 items-center gap-1">
-                {previewModal.type === 'text' && canEdit && (
+                {canEdit && (
                   <Button
                     size="sm"
                     loading={previewSaving}
@@ -1677,14 +1789,7 @@ export default function DeliverableManagement() {
                     下载文件
                   </Button>
                 </div>
-              ) : previewModal.type === 'pdf' && previewModal.blobUrl ? (
-                <iframe
-                  src={previewModal.blobUrl}
-                  title="PDF 预览"
-                  className="w-full flex-1 border-0"
-                  style={{ minHeight: '400px' }}
-                />
-              ) : previewModal.type === 'text' ? (
+              ) : (
                 <textarea
                   value={previewModal.content}
                   onChange={(e) =>
@@ -1700,11 +1805,96 @@ export default function DeliverableManagement() {
                   className="w-full flex-1 resize-none border-0 bg-background p-4 font-mono text-sm leading-relaxed text-foreground outline-none"
                   style={{ minHeight: '400px' }}
                 />
+              )}
+            </div>
+          </aside>
+        )}
+      </div>
+
+      {overlayPreview && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-3 backdrop-blur-[2px] sm:p-5"
+          onClick={closePreview}
+        >
+          <div
+            className="flex h-[min(92vh,920px)] w-[min(1280px,96vw)] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted">
+                  <FileIcon ext={previewModal.row.file_ext} className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium text-foreground" title={previewModal.row.filename}>
+                    {previewModal.row.filename}
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+                    <span className="rounded bg-muted px-1.5 py-0.5 uppercase">.{previewModal.row.file_ext}</span>
+                    <span>{fmtSize(previewModal.row.file_size)}</span>
+                    {previewModal.row.name && previewModal.row.name !== previewModal.row.filename && (
+                      <span className="truncate" title={previewModal.row.name}>{previewModal.row.name}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <Button size="sm" variant="secondary" onClick={() => handleDownload(previewModal.row)}>
+                  <Download className="h-3.5 w-3.5" />
+                  下载
+                </Button>
+                <button
+                  type="button"
+                  className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  onClick={closePreview}
+                  title="关闭预览（Esc）"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              {previewModal.loading ? (
+                <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  正在打开预览…
+                </div>
+              ) : previewModal.error ? (
+                <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+                  <p className="max-w-md text-center text-red-500">{previewModal.error}</p>
+                  <Button size="sm" variant="secondary" onClick={() => handleDownload(previewModal.row)}>
+                    <Download className="h-3.5 w-3.5" />
+                    下载文件
+                  </Button>
+                </div>
+              ) : previewModal.type === 'pdf' && previewModal.blobUrl ? (
+                <iframe
+                  src={previewModal.blobUrl}
+                  title="PDF 预览"
+                  className="h-full w-full flex-1 border-0 bg-muted/20"
+                />
+              ) : previewModal.type === 'office' && previewModal.arrayBuffer ? (
+                <Suspense
+                  fallback={
+                    <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      加载预览组件…
+                    </div>
+                  }
+                >
+                  <OfficePreview
+                    buffer={previewModal.arrayBuffer}
+                    ext={(previewModal.row.file_ext || '').toLowerCase()}
+                  />
+                </Suspense>
               ) : previewModal.type === 'unsupported' ? (
-                <div className="flex h-64 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+                <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
                   <FileArchive className="h-10 w-10 text-muted-foreground/50" />
-                  <p>该文件类型（.{previewModal.row.file_ext}）暂不支持在线预览</p>
-                  <p className="text-xs">支持预览：PDF / TXT / CSV / MD</p>
+                  <p>
+                    {previewModal.error
+                      || `该文件类型（.${previewModal.row.file_ext}）暂不支持在线预览`}
+                  </p>
+                  <p className="text-xs">支持预览：Word（.docx）/ Excel（.xlsx .xls）/ PDF / TXT / CSV / MD</p>
                   <Button size="sm" variant="secondary" onClick={() => handleDownload(previewModal.row)}>
                     <Download className="h-3.5 w-3.5" />
                     下载文件
@@ -1712,9 +1902,9 @@ export default function DeliverableManagement() {
                 </div>
               ) : null}
             </div>
-          </aside>
-        )}
-      </div>
+          </div>
+        </div>
+      )}
 
       {/* 右键菜单（fixed 定位） */}
       {contextMenu && contextMenu.node && (
@@ -1902,6 +2092,7 @@ export default function DeliverableManagement() {
       {uploadModal && (
         <Modal
           title="上传材料"
+          wide
           onClose={() => !uploading && setUploadModal(null)}
           footer={
             <>
@@ -1911,7 +2102,7 @@ export default function DeliverableManagement() {
               <Button
                 size="sm"
                 loading={uploading}
-                disabled={uploading || (uploadModal.files || []).every((f) => f.status === 'success')}
+                disabled={uploading || (uploadModal.files || []).every((f) => f.status !== 'pending')}
                 onClick={handleUpload}
               >
                 上传{(uploadModal.files || []).filter((f) => f.status !== 'success').length > 0
@@ -1921,7 +2112,7 @@ export default function DeliverableManagement() {
             </>
           }
         >
-          {/* 大面积拖拽区域 */}
+          {/* 大面积拖拽区域：文件 / 文件夹（保留原目录结构） */}
           <div
             onDragOver={(e) => {
               e.preventDefault()
@@ -1931,19 +2122,21 @@ export default function DeliverableManagement() {
               e.preventDefault()
               setDragOver(false)
             }}
-            onDrop={(e) => {
+            onDrop={async (e) => {
               e.preventDefault()
               setDragOver(false)
               if (uploading) return
-              const dropped = Array.from(e.dataTransfer.files || [])
-              if (dropped.length === 0) return
+              const dropped = await collectDroppedItems(e.dataTransfer)
+              if (dropped.length === 0) {
+                toast.warning('没有可上传的文件')
+                return
+              }
               setUploadModal((prev) => ({
                 ...prev,
-                files: [...(prev.files || []), ...dropped.map((file) => ({ file, status: 'pending' }))],
+                files: [...(prev.files || []), ...dropped],
               }))
             }}
-            onClick={() => !uploading && document.getElementById('dlv-upload-input')?.click()}
-            className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-8 text-center transition-colors ${
+            className={`flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-7 text-center transition-colors ${
               dragOver
                 ? 'border-primary bg-primary/5'
                 : 'border-border hover:border-primary/50 hover:bg-muted/40'
@@ -1951,26 +2144,70 @@ export default function DeliverableManagement() {
           >
             <Upload className="h-8 w-8 text-muted-foreground" />
             <div>
-              <p className="text-sm font-medium text-foreground">拖拽文件到此处</p>
+              <p className="text-sm font-medium text-foreground">拖拽文件或文件夹到此处</p>
               <p className="text-xs text-muted-foreground">
-                或点击选择文件（支持 {ALLOWED_EXTS.length} 种类型，单文件 ≤ 200MB，可多选）
+                文件夹会按原目录结构迁入当前目录，类似 Windows 复制文件夹
               </p>
             </div>
+            <div className="mt-1 flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={uploading}
+                onClick={() => document.getElementById('dlv-upload-input')?.click()}
+              >
+                选择文件
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={uploading}
+                onClick={() => document.getElementById('dlv-upload-folder')?.click()}
+              >
+                <Folder className="h-3.5 w-3.5" />
+                选择文件夹
+              </Button>
+            </div>
+            <p className="text-[11px] text-muted-foreground/80">
+              支持 {ALLOWED_EXTS.length} 种类型，单文件 ≤ 200MB
+            </p>
             <input
               id="dlv-upload-input"
               type="file"
               multiple
               accept={ALLOWED_EXTS.map((e) => `.${e}`).join(',')}
               onChange={(e) => {
-                const picked = Array.from(e.target.files || [])
+                const picked = Array.from(e.target.files || []).map((file) => toUploadItem(file)).filter(Boolean)
                 if (picked.length === 0) return
                 setUploadModal((prev) => ({
                   ...prev,
-                  files: [...(prev.files || []), ...picked.map((file) => ({ file, status: 'pending' }))],
+                  files: [...(prev.files || []), ...picked],
                 }))
                 e.target.value = ''
               }}
-              onClick={(e) => e.stopPropagation()}
+              className="hidden"
+            />
+            <input
+              id="dlv-upload-folder"
+              type="file"
+              multiple
+              webkitdirectory=""
+              directory=""
+              onChange={(e) => {
+                const picked = Array.from(e.target.files || []).map((file) => toUploadItem(file)).filter(Boolean)
+                if (picked.length === 0) {
+                  toast.warning('文件夹中没有可上传的文件')
+                  e.target.value = ''
+                  return
+                }
+                setUploadModal((prev) => ({
+                  ...prev,
+                  files: [...(prev.files || []), ...picked],
+                }))
+                e.target.value = ''
+              }}
               className="hidden"
             />
           </div>
@@ -1984,8 +2221,13 @@ export default function DeliverableManagement() {
                   className="relative flex items-center gap-2 border-b border-border/60 px-3 py-1.5 last:border-0"
                 >
                   <FileIcon ext={(item.file.name.split('.').pop() || '').toLowerCase()} className="h-3.5 w-3.5" />
-                  <span className="min-w-0 flex-1 truncate text-xs text-foreground" title={item.file.name}>
-                    {item.file.name}
+                  <span
+                    className="min-w-0 flex-1 truncate text-xs text-foreground"
+                    title={item.relativePath || item.file.name}
+                  >
+                    {(item.relativePath && item.relativePath.includes('/'))
+                      ? item.relativePath.replace(/\//g, ' / ')
+                      : item.file.name}
                   </span>
                   <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
                     {fmtSize(item.file.size)}
@@ -2029,14 +2271,35 @@ export default function DeliverableManagement() {
             </div>
           )}
           {!uploading && (uploadModal.files || []).length > 0 && (
-            <button
-              type="button"
-              className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
-              onClick={() => document.getElementById('dlv-upload-input')?.click()}
-            >
-              <Plus className="h-3 w-3" />
-              继续添加文件
-            </button>
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                onClick={() => document.getElementById('dlv-upload-input')?.click()}
+              >
+                <Plus className="h-3 w-3" />
+                继续添加文件
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                onClick={() => document.getElementById('dlv-upload-folder')?.click()}
+              >
+                <FolderPlus className="h-3 w-3" />
+                继续添加文件夹
+              </button>
+              {(() => {
+                const dirs = new Set(
+                  (uploadModal.files || []).map((f) => dirKeyOf(f.relativePath)).filter(Boolean)
+                )
+                if (dirs.size === 0) return null
+                return (
+                  <span className="text-[11px] text-muted-foreground">
+                    将创建 {dirs.size} 个文件夹
+                  </span>
+                )
+              })()}
+            </div>
           )}
 
           {/* 统一批量设置区 */}
@@ -2053,6 +2316,9 @@ export default function DeliverableManagement() {
             <Field label="上传到">
               <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
                 {activeCat?.name || '—'}
+                {(uploadModal.files || []).some((f) => dirKeyOf(f.relativePath)) && (
+                  <span className="mt-0.5 block text-[11px]">文件夹将按原结构创建到此目录下</span>
+                )}
               </div>
             </Field>
           </div>

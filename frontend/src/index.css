@@ -388,3 +388,105 @@ button:not(:disabled),
     animation: none !important;
   }
 }
+
+/* ===== 材料管理：Word / Excel 在线预览 ===== */
+.docx-preview-scroll {
+  background: #cfd4dc;
+}
+.docx-preview-scale {
+  display: flex;
+  justify-content: center;
+  padding: 20px 16px 32px;
+  min-height: 100%;
+}
+.docx-preview-host {
+  color: #1f1f1f;
+}
+.docx-preview-host .docx-wrapper {
+  background: transparent;
+  padding: 0;
+}
+.docx-preview-host .docx-wrapper > section.docx,
+.docx-preview-host section.docx {
+  box-shadow: 0 8px 24px rgb(15 23 42 / 18%);
+  margin: 0 auto 20px;
+  background: #fff;
+  border-radius: 2px;
+}
+
+.excel-preview-root {
+  background: var(--card);
+}
+.excel-preview table {
+  border-collapse: collapse;
+  border-spacing: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--foreground);
+  background: var(--background);
+}
+.excel-preview th,
+.excel-preview td {
+  border: 1px solid color-mix(in oklch, var(--foreground) 12%, transparent);
+  padding: 5px 10px;
+  white-space: nowrap;
+  max-width: 22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+.excel-preview thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: color-mix(in oklch, var(--foreground) 7%, var(--card));
+  color: var(--muted-foreground);
+  font-weight: 600;
+  text-align: center;
+  min-width: 4.5rem;
+}
+.excel-preview .excel-gutter {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  min-width: 2.5rem;
+  max-width: 3rem;
+  padding: 5px 6px;
+  text-align: center;
+  background: color-mix(in oklch, var(--foreground) 7%, var(--card));
+  color: var(--muted-foreground);
+  font-weight: 600;
+}
+.excel-preview thead .excel-gutter {
+  z-index: 4;
+}
+.excel-preview tbody tr:nth-child(even) td {
+  background: color-mix(in oklch, var(--foreground) 3%, var(--background));
+}
+.excel-preview tbody tr:hover td {
+  background: color-mix(in oklch, oklch(var(--primary)) 10%, var(--background));
+}
+.excel-sheets {
+  background: color-mix(in oklch, var(--foreground) 4%, var(--card));
+}
+.excel-sheet-tab {
+  border-radius: 4px 4px 0 0;
+  padding: 4px 12px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  border: 1px solid transparent;
+}
+.excel-sheet-tab:hover {
+  color: var(--foreground);
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+}
+.excel-sheet-tab.is-active {
+  color: #217346;
+  background: var(--card);
+  border-color: color-mix(in oklch, var(--foreground) 12%, transparent);
+  border-bottom-color: var(--card);
+  font-weight: 600;
+}
+.dark .excel-sheet-tab.is-active {
+  color: #3dd68c;
+}

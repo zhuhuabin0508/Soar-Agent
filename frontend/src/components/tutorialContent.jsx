@@ -397,12 +397,12 @@ export const DELIVERABLE_TUTORIAL = [
     title: '上传材料',
     content: (
       <div className="space-y-2">
-        <p>选中目录后点击「上传材料」，支持<b>多文件 + 拖拽上传</b>：</p>
+        <p>选中目录后点击「上传材料」，支持<b>文件 / 文件夹</b>两种迁入方式：</p>
         <ul className="ml-4 list-disc space-y-1">
-          <li><b>拖拽</b>：将文件直接拖到上传区域虚线框内</li>
-          <li><b>多选</b>：点击选择时可一次选多个文件</li>
+          <li><b>拖拽文件夹</b>：像 Windows 复制文件夹一样，自动按原目录结构创建子目录</li>
+          <li><b>选择文件夹</b>：点「选择文件夹」整夹上传，同级同名目录会复用</li>
+          <li><b>选择文件</b>：仍可一次多选文件，直接落到当前目录</li>
           <li><b>批量设置</b>：版本号、描述会统一应用到本次上传的全部文件</li>
-          <li><b>实时状态</b>：每个文件显示 pending → uploading → success/failed 状态</li>
         </ul>
         <p>上传后系统自动记录<b>上传人、上传时间、文件大小、文件名</b>，文件列表会显示上传时间列。</p>
       </div>
@@ -438,9 +438,11 @@ export const DELIVERABLE_TUTORIAL = [
       <div className="space-y-2">
         <p>点击材料的「预览」按钮，根据类型在右侧面板展示：</p>
         <ul className="ml-4 list-disc space-y-1">
+          <li><b>Word（.docx）</b>：浏览器内直接预览正文与分页</li>
+          <li><b>Excel（.xlsx / .xls）</b>：表格在线预览，多工作表可切换（单表最多显示 2000 行）</li>
           <li><b>PDF</b>：iframe 内嵌预览（fetch blob 后渲染）</li>
           <li><b>TXT / CSV / MD</b>：可在线编辑的文本编辑器（≤ 5MB），修改后点击「保存」</li>
-          <li><b>其他类型</b>：提示不支持预览，提供下载按钮</li>
+          <li><b>旧版 .doc / 压缩包 / PPT</b>：提示不支持预览，提供下载按钮</li>
         </ul>
         <p>文本编辑支持<b>未保存标记</b>，编辑后「保存」按钮才会高亮可用。</p>
       </div>

@@ -127,6 +127,80 @@ def _is_descendant(db: Session, category_id: int, candidate_parent_id: int) -> b
     return candidate_parent_id in _collect_descendant_ids(db, category_id)
 
 
+def _parse_relative_dir(relative_path: str, filename: str) -> list[str]:
+    """从相对路径解析目录段（不含文件名），用于按原文件夹结构迁入。
+
+    接受 ``季度报告/实施方案/方案.docx`` 或 ``季度报告/实施方案``。
+    拒绝 ``.`` / ``..`` / 空段，防止路径穿越。
+    """
+    raw = (relative_path or "").replace("\\", "/").strip()
+    if not raw:
+        return []
+    parts = [p.strip() for p in raw.split("/") if p.strip()]
+    cleaned: list[str] = []
+    for part in parts:
+        if part in {".", ".."} or "/" in part or "\\" in part:
+            raise HTTPException(status_code=400, detail="相对路径非法")
+        if len(part) > 100:
+            raise HTTPException(status_code=400, detail=f"目录名不能超过 100 字：{part}")
+        cleaned.append(part)
+    if not cleaned:
+        return []
+    last = cleaned[-1]
+    base = os.path.basename(filename or "")
+    last_ext = last.rsplit(".", 1)[-1].lower() if "." in last else ""
+    if last == base or last_ext in ALLOWED_EXTENSIONS:
+        cleaned = cleaned[:-1]
+    return cleaned
+
+
+def _ensure_category_path(
+    db: Session,
+    root: ServiceCategory,
+    segments: list[str],
+    user: User,
+) -> ServiceCategory:
+    """从 root 起按目录段逐级查找或创建子目录（同级同名复用），返回叶子目录。"""
+    current = root
+    for name in segments:
+        name = sanitize_text(name).strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="目录名不能为空")
+        next_level = (current.level or 1) + 1
+        if next_level > ServiceCategory.MAX_LEVEL:
+            raise HTTPException(
+                status_code=400,
+                detail=f"目录层级不能超过 {ServiceCategory.MAX_LEVEL} 级，请缩短文件夹深度",
+            )
+        child = (
+            db.query(ServiceCategory)
+            .filter(
+                ServiceCategory.parent_id == current.id,
+                ServiceCategory.name == name,
+            )
+            .first()
+        )
+        if child is None:
+            max_order = (
+                db.query(func.max(ServiceCategory.sort_order))
+                .filter(ServiceCategory.parent_id == current.id)
+                .scalar()
+                or 0
+            )
+            child = ServiceCategory(
+                name=name,
+                description=None,
+                parent_id=current.id,
+                level=next_level,
+                sort_order=max_order + 1,
+                created_by=user.id,
+            )
+            db.add(child)
+            db.flush()
+        current = child
+    return current
+
+
 # ============ 1. 目录类别 ============
 
 @router.get("/categories")
@@ -869,14 +943,17 @@ async def upload_deliverable(
     name: str = Form(""),
     version: str = Form(""),
     description: str = Form(""),
+    relative_path: str = Form(""),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("deliverable", "edit")),
 ):
     """上传材料：白名单校验 + 200MB 限制 + uuid 落盘。
 
     名称缺省时取原始文件名（去扩展名）。
+    可选 ``relative_path``（如 ``季度报告/实施方案/方案.docx``）：
+    在目标目录下按原文件夹结构自动创建/复用子目录后再落文件，类似 Windows 文件夹迁移。
     """
-    _get_category_or_404(db, category_id)
+    root_category = _get_category_or_404(db, category_id)
     ext = _validate_upload(file)
 
     # 读取文件内容（超限即拒，不落盘）
@@ -893,12 +970,19 @@ async def upload_deliverable(
     if len(display_name) > 200:
         raise HTTPException(status_code=400, detail="材料名称不能超过 200 字")
 
+    dir_segments = _parse_relative_dir(relative_path, filename)
+    target_category = (
+        _ensure_category_path(db, root_category, dir_segments, current_user)
+        if dir_segments
+        else root_category
+    )
+
     stored_name = f"{datetime.utcnow():%Y%m%d}_{uuid.uuid4().hex[:12]}.{ext}"
     with open(_stored_path(stored_name), "wb") as f:
         f.write(content)
 
     deliverable = Deliverable(
-        category_id=category_id,
+        category_id=target_category.id,
         name=display_name,
         version=sanitize_text(version)[:50] if version else None,
         description=sanitize_text(description) if description else None,
@@ -912,8 +996,9 @@ async def upload_deliverable(
     db.commit()
     db.refresh(deliverable)
     logger.info(
-        "材料已上传: id=%s, category_id=%s, name=%s, file=%s, operator=%s",
-        deliverable.id, category_id, display_name, filename, current_user.username,
+        "材料已上传: id=%s, category_id=%s, name=%s, file=%s, relative_path=%s, operator=%s",
+        deliverable.id, target_category.id, display_name, filename,
+        relative_path or "", current_user.username,
     )
     return deliverable.to_dict(creator_name=current_user.username)
 
