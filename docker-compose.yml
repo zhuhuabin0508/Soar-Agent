@@ -1,12 +1,12 @@
-# ===== SOAR 平台一键启动编排 =====
-# 启动：docker compose up -d
-# 查看日志：docker compose logs -f
-# 停止（保留数据）：docker compose stop
-# 停止并删除容器（保留数据卷）：docker compose down
-# ⚠️ 切勿使用 docker compose down -v，会清空所有数据！
-# 数据卷名已固定为 soar_pgdata / soar_uploads，不受项目目录名影响。
+# ===== SOAR 平台：唯一运行环境（源码挂载 + 热重载）=====
+# 启动：bash dev.sh up
+# 或：  docker compose --env-file .env.dev up -d
+# 停止：bash dev.sh down   （切勿 down -v，会清空数据卷）
+#
+# 后端：挂载 ./backend/app + uvicorn --reload
+# 前端：挂载 ./frontend + Vite HMR（node:20-alpine）
+# Worker 改 Celery 后需：docker restart soar-worker-dev
 services:
-  # ---------- 数据库：PostgreSQL ----------
   postgres:
     image: postgres:15
     container_name: soar-postgres
@@ -19,13 +19,13 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
       timeout: 5s
       retries: 5
+    networks: [soar-net]
     restart: unless-stopped
 
-  # ---------- 缓存与消息中间件：Redis ----------
   redis:
     image: redis:7.4-alpine
     container_name: soar-redis
@@ -37,23 +37,44 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    networks: [soar-net]
     restart: unless-stopped
 
-  # ---------- 后端 API：FastAPI ----------
-  backend:
+  backend-dev:
     image: soar-backend:latest
-    container_name: soar-backend
+    container_name: soar-backend-dev
+    working_dir: /app
+    entrypoint: []
+    command:
+      - sh
+      - -c
+      - |
+        echo "==> [dev] ensuring DB tables..."
+        python -c "from app.database import engine, Base; from app.models import Workflow, Execution, ExecutionTrace; Base.metadata.create_all(bind=engine); print('DB tables ensured (dev)')"
+        python -c "from app.core.seed import ensure_seed_data; ensure_seed_data()" || echo "==> [dev] seed skipped"
+        echo "==> [dev] starting uvicorn with --reload on 0.0.0.0:8000"
+        exec uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/entrypoint.sh:/app/entrypoint.sh:ro
+      - ./backend/requirements.txt:/app/requirements.txt:ro
+      - ./security-tools:/opt/security-tools
+      - uploads:/app/uploads
+      - backups:/app/backups
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-soar}
+      PATH: /opt/security-tools/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-soar}
       DB_USER: ${POSTGRES_USER:-postgres}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: ${POSTGRES_DB:-soar}
       REDIS_URL: redis://:${REDIS_PASSWORD:-12345678}@redis:6379/0
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-12345678}@redis:6379/0
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-12345678}@redis:6379/1
-      JWT_SECRET: ${JWT_SECRET:-soar-dev-secret-change-me-in-production-please}
+      TZ: Asia/Shanghai
+      JWT_SECRET: ${JWT_SECRET}
       SEED_ADMIN_USERNAME: ${SEED_ADMIN_USERNAME:-admin}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-admin123}
     depends_on:
@@ -63,58 +84,91 @@ services:
         condition: service_healthy
     ports:
       - "8001:8000"
-    volumes:
-      - uploads:/app/uploads
-      - backups:/app/backups
-      - //var/run/docker.sock:/var/run/docker.sock
+    networks: [soar-net]
     restart: unless-stopped
+    mem_limit: 1g
+    memswap_limit: 1g
 
-  # ---------- 异步任务：Celery Worker ----------
-  worker:
+  worker-dev:
     image: soar-backend:latest
-    container_name: soar-worker
-    environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-soar}
-      REDIS_URL: redis://:${REDIS_PASSWORD:-12345678}@redis:6379/0
-      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-12345678}@redis:6379/0
-      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-12345678}@redis:6379/1
-    depends_on:
-      redis:
-        condition: service_healthy
-      backend:
-        condition: service_started
+    container_name: soar-worker-dev
+    working_dir: /app
     entrypoint: []
     command: ["celery", "-A", "app.core.celery_app", "worker", "-l", "info"]
-    restart: unless-stopped
-
-  # ---------- 定时任务调度：Celery Beat ----------
-  beat:
-    image: soar-backend:latest
-    container_name: soar-beat
+    volumes:
+      - ./backend/app:/app/app
+      - ./security-tools:/opt/security-tools
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-soar}
+      PATH: /opt/security-tools/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-soar}
       REDIS_URL: redis://:${REDIS_PASSWORD:-12345678}@redis:6379/0
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-12345678}@redis:6379/0
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-12345678}@redis:6379/1
+      TZ: Asia/Shanghai
     depends_on:
       redis:
         condition: service_healthy
-      backend:
+      backend-dev:
         condition: service_started
+    networks: [soar-net]
+    restart: unless-stopped
+    mem_limit: 2g
+    memswap_limit: 2g
+
+  beat-dev:
+    image: soar-backend:latest
+    container_name: soar-beat-dev
+    working_dir: /app
     entrypoint: []
     command: ["celery", "-A", "app.core.celery_app", "beat", "-l", "info"]
+    volumes:
+      - ./backend/app:/app/app
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-soar}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-12345678}@redis:6379/0
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-12345678}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-12345678}@redis:6379/1
+      TZ: Asia/Shanghai
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend-dev:
+        condition: service_started
+    networks: [soar-net]
     restart: unless-stopped
 
-  # ---------- 前端：React + Nginx ----------
-  frontend:
-    image: soar-frontend:latest
-    container_name: soar-frontend
-    depends_on:
-      backend:
-        condition: service_started
+  frontend-dev:
+    image: node:20-alpine
+    container_name: soar-frontend-dev
+    working_dir: /app
+    command:
+      - sh
+      - -c
+      - |
+        npm config set registry https://registry.npmmirror.com
+        if [ ! -d node_modules/.bin ]; then
+          echo "==> [dev] installing npm deps (首次较慢，~1-2 分钟)..."
+          npm install --legacy-peer-deps
+        fi
+        echo "==> [dev] starting vite dev server on 0.0.0.0:5173"
+        exec npx vite --config vite.config.dev.js --host 0.0.0.0 --port 5173
+    volumes:
+      - ./frontend:/app
     ports:
-      - "8080:80"
+      - "8080:5173"
+    networks: [soar-net]
+    depends_on:
+      - backend-dev
     restart: unless-stopped
+    mem_limit: 1g
+    memswap_limit: 1g
+
+networks:
+  # 固定名称，便于 security-tools 等旁路栈按容器名互访。
+  # 若不存在，dev.sh up 会先创建；已存在则直接加入（服务器上沿用原网络，数据卷不受影响）。
+  soar-net:
+    external: true
+    name: config_default
 
 volumes:
   pgdata:

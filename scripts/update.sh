@@ -62,7 +62,7 @@ ensure_inotify_limits() {
 
 # 定位项目根目录：
 #   1. 优先使用 APP_DIR 环境变量（如 APP_DIR=/opt/soar-src bash update.sh）
-#   2. 否则从脚本所在位置向上查找 docker-compose.dev.yml
+#   2. 否则从脚本所在位置向上查找 docker-compose.yml
 if [ -n "${APP_DIR:-}" ]; then
   cd "$APP_DIR"
 else
@@ -70,7 +70,7 @@ else
   _dir="$SCRIPT_DIR"
   _found=""
   while [ "$_dir" != "/" ]; do
-    if [ -f "$_dir/docker-compose.dev.yml" ]; then
+    if [ -f "$_dir/docker-compose.yml" ]; then
       _found="$_dir"
       break
     fi
@@ -79,11 +79,11 @@ else
   if [ -n "$_found" ]; then
     cd "$_found"
   else
-    error "未找到 docker-compose.dev.yml，请用 APP_DIR=/项目路径 指定后重跑"
+    error "未找到 docker-compose.yml，请用 APP_DIR=/项目路径 指定后重跑"
   fi
 fi
 
-[ -f "docker-compose.dev.yml" ] || error "当前目录 $PWD 未找到 docker-compose.dev.yml，请用 APP_DIR=/项目路径 指定"
+[ -f "docker-compose.yml" ] || error "当前目录 $PWD 未找到 docker-compose.yml，请用 APP_DIR=/项目路径 指定"
 info "项目目录：$PWD"
 
 # ===== 0. 确保 inotify 限制足够（热重载依赖文件监听）=====
@@ -130,4 +130,10 @@ fi
 
 # ===== 4. 状态 =====
 info "更新完成，热重载已自动生效，当前容器状态："
-docker compose --env-file .env.dev -f docker-compose.dev.yml ps
+if [ -f .env.dev ]; then
+  docker compose --env-file .env.dev ps
+elif [ -f .env ]; then
+  docker compose --env-file .env ps
+else
+  docker compose ps
+fi

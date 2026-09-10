@@ -1,4 +1,6 @@
-# ===== SOAR 前端镜像：多阶段构建 =====
+# ===== SOAR 前端 Nginx 镜像（已不再用于日常运行）=====
+# 平台只保留热重载：docker-compose.yml 里的 soar-frontend-dev（node:20-alpine + Vite）。
+# 本文件仅在需要单独打静态包镜像时使用，日常请勿 docker compose build frontend。
 
 # ----- Stage 1: Builder -----
 FROM node:20-alpine AS builder

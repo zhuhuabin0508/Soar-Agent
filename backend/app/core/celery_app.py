@@ -51,7 +51,7 @@ celery_app.conf.update(
 # ============================================================================
 # Celery Beat 定时任务调度
 # ============================================================================
-# beat 服务通过 `celery -A app.core.celery_app beat` 启动（见 docker-compose beat 服务）。
+# beat 服务通过 `celery -A app.core.celery_app beat` 启动（见 docker-compose.yml 的 beat-dev）。
 # 每个条目：{"task-name": {"task": "celery_task_name", "schedule": crontab(...)}}
 from celery.schedules import crontab  # noqa: E402
 

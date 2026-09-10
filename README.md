@@ -32,19 +32,20 @@
 - **ECharts** — 数据可视化
 
 ### 基础设施
-- **Docker Compose** — 一键编排（postgres / redis / backend / worker / frontend）
+- **Docker Compose** — 唯一编排：postgres / redis / backend-dev / worker-dev / beat-dev / frontend-dev
 - **Vite Dev Server** — 前端热更新 + `/api` 反向代理
 
 ## 🚀 部署架构
 
-服务器采用**源码挂载 + 热重载**的单环境部署方式，改完即生效，无需重新构建镜像：
+**只有一套环境：源码挂载 + 热重载。** 已去掉 Nginx 前端镜像栈（`soar-frontend` / `soar-backend` 无 `-dev` 后缀的那套）。
 
 | 组件 | 容器 | 机制 |
 |------|------|------|
 | 后端 API | `soar-backend-dev` | 挂载 `./backend/app` + `uvicorn --reload`，改 `.py` 自动重启 |
 | 前端 | `soar-frontend-dev` | 挂载 `./frontend` + Vite HMR，改前端文件自动热更新 |
 | 异步任务 | `soar-worker-dev` | 挂载源码 + Celery（改代码需手动重启） |
-| 数据库 | `soar-postgres` | PostgreSQL 15（数据在 `soar_dev` 库） |
+| 定时调度 | `soar-beat-dev` | 挂载源码 + Celery Beat |
+| 数据库 | `soar-postgres` | PostgreSQL 15 |
 | 缓存 | `soar-redis` | Redis 7.4 |
 
 端口映射：
@@ -53,21 +54,26 @@
 - 后端 API：`8001`（映射容器内 `8000`）
 - PostgreSQL：`5432`
 
+后端仍使用镜像 `soar-backend:latest`（Python 依赖预装），源码通过挂载覆盖，不必每次改代码都 rebuild。前端不打镜像，直接用 `node:20-alpine`。
+
 ## 🚀 快速开始
 
 ### 环境要求
 
 - Docker & Docker Compose
+- 已有 `soar-backend:latest`（或先执行 `bash scripts/build-and-export-images.sh`）
 - Linux 内核 `fs.inotify` 限制足够（热重载依赖，见下方「inotify 限制」）
 
 ### 启动
 
 ```bash
-# 方式一：使用 dev.sh
+cp .env.example .env.dev   # 按环境修改密码与 JWT_SECRET
+
+# 方式一
 bash dev.sh up
 
-# 方式二：直接 compose
-docker compose --env-file .env.dev -f docker-compose.dev.yml up -d
+# 方式二
+docker compose --env-file .env.dev up -d
 ```
 
 启动后访问：
@@ -76,6 +82,20 @@ docker compose --env-file .env.dev -f docker-compose.dev.yml up -d
 - 后端 API 文档：`http://<服务器IP>:8001/docs`
 
 默认管理员账号由 `.env.dev` 中的 `SEED_ADMIN_USERNAME` / `SEED_ADMIN_PASSWORD` 决定（首次空库 seed 时创建）。
+
+### 从旧「镜像栈」切过来
+
+仓库里已删除 `docker-compose.dev.yml` 和 Nginx 前端镜像编排。机器上如果还在跑没有 `-dev` 后缀的容器，或 postgres 是旧编排起的：
+
+```bash
+# 只删容器，不要带 -v（数据卷 soaragent_pgdata 必须保留）
+docker rm -f soar-frontend soar-backend soar-worker soar-beat
+# 若即将由新编排接管库和 Redis，先去掉旧容器（数据在卷里）
+docker rm -f soar-postgres soar-redis
+bash dev.sh up
+```
+
+已在跑 `soar-*-dev` 的服务器：`git pull` 后执行一次 `bash dev.sh up` 即可套用新编排（会补上 postgres/redis/beat）。名称冲突时按上面先 `docker rm` 旧容器。
 
 ## 🔄 日常更新部署
 
@@ -92,7 +112,7 @@ RESTART_WORKER=1 sudo bash scripts/update.sh
 > **注意**：
 > - 只改源码（`.py` / `.tsx` / `.jsx` / `.css` 等）热重载自动生效，无需任何手动操作。
 > - 改了 `requirements.txt` / `package.json`（增删依赖）热重载**不会**自动安装，`update.sh` 会检测并提示手动执行安装命令。
-> - 改了 docker-compose、环境变量等需手动 `docker compose ... up -d` 重建容器。
+> - 改了 docker-compose、环境变量等需手动 `bash dev.sh up` 重建容器。
 
 ### inotify 限制
 
@@ -107,11 +127,11 @@ echo "fs.inotify.max_user_instances=512" >> /etc/sysctl.conf
 
 ## ⚙️ 配置说明
 
-所有配置通过 `.env.dev` 注入（开发/热重载环境专用）。主要配置：
+所有配置通过 `.env.dev` 注入。主要配置：
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
-| `POSTGRES_DB` | 数据库名 | `soar_dev` |
+| `POSTGRES_DB` | 数据库名 | 以 `.env.dev` 为准（示例为 `soar`） |
 | `POSTGRES_PASSWORD` | 数据库密码 | `postgres` |
 | `JWT_SECRET` | JWT 签名密钥 | 见 `.env.dev` |
 | `SEED_ADMIN_USERNAME` | 初始管理员账号 | `admin` |
@@ -144,14 +164,14 @@ echo "fs.inotify.max_user_instances=512" >> /etc/sysctl.conf
 │   └── package.json
 ├── scripts/
 │   ├── update.sh             # 热重载部署更新脚本
-│   ├── build-and-export-images.sh  # 联网构建镜像并导出 tar（离线部署用）
+│   ├── build-and-export-images.sh  # 联网构建后端镜像并导出 tar
 │   └── ...
 ├── docs/                     # 设计文档
-├── docker-compose.dev.yml    # 热重载环境编排（服务器唯一环境）
-├── docker-compose.yml        # 镜像打包编排（备用，可构建离线镜像）
-├── .env.dev                  # 热重载环境变量
+├── docker-compose.yml        # 唯一运行环境（热重载）
+├── docker-compose.security-tools.yml  # DefectDojo / BloodHound（可选）
+├── .env.dev                  # 环境变量（不入库，从 .env.example 复制）
 ├── .env.example              # 环境变量模板
-└── dev.sh                    # 开发环境便捷脚本
+└── dev.sh                    # 启动/停止/日志便捷脚本
 ```
 
 ## 📖 设计文档

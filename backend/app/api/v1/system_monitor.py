@@ -37,6 +37,7 @@ router = APIRouter(
 _CONTAINER_GROUPS = {
     "soar-backend": "SOAR 平台",
     "soar-worker": "SOAR 平台",
+    "soar-beat": "SOAR 平台",
     "soar-frontend": "SOAR 平台",
     "soar-postgres": "SOAR 平台",
     "soar-redis": "SOAR 平台",

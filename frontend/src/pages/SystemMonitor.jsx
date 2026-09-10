@@ -31,7 +31,7 @@ const ACTION_META = {
 const SERVICE_GROUPS = {
   '数据层': ['soar-postgres', 'soar-redis'],
   '应用层': ['soar-backend', 'soar-frontend'],
-  '任务层': ['soar-celery', 'soar-celery-beat'],
+  '任务层': ['soar-worker', 'soar-beat'],
   '外部依赖': [],
 }
 const ACTION_OPTIONS = ['login', 'logout', 'create', 'update', 'delete', 'execute', 'export', 'upload']

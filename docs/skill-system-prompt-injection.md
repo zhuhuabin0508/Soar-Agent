@@ -202,7 +202,7 @@ export const skills = {
 
 ## 七、验证
 
-1. **后端部署**：`docker compose build backend && docker compose up -d --no-deps backend`，检查启动日志无迁移错误、`skills` 表已建。
+1. **后端部署**：`bash dev.sh up` 或 `docker compose --env-file .env.dev up -d`，检查 `soar-backend-dev` 启动日志无迁移错误、`skills` 表已建。
 2. **CRUD**：用 curl/PowerShell 调 `POST /api/v1/skills` 创建一个"告警研判SOP"技能（content 含 `{{product_name}}` 变量）。
 3. **注入验证**：创建 Agent，system_prompt 写 `你是 {{role}} 专家`，variables 设 `{"role":"SOC","product_name":"SOAR平台"}`，启用上述技能，调 `POST /agents/{id}/test`。检查 `test_agent` 返回的 messages 中 SystemMessage 是否含：变量已替换 + 技能段已注入。
 4. **禁用即时生效**：把技能 enabled 改 false，再测，确认技能段消失。
