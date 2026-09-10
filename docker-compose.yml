@@ -167,7 +167,6 @@ networks:
   # 固定名称，便于 security-tools 等旁路栈按容器名互访。
   # 若不存在，dev.sh up 会先创建；已存在则直接加入（服务器上沿用原网络，数据卷不受影响）。
   soar-net:
-    external: true
     name: config_default
 
 volumes:

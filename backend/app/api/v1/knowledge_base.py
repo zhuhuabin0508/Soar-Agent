@@ -245,7 +245,14 @@ def delete_knowledge_base(
     if cleaned:
         logger.info("已清理 %d 个智能体对知识库 %s 的引用", cleaned, kb_id)
 
-    db.delete(kb)
+    # 数据库级批量删除：先删分段，再删文档，最后删知识库本体。
+    # 不用 ORM 的 db.delete(kb)（cascade="all, delete-orphan"），因为它会把该库下
+    # 全部文档、全部分段逐个 SELECT 加载进 Python 内存再逐条 DELETE——
+    # 对万级分段的知识库需数十秒且内存暴涨，易拖垮单 worker 的 uvicorn 造成 502。
+    # 改为按外键依赖顺序执行 3 条批量 DELETE 语句，毫秒级完成且不占用内存。
+    db.query(KnowledgeSegment).filter(KnowledgeSegment.kb_id == kb_id).delete(synchronize_session=False)
+    db.query(KnowledgeDocument).filter(KnowledgeDocument.kb_id == kb_id).delete(synchronize_session=False)
+    db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).delete(synchronize_session=False)
     db.commit()
     logger.info("知识库已删除: id=%s", kb_id)
     return {"ok": True}
