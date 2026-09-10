@@ -150,18 +150,23 @@ services:
           echo "==> [dev] installing npm deps (首次较慢，~1-2 分钟)..."
           npm install --legacy-peer-deps
         fi
-        echo "==> [dev] starting vite dev server on 0.0.0.0:5173"
+        # HTTPS 由 @vitejs/plugin-basic-ssl 自动生成自签名证书（无需 openssl）
+        echo "==> [dev] starting vite dev server (HTTPS) on 0.0.0.0:5173"
         exec npx vite --config vite.config.dev.js --host 0.0.0.0 --port 5173
     volumes:
       - ./frontend:/app
+      # 用匿名卷隔离 node_modules：避免把 Windows 装的 node_modules bind 进 Linux 容器，
+      # 否则 rolldown 等 native 绑定（platform-specific）缺失会直接崩（Cannot find native binding）
+      - frontend_node_modules:/app/node_modules
     ports:
       - "8080:5173"
     networks: [soar-net]
     depends_on:
       - backend-dev
     restart: unless-stopped
-    mem_limit: 1g
-    memswap_limit: 1g
+    # Vite 8 首次依赖预构建（echarts/reactflow 等大包）内存峰值高，1g 会被 SIGKILL，提至 2g
+    mem_limit: 2g
+    memswap_limit: 2g
 
 networks:
   # 固定名称，便于 security-tools 等旁路栈按容器名互访。
@@ -176,3 +181,5 @@ volumes:
     name: soaragent_uploads
   backups:
     name: soaragent_backups
+  # frontend node_modules 匿名卷（隔离 Windows/容器两种平台的依赖）
+  frontend_node_modules:
