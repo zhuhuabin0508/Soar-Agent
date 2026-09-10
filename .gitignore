@@ -5,6 +5,8 @@
 backend/.env
 *.pem
 *.key
+# HTTPS 站点私钥特例：局域网 HTTPS 需要 key 随 git 同步到服务器（私有仓库内可接受）
+!frontend/certs/server.key
 
 # ===== 敏感数据 =====
 # 真实弱密码清单等业务数据不入库

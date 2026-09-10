@@ -1,0 +1,5 @@
+# 证书/私钥等 PEM 文件：禁止 Git 做行尾(CRLF)转换，保证与本地字节完全一致
+frontend/certs/*.key  -text
+frontend/certs/*.crt  -text
+frontend/certs/*.pem  -text
+*.pem                  -text
