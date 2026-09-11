@@ -1,4 +1,5 @@
-OAR 平台发版脚本：前端构建 + 后端镜像重建 + Nginx 平滑加载
+#!/usr/bin/env bash
+# SOAR 平台发版脚本：前端构建 + 后端镜像重建 + Nginx 平滑加载
 # 用法：cd /opt/soar-src && bash deploy/deploy.sh
 set -euo pipefail
 
@@ -15,7 +16,7 @@ npm run build
 cd ..
 
 echo "==> [3/5] 重建并重启后端容器"
-docker compose --env-file .env.dev up -d --build backend worker beat
+docker compose --env-file .env.dev up -d --build backend-dev worker-dev beat-dev
 
 echo "==> [4/5] 等待后端就绪"
 for i in $(seq 1 30); do
