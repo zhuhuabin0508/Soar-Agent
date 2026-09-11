@@ -143,10 +143,15 @@ services:
     working_dir: /app
     environment:
       # 容器内联网依赖代理：宿主机走代理才能出外网，容器不默认继承。
-      # 服务器在 .env.dev 里配置 NPM_HTTP_PROXY/NPM_HTTPS_PROXY 指向宿主机可路由的代理即可。
-      - HTTP_PROXY=${NPM_HTTP_PROXY:-}
-      - HTTPS_PROXY=${NPM_HTTPS_PROXY:-}
+      # 默认指向内网代理（与宿主机 daemon 一致），服务器 git pull 后即可用；
+      # 本机等不需要代理的环境，可在 .env.dev 里设 NPM_HTTP_PROXY= 空值覆盖。
+      - HTTP_PROXY=${NPM_HTTP_PROXY:-http://10.223.132.41:8999}
+      - HTTPS_PROXY=${NPM_HTTPS_PROXY:-http://10.223.132.41:8999}
       - NO_PROXY=${NPM_NO_PROXY:-localhost,127.0.0.1,10.223.132.41}
+    # 容器内 DNS 兜底：宿主 resolv.conf 多为内网 DNS，解析不了外网域名时用公共 DNS 直查。
+    dns:
+      - 114.114.114.114
+      - 8.8.8.8
     command:
       - sh
       - -c
