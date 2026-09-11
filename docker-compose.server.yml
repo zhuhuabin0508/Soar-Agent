@@ -1,0 +1,31 @@
+# ===== SOAR 平台：服务器（arm64）离线部署专用 override =====
+# 服务器出网困难（DNS/代理无法稳定安装 npm 依赖），故采用离线部署：
+#   1. 本机用 `npm install --os=linux --cpu=arm64` 装好 arm64 + musl 版 node_modules
+#   2. tar 打包上传到服务器并解压到 ./frontend/node_modules
+#   3. 本 override 让容器直接 bind 该 node_modules，跳过联网 npm install
+# 启动：docker compose -f docker-compose.yml -f docker-compose.server.yml --env-file .env.dev up -d
+#
+# ⚠️ 该目录（frontend/node_modules）是 linux-arm64-musl 版，仅用于 Linux/arm64 服务器。
+#    本机 Windows/macOS(amd64) 开发请勿使用本文件，仍用主 compose 的匿名卷方案。
+
+services:
+  frontend-dev:
+    # 直接使用 bind 挂载的离线 node_modules（跳过联网 npm install）
+    volumes:
+      - ./frontend:/app
+      - ./frontend/node_modules:/app/node_modules
+    # 移除代理/联网依赖；用 node 直接运行 vite（绕过 .bin shim 的 +x 权限问题）
+    environment:
+      - HTTP_PROXY=
+      - HTTPS_PROXY=
+      - NO_PROXY=
+    command:
+      - sh
+      - -c
+      - |
+        if [ ! -d node_modules/.bin ]; then
+          echo "==> [offline] node_modules missing at ./frontend/node_modules, cannot install offline. Abort."
+          exit 1
+        fi
+        echo "==> [offline] starting vite dev server (HTTPS) on 0.0.0.0:5173"
+        exec node node_modules/vite/bin/vite.js --config vite.config.dev.js --host 0.0.0.0 --port 5173
