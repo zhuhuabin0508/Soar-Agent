@@ -17,7 +17,7 @@ from app.core.timezone import beijing_now, beijing_now_iso
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from app.core.security import (
@@ -417,9 +417,16 @@ def _send_otp_email(smtp: dict, to_email: str, code: str) -> bool:
 
 
 class OtpSendRequest(BaseModel):
-    """OTP 登录验证码发送请求体。"""
+    """OTP 登录验证码发送请求体。
 
-    username: str = Field(..., description="用户名")
+    安全防护：``extra="forbid"`` 拒绝任何未在 Schema 中声明的多余字段（如
+    isadmin / role / issso 等特权字段），防止 API 成批分配（Mass Assignment）
+    注入 —— 客户端注入的敏感字段会直接返回 422，绝不落入业务逻辑。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    username: str = Field(..., min_length=1, max_length=64, description="用户名")
 
 
 @router.post("/otp/send")

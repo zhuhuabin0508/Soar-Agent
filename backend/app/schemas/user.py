@@ -2,11 +2,17 @@
 from typing import Optional
 
 from app.schemas._datetime import BeijingDatetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class UserCreate(BaseModel):
-    """创建用户请求体。"""
+    """创建用户请求体。
+
+    安全防护：``extra="forbid"`` 拒绝未声明字段（isadmin / issso 等注入），
+    防止 API 成批分配（Mass Assignment）。
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     username: str = Field(..., min_length=2, max_length=64, description="登录用户名")
     password: str = Field(..., min_length=1, max_length=128, description="初始密码")
@@ -20,7 +26,12 @@ class UserCreate(BaseModel):
 
 
 class UserUpdate(BaseModel):
-    """更新用户请求体（不含密码）。"""
+    """更新用户请求体（不含密码）。
+
+    安全防护：``extra="forbid"`` 拒绝未声明字段，仅允许更新白名单列出的字段。
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     display_name: Optional[str] = None
     email: Optional[str] = None
@@ -66,7 +77,13 @@ class ResetPasswordRequest(BaseModel):
 
 
 class UpdateProfileRequest(BaseModel):
-    """用户自助修改个人资料请求体。"""
+    """用户自助修改个人资料请求体。
+
+    安全防护：``extra="forbid"`` 仅允许白名单字段（个人资料），
+    防止客户端注入 role / is_active / otp_enabled 等敏感字段。
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     display_name: Optional[str] = None
     email: Optional[str] = None

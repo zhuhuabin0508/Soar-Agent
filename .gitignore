@@ -5,8 +5,10 @@
 backend/.env
 *.pem
 *.key
-# HTTPS 站点私钥特例：局域网 HTTPS 需要 key 随 git 同步到服务器（私有仓库内可接受）
-!frontend/certs/server.key
+*.crt
+# TLS 证书/私钥一律不入库（生产证书放服务器固定路径 /etc/nginx/ssl/，见 deploy/nginx.conf）
+# 注意：frontend/certs/server.{key,crt}、mkcert-CA.crt 已在 git 历史中被跟踪，
+# 需手动 git rm --cached 从跟踪中移除（本 .gitignore 仅阻止今后的新增跟踪）。
 
 # ===== 敏感数据 =====
 # 真实弱密码清单等业务数据不入库

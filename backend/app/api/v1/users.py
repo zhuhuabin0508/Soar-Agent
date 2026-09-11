@@ -56,9 +56,19 @@ def list_users(
 def create_user(
     body: UserCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("user", "edit")),
+    current: User = Depends(require_permission("user", "edit")),
 ) -> User:
-    """创建用户。"""
+    """创建用户。
+
+    安全防护（防特权提升）：指定角色（``role``/``role_id``）或启用状态
+    （``is_active``）为高敏感操作，仅限 admin 执行；非 admin 用户仅能以
+    默认 ``analyst`` 角色创建普通用户，不能创建管理员账号。
+    """
+    # 角色/启用状态为敏感字段：仅 admin 可指定（防特权升级 / Mass Assignment）
+    if current.role != "admin":
+        if body.role not in ("analyst", None) or body.role_id is not None or body.is_active is not True:
+            raise HTTPException(status_code=403, detail="仅管理员可创建管理员或指定角色/启用状态")
+
     existing = db.query(User).filter(User.username == body.username).first()
     if existing:
         raise HTTPException(status_code=409, detail=f"用户名 '{body.username}' 已存在")
@@ -101,12 +111,23 @@ def update_user(
     user_id: int,
     body: UserUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("user", "edit")),
+    current: User = Depends(require_permission("user", "edit")),
 ) -> User:
-    """更新用户信息（不含密码）。"""
+    """更新用户信息（不含密码）。
+
+    安全防护（防特权提升）：修改角色字段（``role``/``role_id``）与启用状态
+    （``is_active``）为高敏感操作，仅限 admin 执行。仅拥有 ``user:edit``
+    权限的非 admin 用户只能更新 ``display_name``/``email``/``allowed_login_methods``
+    等非敏感资料字段，杜绝通过批量更新把普通账号提升为管理员。
+    """
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
+
+    # 角色/启用状态为敏感字段：仅 admin 可修改（防特权升级 / Mass Assignment）
+    sensitive_fields = ("role", "role_id", "is_active")
+    if any(getattr(body, f, None) is not None for f in sensitive_fields) and current.role != "admin":
+        raise HTTPException(status_code=403, detail="仅管理员可修改用户角色或启用状态")
 
     update_data = body.model_dump(exclude_unset=True)
     for key, value in update_data.items():
