@@ -17,7 +17,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
@@ -83,7 +83,7 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "8001:8000"
+      - "127.0.0.1:8001:8000"
     networks: [soar-net]
     restart: unless-stopped
     mem_limit: 1g
@@ -136,48 +136,6 @@ services:
         condition: service_started
     networks: [soar-net]
     restart: unless-stopped
-
-  frontend-dev:
-    image: node:20-alpine
-    container_name: soar-frontend-dev
-    working_dir: /app
-    environment:
-      # 容器内联网依赖代理：宿主机走代理才能出外网，容器不默认继承。
-      # 默认指向内网代理（与宿主机 daemon 一致），服务器 git pull 后即可用；
-      # 本机等不需要代理的环境，可在 .env.dev 里设 NPM_HTTP_PROXY= 空值覆盖。
-      - HTTP_PROXY=${NPM_HTTP_PROXY:-http://10.223.132.41:8999}
-      - HTTPS_PROXY=${NPM_HTTPS_PROXY:-http://10.223.132.41:8999}
-      - NO_PROXY=${NPM_NO_PROXY:-localhost,127.0.0.1,10.223.132.41}
-    # 容器内 DNS 兜底：宿主 resolv.conf 多为内网 DNS，解析不了外网域名时用公共 DNS 直查。
-    dns:
-      - 114.114.114.114
-      - 8.8.8.8
-    command:
-      - sh
-      - -c
-      - |
-        npm config set registry https://registry.npmmirror.com
-        if [ ! -d node_modules/.bin ]; then
-          echo "==> [dev] installing npm deps (首次较慢，~1-2 分钟)..."
-          npm install --legacy-peer-deps
-        fi
-        # HTTPS 固定证书：mkcert 生成的 server.crt/server.key（见 frontend/certs/，随 git 同步）
-        echo "==> [dev] starting vite dev server (HTTPS) on 0.0.0.0:5173"
-        exec npx vite --config vite.config.dev.js --host 0.0.0.0 --port 5173
-    volumes:
-      - ./frontend:/app
-      # 用匿名卷隔离 node_modules：避免把 Windows 装的 node_modules bind 进 Linux 容器，
-      # 否则 rolldown 等 native 绑定（platform-specific）缺失会直接崩（Cannot find native binding）
-      - frontend_node_modules:/app/node_modules
-    ports:
-      - "8080:5173"
-    networks: [soar-net]
-    depends_on:
-      - backend-dev
-    restart: unless-stopped
-    # Vite 8 首次依赖预构建（echarts/reactflow 等大包）内存峰值高，1g 会被 SIGKILL，提至 2g
-    mem_limit: 2g
-    memswap_limit: 2g
 
 networks:
   # 固定名称，便于 security-tools 等旁路栈按容器名互访。
