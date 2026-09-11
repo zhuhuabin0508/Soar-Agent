@@ -141,6 +141,12 @@ services:
     image: node:20-alpine
     container_name: soar-frontend-dev
     working_dir: /app
+    environment:
+      # 容器内联网依赖代理：宿主机走代理才能出外网，容器不默认继承。
+      # 服务器在 .env.dev 里配置 NPM_HTTP_PROXY/NPM_HTTPS_PROXY 指向宿主机可路由的代理即可。
+      - HTTP_PROXY=${NPM_HTTP_PROXY:-}
+      - HTTPS_PROXY=${NPM_HTTPS_PROXY:-}
+      - NO_PROXY=${NPM_NO_PROXY:-localhost,127.0.0.1,10.223.132.41}
     command:
       - sh
       - -c
@@ -150,7 +156,7 @@ services:
           echo "==> [dev] installing npm deps (首次较慢，~1-2 分钟)..."
           npm install --legacy-peer-deps
         fi
-        # HTTPS 由 @vitejs/plugin-basic-ssl 自动生成自签名证书（无需 openssl）
+        # HTTPS 固定证书：mkcert 生成的 server.crt/server.key（见 frontend/certs/，随 git 同步）
         echo "==> [dev] starting vite dev server (HTTPS) on 0.0.0.0:5173"
         exec npx vite --config vite.config.dev.js --host 0.0.0.0 --port 5173
     volumes:
