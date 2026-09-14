@@ -25,117 +25,111 @@
 - **PyJWT** + **passlib/bcrypt** — 鉴权与密码哈希
 
 ### 前端
-- **React 19** + **Vite** — UI 框架与开发服务器（HMR）
+- **React 19** + **Vite** — UI 框架与构建工具（本地开发用 dev server，生产走 `vite build` 静态产物）
 - **TailwindCSS** — 样式
 - **React Flow** — 工作流可视化编排
 - **Zustand** — 状态管理
 - **ECharts** — 数据可视化
 
 ### 基础设施
-- **Docker Compose** — 唯一编排：postgres / redis / backend-dev / worker-dev / beat-dev / frontend-dev
-- **Vite Dev Server** — 前端热更新 + `/api` 反向代理
+- **Nginx**（宿主机 systemd 服务）— 生产入口：TLS 终止、托管前端构建产物、反代 API/WebSocket
+- **Docker Compose** — 后端栈编排：postgres / redis / backend-dev / worker-dev / beat-dev
 
-## 🚀 部署架构
+## 🚀 生产部署架构
 
-**只有一套环境：源码挂载 + 热重载。** 已去掉 Nginx 前端镜像栈（`soar-frontend` / `soar-backend` 无 `-dev` 后缀的那套）。
+**生产环境不再运行任何开发服务器。** 前端经 `vite build` 产出静态文件由 Nginx 托管；后端栈跑在 Docker 内；Vite dev server 仅存在于本地开发。
 
-| 组件 | 容器 | 机制 |
-|------|------|------|
-| 后端 API | `soar-backend-dev` | 挂载 `./backend/app` + `uvicorn --reload`，改 `.py` 自动重启 |
-| 前端 | `soar-frontend-dev` | 挂载 `./frontend` + Vite HMR，改前端文件自动热更新 |
-| 异步任务 | `soar-worker-dev` | 挂载源码 + Celery（改代码需手动重启） |
-| 定时调度 | `soar-beat-dev` | 挂载源码 + Celery Beat |
-| 数据库 | `soar-postgres` | PostgreSQL 15 |
-| 缓存 | `soar-redis` | Redis 7.4 |
+```
+浏览器 ──HTTPS──> Nginx(:8080) ──┬── 静态文件  frontend/dist
+                                ├── /api/、/ws/ ──> soar-backend-dev 容器（127.0.0.1:8001）
+         (:80 http 自动 301 跳转 https)
+后端栈内部：backend-dev / worker-dev / beat-dev（共用 soar-backend:latest 镜像）
+           postgres（127.0.0.1:5432）/ redis（仅容器网络）
+```
 
-端口映射：
+| 组件 | 运行形态 | 说明 |
+|------|---------|------|
+| Nginx | 宿主机 systemd（`nginx.service`） | 8080 HTTPS 终止 + 80 跳转；安全响应头；CSP nonce + strict-dynamic |
+| 后端 API | 容器 `soar-backend-dev` | 源码挂载 + `uvicorn --reload`，改 `.py` 自动重启；端口仅绑 `127.0.0.1:8001` |
+| 异步任务 | 容器 `soar-worker-dev` | 源码挂载 + Celery（改代码需手动重启容器） |
+| 定时调度 | 容器 `soar-beat-dev` | 源码挂载 + Celery Beat |
+| 数据库 | 容器 `soar-postgres` | PostgreSQL 15，端口仅绑 `127.0.0.1:5432` |
+| 缓存 | 容器 `soar-redis` | Redis 7.4，仅容器网络可达 |
 
-- 前端：`8080`（映射容器内 Vite `5173`）
-- 后端 API：`8001`（映射容器内 `8000`）
-- PostgreSQL：`5432`
+后端镜像 `soar-backend:latest`（Python 依赖预装）需在**目标架构**上构建：`bash scripts/build-and-export-images.sh`（容器出网走内网代理，见 `.env.example`）。
 
-后端仍使用镜像 `soar-backend:latest`（Python 依赖预装），源码通过挂载覆盖，不必每次改代码都 rebuild。前端不打镜像，直接用 `node:20-alpine`。
+## 🖥️ 本地开发
 
-## 🚀 快速开始
-
-### 环境要求
-
-- Docker & Docker Compose
-- 已有 `soar-backend:latest`（或先执行 `bash scripts/build-and-export-images.sh`）
-- Linux 内核 `fs.inotify` 限制足够（热重载依赖，见下方「inotify 限制」）
-
-### 启动
+环境要求：Docker Desktop、Node 20+（本地为 AMD64 亦无妨，本地构建的镜像/依赖只服务本地，详见下方「跨架构注意」）。
 
 ```bash
-cp .env.example .env.dev   # 按环境修改密码与 JWT_SECRET
+# 1. 环境变量
+cp .env.example .env.dev        # 按需修改密码与 JWT_SECRET
 
-# 方式一
-bash dev.sh up
-
-# 方式二
+# 2. 启动后端栈（postgres/redis/backend/worker/beat）
 docker compose --env-file .env.dev up -d
+
+# 3. 前端（宿主机运行 dev server）
+cd frontend
+npm install
+npm run dev                     # http://localhost:8080，/api 自动代理到 localhost:8001
 ```
 
-启动后访问：
+首次启动空库时自动建表并 seed 初始管理员（`SEED_ADMIN_USERNAME` / `SEED_ADMIN_PASSWORD` 决定）。
 
-- 前端：`http://<服务器IP>:8080`
-- 后端 API 文档：`http://<服务器IP>:8001/docs`
-
-默认管理员账号由 `.env.dev` 中的 `SEED_ADMIN_USERNAME` / `SEED_ADMIN_PASSWORD` 决定（首次空库 seed 时创建）。
-
-### 从旧「镜像栈」切过来
-
-仓库里已删除 `docker-compose.dev.yml` 和 Nginx 前端镜像编排。机器上如果还在跑没有 `-dev` 后缀的容器，或 postgres 是旧编排起的：
+常用操作（`dev.sh`）：
 
 ```bash
-# 只删容器，不要带 -v（数据卷 soaragent_pgdata 必须保留）
-docker rm -f soar-frontend soar-backend soar-worker soar-beat
-# 若即将由新编排接管库和 Redis，先去掉旧容器（数据在卷里）
-docker rm -f soar-postgres soar-redis
-bash dev.sh up
+bash dev.sh logs b      # 后端日志（实时）
+bash dev.sh logs w      # worker 日志
+bash dev.sh restart w   # 改 Celery 代码后重启 worker
+bash dev.sh ps          # 容器状态
+bash dev.sh down        # 停止（切勿 down -v，会清空数据卷）
 ```
 
-已在跑 `soar-*-dev` 的服务器：`git pull` 后执行一次 `bash dev.sh up` 即可套用新编排（会补上 postgres/redis/beat）。名称冲突时按上面先 `docker rm` 旧容器。
+> 注意：前端容器（`soar-frontend-dev`）已从编排中移除，`dev.sh` 中带 `f` 的子命令不再适用；本地前端一律在宿主机 `npm run dev`。
 
-## 🔄 日常更新部署
+### 跨架构注意（AMD64 本地 ↔ ARM64 服务器）
 
-本地改代码 → 提交推送 → 服务器执行更新脚本，源码同步后**热重载自动生效**，无需重新构建镜像：
+生产服务器为 ARM64（麒麟 V10），本地开发机通常为 AMD64（Windows/macOS）。**git 是本地到服务器的唯一同步通道**，源码（纯文本）无架构概念，直接 push/pull 即可。以下操作跨架构必坏，禁止执行：
+
+- `docker save / load` 传输本地构建的镜像 → 服务器 `exec format error`；服务器镜像须在服务器（或同架构环境）构建
+- 拷贝 `node_modules` / `.venv` → 原生二进制（esbuild、psycopg2 等）不兼容
+- 拷贝 pgdata 数据卷目录 → 只能走 `pg_dump` SQL 文本同步（Windows 侧导入用 `docker cp` + `docker exec psql -f`，**勿用 PowerShell 管道 `type |`**，会破坏 UTF-8）
+
+## 🔄 日常更新部署（服务器）
+
+标准发版一条命令（拉代码 → 前端构建 → 后端容器重建 → 就绪探测 → Nginx 配置同步）：
 
 ```bash
-# 常规更新（源码热重载自动生效）
-sudo bash scripts/update.sh
-
-# 同时重启 worker（改了 Celery 相关代码时）
-RESTART_WORKER=1 sudo bash scripts/update.sh
+cd /opt/soar-src
+bash deploy/deploy.sh
 ```
 
-> **注意**：
-> - 只改源码（`.py` / `.tsx` / `.jsx` / `.css` 等）热重载自动生效，无需任何手动操作。
-> - 改了 `requirements.txt` / `package.json`（增删依赖）热重载**不会**自动安装，`update.sh` 会检测并提示手动执行安装命令。
-> - 改了 docker-compose、环境变量等需手动 `bash dev.sh up` 重建容器。
+只改部分内容时的快速路径：
 
-### inotify 限制
+| 改动 | 生效方式 |
+|------|---------|
+| 后端 `.py` | `git pull` 后 uvicorn `--reload` 自动生效，无需重启 |
+| Celery 相关 `.py` | `docker restart soar-worker-dev soar-beat-dev` |
+| 前端源码 | `cd frontend && npm run build`（Nginx 直接读 dist，改完浏览器强刷） |
+| `deploy/nginx.conf` | 拷贝到 `/etc/nginx/conf.d/secops.conf` 后 `nginx -t && systemctl reload nginx`（deploy.sh 第 5 步会自动做） |
+| `requirements.txt` | 重建后端镜像：`bash scripts/build-and-export-images.sh` 后 `docker compose --env-file .env.dev up -d` |
+| `package.json` 增删依赖 | `cd frontend && npm ci` |
 
-`uvicorn --reload` 与 Vite 依赖文件监听，若 `fs.inotify.max_user_watches` 过低会报 `OS file watch limit reached` / `ENOSPC`。`update.sh` 每次运行会自动检查并设置（同时永久化写入 `/etc/sysctl.conf`）。手动设置一次：
-
-```bash
-sysctl -w fs.inotify.max_user_watches=524288
-echo "fs.inotify.max_user_watches=524288" >> /etc/sysctl.conf
-sysctl -w fs.inotify.max_user_instances=512
-echo "fs.inotify.max_user_instances=512" >> /etc/sysctl.conf
-```
+> **纪律**：生产环境永不运行 `vite dev` / `npm run dev` 对外服务——开发服务器暴露源码与模块结构，是历史安全扫描中高危漏洞的根因。
 
 ## ⚙️ 配置说明
 
-所有配置通过 `.env.dev` 注入。主要配置：
+所有配置通过 `.env.dev` 注入（不入库，从 `.env.example` 复制）。主要配置：
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
-| `POSTGRES_DB` | 数据库名 | 以 `.env.dev` 为准（示例为 `soar`） |
-| `POSTGRES_PASSWORD` | 数据库密码 | `postgres` |
-| `JWT_SECRET` | JWT 签名密钥 | 见 `.env.dev` |
+| `POSTGRES_DB` | 数据库名 | `soar` |
+| `POSTGRES_PASSWORD` | 数据库密码 | `postgres`（生产必须修改） |
+| `JWT_SECRET` | JWT 签名密钥 | 见 `.env.example`（生产必须强随机） |
 | `SEED_ADMIN_USERNAME` | 初始管理员账号 | `admin` |
-| `SEED_ADMIN_PASSWORD` | 初始管理员密码 | 见 `.env.dev` |
+| `SEED_ADMIN_PASSWORD` | 初始管理员密码 | `admin123`（生产必须修改） |
 
 > **安全提示**：LLM 的 API Key 在系统「模型设置」页面配置，存储于数据库，不出现在代码或环境变量中。
 
@@ -160,18 +154,20 @@ echo "fs.inotify.max_user_instances=512" >> /etc/sysctl.conf
 │   │   ├── components/       # 通用组件
 │   │   ├── api/              # API 客户端
 │   │   └── store/            # Zustand 状态
-│   ├── vite.config.dev.js    # dev server 配置（HMR + /api 代理）
+│   ├── vite.config.js        # 本地开发配置（8080 + /api 代理 → 8001）
 │   └── package.json
+├── deploy/                   # 生产部署（入库版本化）
+│   ├── nginx.conf            # 生产 Nginx 配置（TLS/CSP/反代）
+│   └── deploy.sh             # 一键发版脚本
 ├── scripts/
-│   ├── update.sh             # 热重载部署更新脚本
-│   ├── build-and-export-images.sh  # 联网构建后端镜像并导出 tar
-│   └── ...
+│   ├── build-and-export-images.sh  # 构建后端镜像并导出 tar
+│   ├── proxy-forwarder.py          # 容器出网代理转发
+│   └── update.sh                    # （旧热重载更新脚本，已被 deploy/deploy.sh 取代）
 ├── docs/                     # 设计文档
-├── docker-compose.yml        # 唯一运行环境（热重载）
+├── docker-compose.yml        # 后端栈运行环境（无前端容器）
 ├── docker-compose.security-tools.yml  # DefectDojo / BloodHound（可选）
-├── .env.dev                  # 环境变量（不入库，从 .env.example 复制）
 ├── .env.example              # 环境变量模板
-└── dev.sh                    # 启动/停止/日志便捷脚本
+└── dev.sh                    # 本地/容器运维便捷脚本
 ```
 
 ## 📖 设计文档
@@ -183,16 +179,21 @@ echo "fs.inotify.max_user_instances=512" >> /etc/sysctl.conf
 
 ## 🔒 安全说明
 
-- 密码使用 bcrypt 哈希存储，永不存明文
+生产入口（Nginx）已按安全扫描整改加固：
+
+- **TLS**：仅 TLS 1.2/1.3 + ECDHE 前向保密套件（禁用 RSA 密钥交换与 SHA-1 套件）；`server_tokens off` 隐藏版本号
+- **CSP**：`script-src 'nonce-…' 'strict-dynamic'`，由 Nginx `sub_filter` 按请求注入 nonce
+- **安全响应头**：HSTS、X-Content-Type-Options、Referrer-Policy 全量下发（含 80 端口跳转响应）
+- **网络边界**：后端（8001）与 PostgreSQL（5432）仅监听 `127.0.0.1`，Redis 仅容器网络可达；敏感路径（`.git`、`src/`、`node_modules/` 等）一律拒绝访问
+
+应用层：
+
+- 密码使用 bcrypt 哈希存储，永不存明文；API 请求体严格校验（多余字段拒绝，防成批分配）
 - JWT 鉴权，所有 API 需登录访问
 - 审计日志记录所有写操作（操作人、模块、资源 ID、IP）
-- 数据库凭证、JWT 密钥等均通过环境变量注入，`.env*` 已在 `.gitignore` 中
+- 数据库凭证、JWT 密钥等均通过环境变量注入；TLS 证书放服务器 `/etc/nginx/ssl/`（`.gitignore` 覆盖 `*.key`/`*.crt`，证书与 `.env*` 永不入库）
 - 业务数据存储于 Docker 数据卷（`soaragent_pgdata`），不在代码仓库中
 
 ## 📄 许可证
 
 本项目仅供学习与内部使用。
-
-测试推送
-继续测试
-123
