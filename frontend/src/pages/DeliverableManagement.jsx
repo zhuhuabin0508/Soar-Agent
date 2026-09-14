@@ -287,11 +287,12 @@ export default function DeliverableManagement() {
     return path
   }, [activeCat, categories])
 
-  // 当前目录的直接子目录（文件夹卡片展示）
+  // 当前目录的直接子目录（随列表/网格视图切换展示）
   const subCategories = useMemo(() => {
     if (!activeCatId) return []
     return categories.filter((c) => c.parent_id === activeCatId)
   }, [activeCatId, categories])
+  const showFolders = subCategories.length > 0 && !search
 
   // 双击进入子目录
   const enterSubCategory = useCallback((cat) => {
@@ -1389,38 +1390,7 @@ export default function DeliverableManagement() {
             <div className="px-4 py-12 text-center text-sm text-muted-foreground">加载中…</div>
           ) : (
             <>
-              {/* 子目录文件夹卡片 */}
-              {subCategories.length > 0 && !search && (
-                <div className="border-b border-border px-4 py-3">
-                  <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                    <Folder className="h-3.5 w-3.5" />
-                    子目录（{subCategories.length}）
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {subCategories.map((cat) => (
-                      <div
-                        key={cat.id}
-                        onClick={() => { setActiveCatId(cat.id); setPage(1) }}
-                        onDoubleClick={() => enterSubCategory(cat)}
-                        title={`双击进入「${cat.name}」`}
-                        className="group flex w-36 cursor-pointer flex-col items-center gap-1.5 rounded-lg border border-border bg-card p-3 transition-colors hover:border-primary/40 hover:bg-primary/5"
-                      >
-                        <Folder className="h-8 w-8 text-amber-500/80 transition-transform group-hover:scale-110" />
-                        <span
-                          className="w-full truncate text-center text-xs font-medium text-foreground"
-                          title={cat.name}
-                        >
-                          {cat.name}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground tabular-nums">
-                          {cat.deliverable_count || 0} 个材料
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {rows.length === 0 ? (
+              {rows.length === 0 && !showFolders ? (
             <EmptyState
               icon={
                 search ? (
@@ -1478,13 +1448,46 @@ export default function DeliverableManagement() {
           ) : viewMode === 'grid' ? (
             // 网格视图
             <div className="grid grid-cols-2 gap-3 p-4 md:grid-cols-3 xl:grid-cols-4">
+              {showFolders && subCategories.map((cat) => (
+                <div
+                  key={`folder-${cat.id}`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => enterSubCategory(cat)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') enterSubCategory(cat) }}
+                  title={`打开「${cat.name}」`}
+                  className="group flex min-h-[168px] cursor-pointer flex-col rounded-lg border border-border bg-card p-3 transition-colors hover:border-primary/40 hover:bg-primary/5"
+                >
+                  <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
+                    <span className="flex h-12 w-12 items-center justify-center">
+                      <Folder className="h-8 w-8 text-amber-500/80 transition-transform group-hover:scale-110" />
+                    </span>
+                    <span
+                      className="w-full text-xs font-medium text-foreground"
+                      style={{
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                        wordBreak: 'break-word',
+                      }}
+                      title={cat.name}
+                    >
+                      {cat.name}
+                    </span>
+                  </div>
+                  <div className="mt-2 text-center text-[10px] text-muted-foreground tabular-nums">
+                    {cat.deliverable_count || 0} 个材料
+                  </div>
+                </div>
+              ))}
               {rows.map((r) => {
                 const checked = selectedIds.has(r.id)
                 const canPreview = PREVIEWABLE_EXTS.includes((r.file_ext || '').toLowerCase())
                 return (
                   <div
                     key={r.id}
-                    className={`group relative flex flex-col gap-2 rounded-lg border p-3 transition-colors ${
+                    className={`group relative flex min-h-[168px] flex-col rounded-lg border p-3 transition-colors ${
                       canPreview ? 'cursor-pointer hover:border-primary/40 hover:bg-primary/5' : ''
                     } ${checked ? 'border-primary/40 bg-primary/5' : 'border-border bg-card'}`}
                     onClick={() => canPreview && handlePreview(r)}
@@ -1494,15 +1497,17 @@ export default function DeliverableManagement() {
                       checked={checked}
                       onChange={() => toggleRow(r.id)}
                       onClick={(e) => e.stopPropagation()}
-                      className="absolute left-2 top-2 h-3.5 w-3.5 cursor-pointer rounded border-border accent-primary"
+                      className="absolute left-2 top-2 z-10 h-3.5 w-3.5 cursor-pointer rounded border-border accent-primary"
                     />
                     {r.version && (
-                      <span className="absolute right-2 top-2 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-foreground">
+                      <span className="absolute right-2 top-2 z-10 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-foreground">
                         {r.version}
                       </span>
                     )}
-                    <div className="flex flex-col items-center gap-2 pt-5 text-center">
-                      <FileIcon ext={r.file_ext} className="h-8 w-8" />
+                    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-4 text-center">
+                      <span className="flex h-12 w-12 items-center justify-center">
+                        <FileIcon ext={r.file_ext} className="h-8 w-8" />
+                      </span>
                       <span
                         className="w-full text-xs font-medium text-foreground"
                         style={{
@@ -1517,7 +1522,7 @@ export default function DeliverableManagement() {
                         {r.name}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                    <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
                       <span className="truncate" title={r.filename}>{r.filename}</span>
                       <span className="shrink-0 tabular-nums">{fmtSize(r.file_size)}</span>
                     </div>
@@ -1618,6 +1623,37 @@ export default function DeliverableManagement() {
                   </tr>
                 </thead>
                 <tbody>
+                  {showFolders && subCategories.map((cat) => (
+                    <tr
+                      key={`folder-${cat.id}`}
+                      className="cursor-pointer border-b border-border/60 bg-muted/10 transition-colors hover:bg-primary/5"
+                      onClick={() => enterSubCategory(cat)}
+                    >
+                      <td className="px-4 py-2.5" />
+                      <td className="min-w-0 px-4 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <Folder className="h-4 w-4 shrink-0 text-amber-500" />
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate font-medium text-foreground" title={cat.name}>{cat.name}</div>
+                            <div className="truncate text-xs text-muted-foreground">文件夹</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-2.5 text-xs text-muted-foreground">—</td>
+                      <td className="px-4 py-2.5 text-xs text-muted-foreground">—</td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-xs tabular-nums text-muted-foreground">
+                        {cat.deliverable_count || 0} 项
+                      </td>
+                      <td className="px-4 py-2.5 text-xs text-muted-foreground">—</td>
+                      <td className="px-4 py-2.5 text-xs text-muted-foreground">—</td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-right">
+                        <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground">
+                          打开
+                          <ChevronRight className="h-3.5 w-3.5" />
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
                   {rows.map((r) => {
                     const checked = selectedIds.has(r.id)
                     return (
