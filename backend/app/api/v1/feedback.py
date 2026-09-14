@@ -35,6 +35,7 @@ from app.models.notification import Notification
 from app.models.user import User
 from app.schemas.feedback import (
     BUG_REQUIRED_FIELDS,
+    AssigneeUpdate,
     BatchAction,
     FeedbackCreate,
     FeedbackUpdate,
@@ -254,7 +255,67 @@ def _notify_all_admins(db: Session, title: str, content: str, related_id: int) -
         return len(admins)
 
 
-def _feedback_detail(db: Session, feedback: Feedback) -> dict:
+# 可视为「处理动作」的历史：用于补全未写入的处理人
+_HANDLE_HISTORY_ACTIONS = {"reply", "status_change", "assign", "batch"}
+
+
+def _display_name(user: User | None) -> str | None:
+    """展示名：优先 display_name，否则用户名。"""
+    if user is None:
+        return None
+    name = (user.display_name or "").strip()
+    return name or user.username
+
+
+def _assign_history_content(operator: User, target: User | None) -> str:
+    """分配历史文案：谁把处理人分给谁，或谁改成未分配。"""
+    op = _display_name(operator) or operator.username
+    if target is None:
+        return f"{op} 将处理人改为未分配"
+    who = _display_name(target) or target.username
+    return f"{op} 将处理人分配给 {who}"
+
+
+def _infer_handler_id(histories: list[FeedbackHistory]) -> int | None:
+    """从处理历史倒序推断实际处理人（仅补从未显式指派过的旧单）。"""
+    if any(h.action == "assign" for h in histories):
+        return None
+    for h in reversed(histories):
+        if h.action in {"reply", "status_change", "batch"} and h.operator_id:
+            return h.operator_id
+    return None
+
+
+def _backfill_assignees(db: Session, feedbacks: list[Feedback]) -> None:
+    """列表批量补全未写入的处理人（跳过已显式指派/取消的单据）。"""
+    missing = [f for f in feedbacks if not f.assignee_id]
+    if not missing:
+        return
+    ids = [f.id for f in missing]
+    rows = (
+        db.query(FeedbackHistory)
+        .filter(
+            FeedbackHistory.feedback_id.in_(ids),
+            FeedbackHistory.action.in_(_HANDLE_HISTORY_ACTIONS),
+        )
+        .order_by(FeedbackHistory.created_at.asc(), FeedbackHistory.id.asc())
+        .all()
+    )
+    grouped: dict[int, list[FeedbackHistory]] = defaultdict(list)
+    for h in rows:
+        grouped[h.feedback_id].append(h)
+    changed = False
+    by_id = {f.id: f for f in missing}
+    for fid, f in by_id.items():
+        inferred = _infer_handler_id(grouped.get(fid, []))
+        if inferred:
+            f.assignee_id = inferred
+            changed = True
+    if changed:
+        db.commit()
+
+
+def _feedback_detail(db: Session, feedback: Feedback, *, backfill: bool = True) -> dict:
     """构造反馈详情：全字段 + 操作历史（含操作人用户名）+ 提交人/处理人用户名。"""
     data = feedback.to_dict()
     data["attachments"] = _parse_attachments(feedback.attachments)
@@ -269,7 +330,18 @@ def _feedback_detail(db: Session, feedback: Feedback) -> dict:
         .order_by(FeedbackHistory.created_at.asc(), FeedbackHistory.id.asc())
         .all()
     )
-    user_ids.update(h.operator_id for h in histories)
+    user_ids.update(h.operator_id for h in histories if h.operator_id)
+
+    # 仅补从未显式指派过的旧单；有过指派/取消记录的不再回填，避免「未分配」被改成当前登录人
+    if backfill and not feedback.assignee_id:
+        inferred = _infer_handler_id(histories)
+        if inferred:
+            feedback.assignee_id = inferred
+            db.add(feedback)
+            db.commit()
+            db.refresh(feedback)
+            user_ids.add(inferred)
+
     users = {
         u.id: u
         for u in db.query(User).filter(User.id.in_(user_ids)).all()
@@ -278,16 +350,17 @@ def _feedback_detail(db: Session, feedback: Feedback) -> dict:
     submitter = users.get(feedback.user_id)
     data["user_username"] = submitter.username if submitter else None
     data["user_display_name"] = submitter.display_name if submitter else None
-    data["user_name"] = data["user_username"]  # 前端使用的别名
+    data["user_name"] = _display_name(submitter) or data["user_username"]
     assignee = users.get(feedback.assignee_id) if feedback.assignee_id else None
+    data["assignee_id"] = feedback.assignee_id
     data["assignee_username"] = assignee.username if assignee else None
-    data["assignee_name"] = data["assignee_username"]  # 前端使用的别名
+    data["assignee_name"] = _display_name(assignee)
 
     data["histories"] = [
         {
             **h.to_dict(),
             "operator_username": users[h.operator_id].username if h.operator_id in users else None,
-            "operator_name": users[h.operator_id].username if h.operator_id in users else None,
+            "operator_name": _display_name(users.get(h.operator_id)) if h.operator_id in users else None,
         }
         for h in histories
     ]
@@ -493,22 +566,24 @@ def list_feedbacks(
         .limit(size)
         .all()
     )
+    _backfill_assignees(db, feedbacks)
 
-    # 批量取提交人用户名
-    submitter_ids = {f.user_id for f in feedbacks}
-    username_map = {}
-    if submitter_ids:
-        username_map = {
-            u.id: u.username
-            for u in db.query(User).filter(User.id.in_(submitter_ids)).all()
-        }
+    user_ids = {f.user_id for f in feedbacks}
+    user_ids.update(f.assignee_id for f in feedbacks if f.assignee_id)
+    users: dict[int, User] = {}
+    if user_ids:
+        users = {u.id: u for u in db.query(User).filter(User.id.in_(user_ids)).all()}
 
     items = []
     for feedback in feedbacks:
         item = feedback.to_dict()
         item["attachments"] = _parse_attachments(feedback.attachments)
-        item["user_username"] = username_map.get(feedback.user_id)
-        item["user_name"] = item["user_username"]  # 前端使用的别名
+        submitter = users.get(feedback.user_id)
+        item["user_username"] = submitter.username if submitter else None
+        item["user_name"] = _display_name(submitter) or item["user_username"]
+        assignee = users.get(feedback.assignee_id) if feedback.assignee_id else None
+        item["assignee_id"] = feedback.assignee_id
+        item["assignee_name"] = _display_name(assignee)
         items.append(item)
 
     return {"items": items, "total": total, "page": page, "size": size}
@@ -593,6 +668,31 @@ def feedback_stats(
         "today": today_count,
         "this_week": week_count,
         "pending_count": pending_count,
+    }
+
+
+@router.get("/assignees")
+def list_feedback_assignees(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """可供指派的处理人列表（启用中的账号）。须在 /{feedback_id} 之前注册。"""
+    _require_admin(current_user, db)
+    rows = (
+        db.query(User)
+        .filter(User.is_active.is_(True))
+        .order_by(User.id.asc())
+        .all()
+    )
+    return {
+        "items": [
+            {
+                "id": u.id,
+                "username": u.username,
+                "display_name": _display_name(u) or u.username,
+            }
+            for u in rows
+        ]
     }
 
 
@@ -704,15 +804,19 @@ def reply_feedback(
         ))
         feedback.status = body.new_status
 
-    # 指派处理人
+    # 明确指派，或尚未指派时记为当前处理人
     if body.assignee_id and body.assignee_id != feedback.assignee_id:
+        target = db.query(User).filter(User.id == body.assignee_id, User.is_active.is_(True)).first()
+        if not target:
+            raise HTTPException(status_code=400, detail="处理人不存在或已禁用")
         db.add(FeedbackHistory(
             feedback_id=feedback.id,
             action="assign",
-            content=f"指派处理人 user_id={body.assignee_id}",
+            content=_assign_history_content(current_user, target),
             operator_id=current_user.id,
         ))
         feedback.assignee_id = body.assignee_id
+    # 回复/改状态不自动认领处理人，避免覆盖「未分配」
 
     # 通知提交人
     _notify(
@@ -772,6 +876,49 @@ def update_feedback_status(
     logger.info("反馈状态已更新: id=%s, %s → %s, operator=%s",
                 feedback_id, from_status, body.status, current_user.username)
     return _feedback_detail(db, feedback)
+
+
+@router.put("/{feedback_id}/assignee")
+def assign_feedback(
+    feedback_id: int,
+    body: AssigneeUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """超级管理员主动指派或取消处理人。"""
+    if not is_admin(current_user, db):
+        raise HTTPException(status_code=403, detail="仅超级管理员可分配处理人")
+    feedback = _get_feedback_or_404(db, feedback_id)
+
+    target = None
+    if body.assignee_id is not None:
+        target = db.query(User).filter(User.id == body.assignee_id, User.is_active.is_(True)).first()
+        if not target:
+            raise HTTPException(status_code=400, detail="处理人不存在或已禁用")
+
+    new_id = target.id if target else None
+    if new_id == feedback.assignee_id:
+        return _feedback_detail(db, feedback, backfill=False)
+
+    feedback.assignee_id = new_id
+    db.add(FeedbackHistory(
+        feedback_id=feedback.id,
+        action="assign",
+        content=_assign_history_content(current_user, target),
+        operator_id=current_user.id,
+    ))
+    if target and target.id != current_user.id:
+        _notify(
+            db,
+            user_id=target.id,
+            title="您被指派处理一条反馈",
+            content=f"反馈「{feedback.title}」已指派给您",
+            related_id=feedback.id,
+        )
+    db.commit()
+    db.refresh(feedback)
+    logger.info("反馈已指派: id=%s, assignee=%s, operator=%s", feedback_id, new_id, current_user.username)
+    return _feedback_detail(db, feedback, backfill=False)
 
 
 # ============ 9. 重新打开 ============
