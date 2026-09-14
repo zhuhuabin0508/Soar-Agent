@@ -195,10 +195,16 @@ def _build_kb_tool(enabled_kbs: list[int]):
     async def _coroutine(query: str, kb_id: Optional[int] = None):
         from app.core.kb_retriever import search_kb
 
+        targets = list(kb_ids)
         if kb_id is not None:
-            return await search_kb(kb_id, query)
+            # 指定库优先；若该库已删或不在启用列表，改搜全部启用库
+            if kb_id in kb_ids:
+                hits = await search_kb(kb_id, query)
+                if hits:
+                    return hits
+            targets = [kid for kid in kb_ids if kid != kb_id]
         results: list = []
-        for kid in kb_ids:
+        for kid in targets:
             results.extend(await search_kb(kid, query))
         return results
 

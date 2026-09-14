@@ -211,6 +211,21 @@ def query_kb_file(
             return {"error": "未指定查询范围（需提供 doc_id / kb_id / enabled_kbs）"}
 
         docs = q.all()
+        if not docs and doc_id is not None:
+            # LLM 常沿用已删除文档的旧 doc_id；回退到知识库范围，避免整次查询直接失败
+            logger.info("doc_id=%s 不存在，回退到 kb_id/enabled_kbs 查询", doc_id)
+            q = db.query(KnowledgeDocument)
+            if kb_id is not None:
+                q = q.filter(KnowledgeDocument.kb_id == kb_id)
+            elif enabled_kbs:
+                q = q.filter(KnowledgeDocument.kb_id.in_(enabled_kbs))
+            else:
+                return {
+                    "error": "未找到匹配的文档（文档可能已删除）",
+                    "query": query,
+                    "stale_doc_id": doc_id,
+                }
+            docs = q.all()
         if not docs:
             return {"error": "未找到匹配的文档", "query": query}
 

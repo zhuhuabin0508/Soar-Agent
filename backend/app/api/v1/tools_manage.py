@@ -554,6 +554,7 @@ async def debug_chat(
         raise HTTPException(status_code=400, detail="Tool is disabled")
 
     from app.agent.decision import run_agent_decision
+    from app.models.knowledge_base import KnowledgeBase
 
     system_prompt = (
         "你是一个智能助手，可以调用工具来回答用户问题。"
@@ -566,7 +567,7 @@ async def debug_chat(
         result = await run_agent_decision(
             alert_data=alert_data,
             enabled_tools=[tool.name],
-            enabled_kbs=None,
+            enabled_kbs=[row[0] for row in db.query(KnowledgeBase.id).all()] or None,
             model_config_id=None,
             system_prompt=system_prompt,
             temperature=0.3,

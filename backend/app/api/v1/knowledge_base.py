@@ -237,6 +237,11 @@ def delete_knowledge_base(
     if cleaned:
         logger.info("已清理 %d 个智能体对知识库 %s 的引用", cleaned, kb_id)
 
+    file_paths = [
+        row[0]
+        for row in db.query(KnowledgeDocument.file_path).filter(KnowledgeDocument.kb_id == kb_id).all()
+        if row[0]
+    ]
     # 数据库级批量删除：先删分段，再删文档，最后删知识库本体。
     # 不用 ORM 的 db.delete(kb)（cascade="all, delete-orphan"），因为它会把该库下
     # 全部文档、全部分段逐个 SELECT 加载进 Python 内存再逐条 DELETE——
@@ -246,6 +251,13 @@ def delete_knowledge_base(
     db.query(KnowledgeDocument).filter(KnowledgeDocument.kb_id == kb_id).delete(synchronize_session=False)
     db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).delete(synchronize_session=False)
     db.commit()
+    for file_path in file_paths:
+        abs_path = os.path.join(UPLOAD_DIR, file_path)
+        try:
+            if os.path.isfile(abs_path):
+                os.remove(abs_path)
+        except OSError as exc:
+            logger.warning("删除知识库附件失败: kb_id=%s, path=%s, err=%s", kb_id, abs_path, exc)
     logger.info("知识库已删除: id=%s", kb_id)
     return {"ok": True}
 
@@ -485,7 +497,7 @@ async def fetch_url_document(
 def delete_document(
     kb_id: int, doc_id: int, db: Session = Depends(get_db)
 ) -> dict:
-    """删除指定文档。"""
+    """删除指定文档（分段、上传文件一并清掉，避免工具仍按旧分段/文件检索）。"""
     logger.info("删除文档: kb_id=%s, doc_id=%s", kb_id, doc_id)
     doc = (
         db.query(KnowledgeDocument)
@@ -494,8 +506,23 @@ def delete_document(
     )
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
-    db.delete(doc)
+    file_path = doc.file_path
+    # 与删除整个知识库相同：批量 DELETE 分段，避免 ORM cascade 把万级分段载入内存。
+    # 且 knowledge_segments.doc_id 外键无 ON DELETE CASCADE，Postgres 上只删文档会 500。
+    db.query(KnowledgeSegment).filter(KnowledgeSegment.doc_id == doc_id).delete(
+        synchronize_session=False
+    )
+    db.query(KnowledgeDocument).filter(KnowledgeDocument.id == doc_id).delete(
+        synchronize_session=False
+    )
     db.commit()
+    if file_path:
+        abs_path = os.path.join(UPLOAD_DIR, file_path)
+        try:
+            if os.path.isfile(abs_path):
+                os.remove(abs_path)
+        except OSError as exc:
+            logger.warning("删除文档附件失败: doc_id=%s, path=%s, err=%s", doc_id, abs_path, exc)
     logger.info("文档已删除: id=%s", doc_id)
     return {"ok": True}
 

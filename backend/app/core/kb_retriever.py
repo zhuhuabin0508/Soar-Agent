@@ -132,8 +132,10 @@ async def search_kb(kb_id: int, query: str, top_k: int = 5) -> list[dict[str, An
         kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
         if kb is None:
             return []
+        # 只检索仍存在文档的分段，避免文档已删但分段残留（SQLite 未强制 FK）时脏数据干扰打分
         segments = (
             db.query(KnowledgeSegment)
+            .join(KnowledgeDocument, KnowledgeDocument.id == KnowledgeSegment.doc_id)
             .filter(KnowledgeSegment.kb_id == kb_id)
             .all()
         )
