@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from typing import Any, Optional
 
 from app.database import get_db
-from app.dependencies import check_resource_ownership, compute_can_edit_ids, get_current_user, require_permission
+from app.dependencies import check_resource_ownership, compute_can_edit_ids, get_current_user, require_permission, resource_can_edit
 from app.models.agent import Agent
 from app.models.execution import Execution
 from app.models.user import User
@@ -224,11 +224,7 @@ def list_agents(
     # 资源级 owner 控制：批量查共享授权集合，admin 在调用处直接判 True
     shared_ids = compute_can_edit_ids(db, current_user, "agent", [a.id for a in agents])
     for item, agent in zip(result, agents):
-        item["can_edit"] = (
-            current_user.role == "admin"
-            or agent.created_by == current_user.id
-            or agent.id in shared_ids
-        )
+        item["can_edit"] = resource_can_edit(current_user, db, agent, shared_ids)
     return result
 
 
@@ -252,11 +248,7 @@ def get_agent(
     _sanitize_enabled_kbs(db, agent)
     data = to_dict(agent)
     shared_ids = compute_can_edit_ids(db, current_user, "agent", [agent.id])
-    data["can_edit"] = (
-        current_user.role == "admin"
-        or agent.created_by == current_user.id
-        or agent.id in shared_ids
-    )
+    data["can_edit"] = resource_can_edit(current_user, db, agent, shared_ids)
     return data
 
 

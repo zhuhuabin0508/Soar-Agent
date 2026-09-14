@@ -15,9 +15,7 @@ import { useAuthStore } from '../store/authStore'
 export function hasPermission(module, action) {
   const user = useAuthStore.getState().user
   if (!user) return false
-  // admin 角色自动通过（后端已返回全量权限矩阵，此为兜底）
-  if (user.role === 'admin') return true
-  // 优先使用后端返回的权限矩阵（支持自定义角色）
+  if (user.role === 'admin' || user.role_name === 'admin') return true
   const perms = user.permissions
   if (perms && typeof perms === 'object') {
     const actions = perms[module]
@@ -31,7 +29,7 @@ export function hasPermission(module, action) {
  */
 export function isAdmin() {
   const user = useAuthStore.getState().user
-  return !!user && user.role === 'admin'
+  return !!user && (user.role === 'admin' || user.role_name === 'admin')
 }
 
 /**
@@ -48,7 +46,7 @@ export function isAdmin() {
 export function canEditResource(resource) {
   const user = useAuthStore.getState().user
   if (!user) return false
-  if (user.role === 'admin') return true
+  if (user.role === 'admin' || user.role_name === 'admin') return true
   if (resource && typeof resource.can_edit === 'boolean') return resource.can_edit
   // 兜底：详情接口若未返回 can_edit，则按 owner 判断（被授权用户需依赖 can_edit）
   if (resource && resource.created_by != null) return resource.created_by === user.id
@@ -65,7 +63,7 @@ export function canEditResource(resource) {
 export function canManageShare(resource) {
   const user = useAuthStore.getState().user
   if (!user) return false
-  if (user.role === 'admin') return true
+  if (user.role === 'admin' || user.role_name === 'admin') return true
   if (resource && resource.created_by != null) return resource.created_by === user.id
   return false
 }

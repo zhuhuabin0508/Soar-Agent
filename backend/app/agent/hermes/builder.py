@@ -65,12 +65,11 @@ _AGENT_FIELDS = set(_AGENT_DEFAULTS) | {
 
 def _check_permission(db, user, module: str, action: str) -> None:
     """对齐 dependencies.require_permission 的权限矩阵校验（供框架工具复用）。"""
-    if getattr(user, "role", "") == "admin":
+    from app.dependencies import is_admin
+    if is_admin(user, db):
         return
     if getattr(user, "role_id", None):
         role = db.query(Role).filter(Role.id == user.role_id).first()
-        if role and role.name == "admin":
-            return
         if role and has_permission(migrate_permissions(role.permissions), module, action):
             return
     for default_role in DEFAULT_ROLES:

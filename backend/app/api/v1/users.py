@@ -7,11 +7,12 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
 from app.database import get_db
-from app.dependencies import get_current_user, require_permission
+from app.dependencies import get_current_user, is_admin, require_permission
 from app.models.role import Role
 from app.models.user import User
 from app.schemas.user import (
@@ -65,7 +66,7 @@ def create_user(
     默认 ``analyst`` 角色创建普通用户，不能创建管理员账号。
     """
     # 角色/启用状态为敏感字段：仅 admin 可指定（防特权升级 / Mass Assignment）
-    if current.role != "admin":
+    if not is_admin(current, db):
         if body.role not in ("analyst", None) or body.role_id is not None or body.is_active is not True:
             raise HTTPException(status_code=403, detail="仅管理员可创建管理员或指定角色/启用状态")
 
@@ -126,7 +127,7 @@ def update_user(
 
     # 角色/启用状态为敏感字段：仅 admin 可修改（防特权升级 / Mass Assignment）
     sensitive_fields = ("role", "role_id", "is_active")
-    if any(getattr(body, f, None) is not None for f in sensitive_fields) and current.role != "admin":
+    if any(getattr(body, f, None) is not None for f in sensitive_fields) and not is_admin(current, db):
         raise HTTPException(status_code=403, detail="仅管理员可修改用户角色或启用状态")
 
     update_data = body.model_dump(exclude_unset=True)
@@ -152,9 +153,13 @@ def delete_user(
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
 
-    # 保护最后一个管理员
-    if user.role == "admin":
-        admin_count = db.query(User).filter(User.role == "admin").count()
+    # 保护最后一个管理员（role 字段或 role_id 指向 admin 角色均计入）
+    if is_admin(user, db):
+        admin_role_ids = [r.id for r in db.query(Role).filter(Role.name == "admin").all()]
+        conds = [User.role == "admin"]
+        if admin_role_ids:
+            conds.append(User.role_id.in_(admin_role_ids))
+        admin_count = db.query(User).filter(or_(*conds)).count()
         if admin_count <= 1:
             raise HTTPException(status_code=400, detail="系统至少保留一个管理员账号")
 

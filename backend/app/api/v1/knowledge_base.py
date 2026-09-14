@@ -12,7 +12,7 @@ from app.core.file_parser import parse_file_content, parse_filename
 from app.core.kb_retriever import search_kb
 from app.core.kb_service import ingest_document, list_segments, reingest_document
 from app.database import get_db
-from app.dependencies import check_resource_ownership, compute_can_edit_ids, get_current_user, require_role
+from app.dependencies import check_resource_ownership, compute_can_edit_ids, get_current_user, require_role, resource_can_edit
 from app.models.knowledge_base import KnowledgeBase, KnowledgeDocument, KnowledgeSegment
 from app.models.user import User
 from app.schemas.common import to_dict, to_dict_list
@@ -109,11 +109,7 @@ def list_knowledge_bases(
     result = []
     for kb in kbs:
         item = _kb_to_dict(kb)
-        item["can_edit"] = (
-            current_user.role == "admin"
-            or kb.created_by == current_user.id
-            or kb.id in shared_ids
-        )
+        item["can_edit"] = resource_can_edit(current_user, db, kb, shared_ids)
         result.append(item)
     return result
 
@@ -205,11 +201,7 @@ def get_knowledge_base(
         raise HTTPException(status_code=404, detail="KnowledgeBase not found")
     data = _kb_to_dict(kb)
     shared_ids = compute_can_edit_ids(db, current_user, "knowledge_base", [kb.id])
-    data["can_edit"] = (
-        current_user.role == "admin"
-        or kb.created_by == current_user.id
-        or kb.id in shared_ids
-    )
+    data["can_edit"] = resource_can_edit(current_user, db, kb, shared_ids)
     return data
 
 

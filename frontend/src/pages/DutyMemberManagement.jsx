@@ -31,8 +31,8 @@ const EMPTY_FORM = {
 }
 
 export default function DutyMemberManagement() {
-  const canEdit = hasPermission('duty', 'edit')
-  const canDelete = hasPermission('duty', 'delete')
+  const canEdit = hasPermission('duty_member', 'edit')
+  const canDelete = hasPermission('duty_member', 'delete')
 
   const [list, setList] = useState([])
   const [total, setTotal] = useState(0)

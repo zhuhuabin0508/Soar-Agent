@@ -26,8 +26,8 @@ function monthRange(year, month) {
 }
 
 export default function DutySchedule() {
-  const canEdit = hasPermission('duty', 'edit')
-  const canDelete = hasPermission('duty', 'delete')
+  const canEdit = hasPermission('duty_schedule', 'edit')
+  const canDelete = hasPermission('duty_schedule', 'delete')
 
   // 视图模式与日期范围
   const today = new Date()

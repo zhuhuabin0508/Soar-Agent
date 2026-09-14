@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, is_admin
 from app.models.agent import Agent
 from app.models.knowledge_base import KnowledgeBase
 from app.models.resource_share import ResourceShare
@@ -64,9 +64,9 @@ def _get_resource_or_404(db: Session, resource_type: str, resource_id: int):
     return obj
 
 
-def _check_share_management_permission(user: User, resource_obj) -> None:
+def _check_share_management_permission(user: User, db: Session, resource_obj) -> None:
     """校验共享管理权限：仅 admin 或资源 owner 可管理共享（被授权用户不可）。"""
-    if user.role == "admin":
+    if is_admin(user, db):
         return
     if getattr(resource_obj, "created_by", None) == user.id:
         return
@@ -95,7 +95,7 @@ def list_shares(
 ) -> list[dict]:
     """查看资源的共享授权列表（仅 owner/admin）。"""
     resource_obj = _get_resource_or_404(db, resource_type, resource_id)
-    _check_share_management_permission(current_user, resource_obj)
+    _check_share_management_permission(current_user, db, resource_obj)
     shares = (
         db.query(ResourceShare)
         .filter(
@@ -128,7 +128,7 @@ def add_share(
         raise HTTPException(status_code=400, detail="permission 取值仅支持 view / edit")
 
     resource_obj = _get_resource_or_404(db, resource_type, resource_id)
-    _check_share_management_permission(current_user, resource_obj)
+    _check_share_management_permission(current_user, db, resource_obj)
 
     if body.user_id == current_user.id:
         raise HTTPException(status_code=400, detail="不能给自己共享：owner 已有编辑权限")
@@ -189,7 +189,7 @@ def revoke_share(
 ) -> dict:
     """撤销资源共享授权（仅 owner/admin）。"""
     resource_obj = _get_resource_or_404(db, resource_type, resource_id)
-    _check_share_management_permission(current_user, resource_obj)
+    _check_share_management_permission(current_user, db, resource_obj)
 
     share = (
         db.query(ResourceShare)

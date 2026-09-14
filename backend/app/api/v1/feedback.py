@@ -25,10 +25,10 @@ from fastapi.responses import FileResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.permissions import DEFAULT_ROLES, has_permission
+from app.core.permissions import DEFAULT_ROLES, has_permission, migrate_permissions
 from app.core.sanitizer import sanitize_text
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, is_admin
 from app.models.feedback import Feedback, FeedbackHistory
 from app.models.role import Role
 from app.models.notification import Notification
@@ -176,23 +176,32 @@ def _cascade_delete_feedback(db: Session, feedback: Feedback) -> None:
     db.delete(feedback)
 
 
+def _is_feedback_admin(user: User, db: Session) -> bool:
+    """是否具备反馈管理权限：admin 角色，或角色矩阵含 feedback:view。"""
+    if is_admin(user, db):
+        return True
+    if user.role_id:
+        role = db.query(Role).filter(Role.id == user.role_id).first()
+        if role and has_permission(migrate_permissions(role.permissions), "feedback", "view"):
+            return True
+    for default in DEFAULT_ROLES:
+        if default["name"] == user.role and has_permission(default["permissions"], "feedback", "view"):
+            return True
+    return False
+
+
 def _require_admin(user: User, db: Session) -> None:
     """管理接口权限校验：admin 角色或拥有 feedback:view 权限的角色通过，否则 403。
 
     支持角色管理权限矩阵（Role.permissions）配置「反馈管理」权限。
     """
-    if user.role == "admin":
-        return
-    # 优先查 role_id 关联的角色权限矩阵
-    if user.role_id:
-        role = db.query(Role).filter(Role.id == user.role_id).first()
-        if role and (role.name == "admin" or has_permission(role.permissions, "feedback", "view")):
-            return
-    # fallback：查 DEFAULT_ROLES 中 user.role 对应的权限
-    for default in DEFAULT_ROLES:
-        if default["name"] == user.role and has_permission(default["permissions"], "feedback", "view"):
-            return
-    raise HTTPException(status_code=403, detail="权限不足，需要反馈管理权限")
+    if not _is_feedback_admin(user, db):
+        raise HTTPException(status_code=403, detail="权限不足，需要反馈管理权限")
+
+
+def _can_view_feedback(user: User, feedback: Feedback, db: Session) -> bool:
+    """提交人本人，或具备反馈管理权限，可查看详情/附件。"""
+    return feedback.user_id == user.id or _is_feedback_admin(user, db)
 
 
 def _notify(db: Session, user_id: int, title: str, content: str, related_id: int) -> None:
@@ -595,9 +604,10 @@ def get_feedback(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    """反馈详情：全字段 + 操作历史 + 提交人/处理人信息（提交人或 admin 可见）。"""
+    """反馈详情：全字段 + 操作历史 + 提交人/处理人信息（提交人或具备反馈管理权限可见）。"""
     feedback = _get_feedback_or_404(db, feedback_id)
-    if feedback.user_id != current_user.id and current_user.role != "admin":
+    # 非提交人且无管理权限时返回 404，避免泄露「该 id 是否存在」
+    if not _can_view_feedback(current_user, feedback, db):
         raise HTTPException(status_code=404, detail="反馈不存在")
     return _feedback_detail(db, feedback)
 
@@ -777,7 +787,7 @@ def reopen_feedback(
     状态改回 pending，并通知所有管理员。
     """
     feedback = _get_feedback_or_404(db, feedback_id)
-    if feedback.user_id != current_user.id and current_user.role != "admin":
+    if not _can_view_feedback(current_user, feedback, db):
         raise HTTPException(status_code=403, detail="仅提交人或管理员可重新打开该反馈")
     if feedback.status not in ("closed", "resolved"):
         raise HTTPException(status_code=400, detail="仅已关闭或已解决的反馈可以重新打开")
@@ -821,7 +831,7 @@ async def upload_attachment(
     - 保存到 ``backend/uploads/feedback/{feedback_id}/``，文件名用 uuid 防冲突。
     """
     feedback = _get_feedback_or_404(db, feedback_id)
-    if feedback.user_id != current_user.id and current_user.role != "admin":
+    if not _can_view_feedback(current_user, feedback, db):
         raise HTTPException(status_code=403, detail="仅提交人或管理员可上传附件")
 
     original_name = file.filename or "untitled"
@@ -890,7 +900,7 @@ def download_attachment(
     支持 ``?token=<jwt>`` 认证，供前端 <img> 缩略图直接加载。
     """
     feedback = _get_feedback_or_404(db, feedback_id)
-    if feedback.user_id != current_user.id and current_user.role != "admin":
+    if not _can_view_feedback(current_user, feedback, db):
         raise HTTPException(status_code=403, detail="仅提交人或管理员可下载附件")
 
     # 路径穿越校验：文件名不允许包含路径分隔符与上溯符

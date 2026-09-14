@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import check_resource_ownership, compute_can_edit_ids, get_current_user, require_permission
+from app.dependencies import check_resource_ownership, compute_can_edit_ids, get_current_user, require_permission, resource_can_edit
 from app.models.skill import Skill
 from app.models.agent import Agent
 from app.models.user import User
@@ -106,11 +106,7 @@ def list_skills(
         ref_list = refs.get(sid, [])
         item["reference_count"] = len(ref_list)
         item["referenced_by"] = ref_list
-        item["can_edit"] = (
-            current_user.role == "admin"
-            or skill.created_by == current_user.id
-            or skill.id in shared_ids
-        )
+        item["can_edit"] = resource_can_edit(current_user, db, skill, shared_ids)
     return result
 
 
@@ -130,11 +126,7 @@ def get_skill(
         raise HTTPException(status_code=404, detail="Skill not found")
     data = to_dict(skill)
     shared_ids = compute_can_edit_ids(db, current_user, "skill", [skill.id])
-    data["can_edit"] = (
-        current_user.role == "admin"
-        or skill.created_by == current_user.id
-        or skill.id in shared_ids
-    )
+    data["can_edit"] = resource_can_edit(current_user, db, skill, shared_ids)
     return data
 
 

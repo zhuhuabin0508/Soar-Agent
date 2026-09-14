@@ -22,7 +22,7 @@ from app.core.security import (
 from app.core.workflow_runner import run_workflow
 from app.core.workflow_validator import validate_workflow
 from app.database import get_db
-from app.dependencies import check_resource_ownership, compute_can_edit_ids, get_current_user
+from app.dependencies import check_resource_ownership, compute_can_edit_ids, get_current_user, resource_can_edit
 from app.models import Execution, ExecutionLog, ExecutionTrace, Workflow
 from app.models.user import User
 from app.schemas.workflow import (
@@ -220,12 +220,7 @@ def list_workflows(
             "created_by": w.created_by,
             "created_at": w.created_at,
             "updated_at": w.updated_at,
-            # 资源级 owner 控制：admin / owner / 被授权用户可编辑
-            "can_edit": (
-                current_user.role == "admin"
-                or w.created_by == current_user.id
-                or w.id in shared_ids
-            ),
+            "can_edit": resource_can_edit(current_user, db, w, shared_ids),
         }
         item.update(stats_map.get(w.id, {}))
         result.append(item)
@@ -370,11 +365,7 @@ def get_workflow(
         raise HTTPException(status_code=404, detail="Workflow not found")
     out = WorkflowOut.model_validate(db_workflow)
     shared_ids = compute_can_edit_ids(db, current_user, "workflow", [db_workflow.id])
-    out.can_edit = (
-        current_user.role == "admin"
-        or db_workflow.created_by == current_user.id
-        or db_workflow.id in shared_ids
-    )
+    out.can_edit = resource_can_edit(current_user, db, db_workflow, shared_ids)
     return out
 
 

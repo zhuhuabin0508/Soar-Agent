@@ -123,9 +123,10 @@ def _resolve_permissions(db: Session, user: User) -> dict[str, list[str]]:
     优先级：自定义角色（role_id 关联 Role.permissions） > 内置默认角色（DEFAULT_ROLES）。
     admin 角色自动获得全部权限。
     """
-    if user.role == "admin":
-        # admin 拥有全部权限
-        from app.core.permissions import PERMISSION_MODULES
+    from app.core.permissions import PERMISSION_MODULES
+    from app.dependencies import is_admin
+
+    if is_admin(user, db):
         return {mod: list(actions) for mod, actions in PERMISSION_MODULES.items()}
     # 先查自定义角色
     if user.role_id:
@@ -135,8 +136,11 @@ def _resolve_permissions(db: Session, user: User) -> dict[str, list[str]]:
             if isinstance(perms, dict):
                 # 迁移旧权限键（如 duty）到二级权限矩阵，供前端菜单/按钮显隐
                 return migrate_permissions(perms)
-    # fallback 到内置默认角色
-    return dict(DEFAULT_ROLES.get(user.role, {}))
+    # fallback 到内置默认角色（DEFAULT_ROLES 是 list，不能 .get）
+    for default in DEFAULT_ROLES:
+        if default["name"] == user.role:
+            return dict(default.get("permissions") or {})
+    return {}
 
 
 def _user_info(db: Session, user: User) -> UserInfo:

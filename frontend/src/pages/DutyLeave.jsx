@@ -17,8 +17,8 @@ const STATUS_META = {
 const SHIFT_META = { DAY: '白班', NIGHT: '晚班', ALL: '全天' }
 
 export default function DutyLeave() {
-  const canEdit = hasPermission('duty', 'edit')
-  const canDelete = hasPermission('duty', 'delete')
+  const canEdit = hasPermission('duty_leave', 'edit')
+  const canDelete = hasPermission('duty_leave', 'delete')
 
   const [list, setList] = useState([])
   const [total, setTotal] = useState(0)

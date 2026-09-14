@@ -1,7 +1,7 @@
 """Workflow 版本管理路由：创建快照、列表、详情、回滚。
 
 所有路由通过 router 级 ``dependencies=[Depends(get_current_user)]`` 强制 JWT 登录，
-并通过 ``require_permission("workflow", ...)`` 做权限矩阵校验。
+并通过 ``require_permission("workflow_list", ...)`` 做权限矩阵校验。
 """
 import logging
 from typing import Any
@@ -85,7 +85,7 @@ def create_workflow_version(
     workflow_id: int,
     body: WorkflowVersionCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permission("workflow", "edit")),
+    current_user: User = Depends(require_permission("workflow_list", "edit")),
 ) -> WorkflowVersion:
     """为工作流创建一个版本快照。
 
@@ -130,7 +130,7 @@ def create_workflow_version(
 def list_workflow_versions(
     workflow_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("workflow", "view")),
+    _: User = Depends(require_permission("workflow_list", "view")),
 ) -> list[WorkflowVersion]:
     """列出指定工作流的所有版本（按 version_number 降序）。"""
     logger.info("Listing workflow versions: workflow_id=%s", workflow_id)
@@ -151,7 +151,7 @@ def get_workflow_version(
     workflow_id: int,
     version_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("workflow", "view")),
+    _: User = Depends(require_permission("workflow_list", "view")),
 ) -> WorkflowVersion:
     """获取指定版本详情。"""
     logger.info(
@@ -167,7 +167,7 @@ def rollback_workflow_version(
     workflow_id: int,
     version_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permission("workflow", "edit")),
+    current_user: User = Depends(require_permission("workflow_list", "edit")),
 ) -> RollbackResponse:
     """回滚到指定版本。
 

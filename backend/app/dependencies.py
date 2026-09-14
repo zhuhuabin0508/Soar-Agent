@@ -144,6 +144,25 @@ def get_current_user(
     return user
 
 
+def resolve_role_names(user: User, db: Session) -> set[str]:
+    """解析用户角色名：``users.role`` 与 ``roles.name``（via role_id）一并计入。
+
+    正式环境常见「role 字段仍是 analyst，role_id 已指向 admin/自定义角色」，
+    只读 ``user.role`` 会把有权限的人判成无权限。
+    """
+    names = {n for n in (user.role,) if n}
+    if user.role_id:
+        role = db.query(Role).filter(Role.id == user.role_id).first()
+        if role and role.name:
+            names.add(role.name)
+    return names
+
+
+def is_admin(user: User, db: Session) -> bool:
+    """是否为管理员：``users.role == admin`` 或关联角色名为 admin。"""
+    return "admin" in resolve_role_names(user, db)
+
+
 def require_role(*allowed_roles: str) -> Callable:
     """RBAC 角色校验依赖工厂。
 
@@ -155,11 +174,17 @@ def require_role(*allowed_roles: str) -> Callable:
     Returns:
         FastAPI 依赖函数，返回当前用户（已校验角色）。
     """
-    def _checker(user: User = Depends(get_current_user)) -> User:
-        if user.role not in allowed_roles:
+    allowed = set(allowed_roles)
+
+    def _checker(
+        user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
+    ) -> User:
+        names = resolve_role_names(user, db)
+        if names.isdisjoint(allowed):
             logger.warning(
-                "权限不足: uid=%s, username=%s, role=%s, required=%s",
-                user.id, user.username, user.role, allowed_roles,
+                "权限不足: uid=%s, username=%s, roles=%s, required=%s",
+                user.id, user.username, names, allowed_roles,
             )
             raise _FORBIDDEN_EXCEPTION
         return user
@@ -189,14 +214,12 @@ def require_permission(module: str, action: str) -> Callable:
         user: User = Depends(get_current_user),
         db: Session = Depends(get_db),
     ) -> User:
-        # admin 角色自动拥有所有权限
-        if user.role == "admin":
+        # admin 角色自动拥有所有权限（含 role_id 指向 admin）
+        if is_admin(user, db):
             return user
         # 优先查 role_id 关联的角色权限矩阵
         if user.role_id:
             role = db.query(Role).filter(Role.id == user.role_id).first()
-            if role and role.name == "admin":
-                return user
             if role and has_permission(migrate_permissions(role.permissions), module, action):
                 return user
         # fallback：查 DEFAULT_ROLES 中 user.role 对应的权限
@@ -240,8 +263,8 @@ def check_resource_ownership(
     """
     from app.models.resource_share import ResourceShare
 
-    # admin 自动通过
-    if user.role == "admin":
+    # admin 自动通过（含 role_id 指向 admin）
+    if is_admin(user, db):
         return
     # owner
     if getattr(resource_obj, "created_by", None) == user.id:
@@ -285,7 +308,7 @@ def compute_can_edit_ids(
     from app.models.resource_share import ResourceShare
 
     # admin 无需查共享表（调用处直接判 True）
-    if user.role == "admin":
+    if is_admin(user, db):
         return set()
     if not resource_ids:
         return set()
@@ -301,6 +324,16 @@ def compute_can_edit_ids(
         .all()
     )
     return {r[0] for r in rows}
+
+
+def resource_can_edit(user: User, db: Session, resource_obj, shared_ids: set[int]) -> bool:
+    """列表/详情 ``can_edit``：admin / 创建者 / 被共享授权。"""
+    if is_admin(user, db):
+        return True
+    if getattr(resource_obj, "created_by", None) == user.id:
+        return True
+    rid = getattr(resource_obj, "id", None)
+    return rid in shared_ids
 
 
 def get_optional_user(

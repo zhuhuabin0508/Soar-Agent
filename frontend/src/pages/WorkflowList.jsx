@@ -223,7 +223,7 @@ function RowActions({ row, handlers, canEdit: canEditProp }) {
 // 工作流管理列表
 function WorkflowList() {
   const navigate = useNavigate()
-  const canCreate = hasPermission('workflow', 'edit')
+  const canCreate = hasPermission('workflow_list', 'edit')
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')

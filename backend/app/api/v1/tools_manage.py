@@ -21,7 +21,7 @@ from app.core.tool_runner import clear_tool_cache, run_tool
 from app.core.tool_schema_infer import infer_tool_io
 from app.core.tool_templates import TOOL_TEMPLATES
 from app.database import get_db
-from app.dependencies import check_resource_ownership, compute_can_edit_ids, get_current_user, require_permission, require_role
+from app.dependencies import check_resource_ownership, compute_can_edit_ids, get_current_user, require_permission, require_role, resource_can_edit
 from app.models.tool import Tool
 from app.models.agent import Agent
 from app.models.user import User
@@ -111,11 +111,7 @@ def list_tools(
         refs = tool_name_to_agents.get(name, [])
         item["reference_count"] = len(refs)
         item["referenced_by"] = refs
-        item["can_edit"] = (
-            current_user.role == "admin"
-            or tool.created_by == current_user.id
-            or tool.id in shared_ids
-        )
+        item["can_edit"] = resource_can_edit(current_user, db, tool, shared_ids)
     return result
 
 

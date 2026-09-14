@@ -11,8 +11,8 @@ import dutyApi from '../api/duty'
 const SHIFT_META = { DAY: '白班', NIGHT: '晚班' }
 
 export default function DutyAdjustmentLogs() {
-  const canEdit = hasPermission('duty', 'edit')
-  const canDelete = hasPermission('duty', 'delete')
+  const canEdit = hasPermission('duty_log', 'edit')
+  const canDelete = hasPermission('duty_log', 'delete')
   const [list, setList] = useState([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
