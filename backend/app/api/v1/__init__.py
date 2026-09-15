@@ -24,6 +24,7 @@ from app.api.v1 import (
     duty,
     executions,
     feedback,
+    govcloud,
     ingest,
     internal_mock,
     knowledge_base,
@@ -101,6 +102,8 @@ api_router.include_router(feedback.download_router)  # 附件下载（支持 que
 api_router.include_router(feedback.router)
 
 api_router.include_router(deliverables.router)
+# 政务云爬取资产（Excel 全量导入与展示）
+api_router.include_router(govcloud.router)
 # 日志中心（统一查看操作日志/执行日志/模型调用日志 + 保留策略）
 api_router.include_router(log_center.router)
 # 值班管理（人员/排班/请假/调班）

@@ -135,7 +135,17 @@ def _resolve_permissions(db: Session, user: User) -> dict[str, list[str]]:
             perms = role.permissions
             if isinstance(perms, dict):
                 # 迁移旧权限键（如 duty）到二级权限矩阵，供前端菜单/按钮显隐
-                return migrate_permissions(perms)
+                migrated = migrate_permissions(perms)
+                # 写回角色 JSON，避免侧栏长期读到不含 asset_discovery 的旧矩阵
+                if migrated != perms:
+                    role.permissions = migrated
+                    db.add(role)
+                    try:
+                        db.commit()
+                    except Exception:
+                        db.rollback()
+                        logger.exception("回写迁移后的角色权限失败: role_id=%s", role.id)
+                return migrated
     # fallback 到内置默认角色（DEFAULT_ROLES 是 list，不能 .get）
     for default in DEFAULT_ROLES:
         if default["name"] == user.role:

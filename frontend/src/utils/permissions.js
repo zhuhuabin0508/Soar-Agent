@@ -7,6 +7,43 @@
 import { useAuthStore } from '../store/authStore'
 
 /**
+ * 新模块尚未写入角色 JSON 时，从前端同步后端 migrate_permissions 的继承来源。
+ * 只在目标模块没有非空动作列表时生效，避免覆盖显式配置。
+ */
+const PERMISSION_INHERIT = {
+  asset_discovery: ['govcloud', 'asset', 'asset_list'],
+  asset_overview: ['asset'],
+  asset_list: ['asset'],
+  asset_templates: ['asset'],
+  workflow_list: ['workflow'],
+  workflow_editor: ['workflow'],
+  chat: ['agent'],
+  device: ['llm_config'],
+  duty_member: ['duty'],
+  duty_schedule: ['duty'],
+  duty_leave: ['duty'],
+  duty_log: ['duty'],
+  duty_dashboard: ['duty'],
+}
+
+function isBuiltinAdmin(user) {
+  const role = String(user.role || '').toLowerCase()
+  const name = String(user.role_name || '').toLowerCase()
+  return role === 'admin' || name === 'admin'
+}
+
+function actionsForModule(perms, module) {
+  const direct = perms[module]
+  if (Array.isArray(direct) && direct.length > 0) return direct
+  const sources = PERMISSION_INHERIT[module] || []
+  for (const src of sources) {
+    const inherited = perms[src]
+    if (Array.isArray(inherited) && inherited.length > 0) return inherited
+  }
+  return Array.isArray(direct) ? direct : []
+}
+
+/**
  * 判断当前用户是否拥有指定模块动作权限（前端仅用于 UI 隐藏）。
  * @param {string} module 模块名，如 "user" / "workflow"
  * @param {string} action 动作名，如 "view" / "edit" / "delete"
@@ -15,11 +52,11 @@ import { useAuthStore } from '../store/authStore'
 export function hasPermission(module, action) {
   const user = useAuthStore.getState().user
   if (!user) return false
-  if (user.role === 'admin' || user.role_name === 'admin') return true
+  if (isBuiltinAdmin(user)) return true
   const perms = user.permissions
   if (perms && typeof perms === 'object') {
-    const actions = perms[module]
-    return Array.isArray(actions) && actions.includes(action)
+    const actions = actionsForModule(perms, module)
+    return actions.includes(action)
   }
   return false
 }
@@ -29,7 +66,7 @@ export function hasPermission(module, action) {
  */
 export function isAdmin() {
   const user = useAuthStore.getState().user
-  return !!user && (user.role === 'admin' || user.role_name === 'admin')
+  return !!user && isBuiltinAdmin(user)
 }
 
 /**
@@ -46,7 +83,7 @@ export function isAdmin() {
 export function canEditResource(resource) {
   const user = useAuthStore.getState().user
   if (!user) return false
-  if (user.role === 'admin' || user.role_name === 'admin') return true
+  if (isBuiltinAdmin(user)) return true
   if (resource && typeof resource.can_edit === 'boolean') return resource.can_edit
   // 兜底：详情接口若未返回 can_edit，则按 owner 判断（被授权用户需依赖 can_edit）
   if (resource && resource.created_by != null) return resource.created_by === user.id
@@ -63,7 +100,7 @@ export function canEditResource(resource) {
 export function canManageShare(resource) {
   const user = useAuthStore.getState().user
   if (!user) return false
-  if (user.role === 'admin' || user.role_name === 'admin') return true
+  if (isBuiltinAdmin(user)) return true
   if (resource && resource.created_by != null) return resource.created_by === user.id
   return false
 }

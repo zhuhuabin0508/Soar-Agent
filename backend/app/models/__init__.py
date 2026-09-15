@@ -24,6 +24,13 @@ from app.models.execution import Execution
 from app.models.execution_log import ExecutionLog
 from app.models.execution_trace import ExecutionTrace
 from app.models.feedback import Feedback, FeedbackHistory
+from app.models.govcloud_asset import (
+    GovCloudImportBatch,
+    GovCloudCloudHost,
+    GovCloudBareMetal,
+    GovCloudNetwork,
+    GovCloudElasticIP,
+)
 from app.models.ingestion_metric import IngestionMetric
 from app.models.knowledge_base import KnowledgeBase, KnowledgeDocument, KnowledgeSegment
 from app.models.llm_config import LLMConfig
@@ -81,6 +88,11 @@ __all__ = [
     "NotificationRule",
     "Feedback",
     "FeedbackHistory",
+    "GovCloudImportBatch",
+    "GovCloudCloudHost",
+    "GovCloudBareMetal",
+    "GovCloudNetwork",
+    "GovCloudElasticIP",
     "BackupRecord",
     "Device",
     "DeviceAction",

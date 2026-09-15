@@ -49,6 +49,8 @@ def _init_db() -> None:
 
     # 轻量迁移：补齐新增列（不引入 Alembic 的过渡方案）
     run_lightweight_migrations(engine)
+    # 迁移可能 DROP 重建政务云分表，补一次建表
+    Base.metadata.create_all(bind=engine)
 
     # 迁移完成后重新同步 Hermes 内置工具（确保 is_preset 等新增字段被正确标记）。
     # entrypoint.sh 中的 ensure_seed_data() 在迁移前运行，此时 is_preset 列可能尚不存在，
@@ -89,6 +91,9 @@ def _init_db() -> None:
 
         # 种子默认角色（独立调用，确保 roles 表在老库升级时也能补齐）
         _seed_default_roles(db)
+
+        # 已有角色补齐新增权限模块（如 asset_discovery），admin 始终展开全量矩阵
+        _sync_role_permission_modules(db)
 
         # 注册内置解析策略（Sangfor XDR 等，幂等；见 app/engine/strategies/）
         try:
@@ -164,6 +169,38 @@ def _seed_default_roles(db) -> None:
         admin_user.role_id = admin_role.id
         db.commit()
         logger.info("已为 admin 用户关联 admin 角色ID: %s", admin_role.id)
+
+
+def _sync_role_permission_modules(db) -> None:
+    """启动时把新增权限模块写入已有角色，避免角色管理页和侧栏看不到新模块。
+
+    - 系统 admin：权限矩阵与 ``PERMISSION_MODULES`` 对齐（全开）
+    - 其它角色：``migrate_permissions``（含 asset_list → asset_discovery 继承）
+    """
+    from app.core.permissions import PERMISSION_MODULES, migrate_permissions
+    from app.models.role import Role
+
+    roles = db.query(Role).all()
+    changed = 0
+    full = {mod: list(actions) for mod, actions in PERMISSION_MODULES.items()}
+    for role in roles:
+        if role.name == "admin":
+            if role.permissions != full:
+                role.permissions = full
+                db.add(role)
+                changed += 1
+            continue
+        perms = role.permissions if isinstance(role.permissions, dict) else {}
+        migrated = migrate_permissions(perms)
+        if migrated != perms:
+            role.permissions = migrated
+            db.add(role)
+            changed += 1
+    if changed:
+        db.commit()
+        logger.info("已同步 %d 个角色的权限模块（含资产发现）", changed)
+    else:
+        logger.info("角色权限模块已是最新，无需同步")
 
 
 @asynccontextmanager

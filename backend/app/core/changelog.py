@@ -17,14 +17,24 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 # 当前系统版本（每次发版递增）
-CURRENT_VERSION = "1.3.0"
+CURRENT_VERSION = "1.4.0"
 
 # 更新日志（新版本插在顶部）
 CHANGELOG: list[dict] = [
     {
+        "version": "1.4.0",
+        "date": "2026-09-15",
+        "title": f"系统更新 v{CURRENT_VERSION}",
+        "items": [
+            "资产管理下新增「资产发现」：综合运管平台资产发现归类展示云主机资产/裸金属资产/网络资源资产/弹性IP资产四张全量 Excel",
+            "导入按 CMDB _id 全量对齐，删除本次文件中不存在的旧记录，列表条数与全量爬取唯一 ID 保持一致",
+            "资产发现接入统一 RBAC（asset_discovery）：侧栏、角色矩阵、接口同一模块；已有资产清单权限的角色自动补齐，避免菜单与接口权限不一致",
+        ],
+    },
+    {
         "version": "1.3.0",
         "date": "2026-07-29",
-        "title": f"系统更新 v{CURRENT_VERSION}",
+        "title": "系统更新 v1.3.0",
         "items": [
             "修复智能体工具并行调用问题：强制 LLM 每轮只调用一个工具（parallel_tool_calls=False），确保按提示词定义的顺序执行（如先查资产信息，未命中再查威胁情报），不再并行查询",
             "已封禁 IP 支持手动新增封禁记录，并新增来源标识（手动添加 / 智能体添加），列表与详情中均可区分",

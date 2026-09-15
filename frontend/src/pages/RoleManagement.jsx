@@ -14,6 +14,42 @@ import { toast } from '../store/toastStore'
 import { confirm } from '../components/ConfirmDialog'
 import { useUnsavedChanges } from '../hooks/useUnsavedChanges'
 
+// 后端 /roles/modules 未及时热更新时，仍保证矩阵能画出这些行
+const LOCAL_MODULE_FALLBACK = {
+  asset_discovery: ['view', 'edit', 'delete'],
+}
+const LOCAL_MODULE_LABELS = {
+  asset_discovery: '资产发现',
+}
+
+function mergeModuleDef(modData) {
+  const modules = { ...LOCAL_MODULE_FALLBACK, ...(modData?.modules || {}) }
+  const module_labels = { ...LOCAL_MODULE_LABELS, ...(modData?.module_labels || {}) }
+  return {
+    modules,
+    module_labels,
+    action_labels: modData?.action_labels || {},
+  }
+}
+
+/** 把接口多出来的资产类模块插进「资源管理」，避免只改了后端却不在分组里显示 */
+function resolveModuleGroups(modules) {
+  const groups = MODULE_GROUPS.map((g) => ({ ...g, modules: [...g.modules] }))
+  const listed = new Set(groups.flatMap((g) => g.modules))
+  const resources = groups.find((g) => g.key === 'resources')
+  Object.keys(modules || {}).forEach((mod) => {
+    if (listed.has(mod)) return
+    if (!resources) return
+    if (mod === 'govcloud' || mod.startsWith('asset_')) {
+      const idx = resources.modules.indexOf('deliverable')
+      if (idx >= 0) resources.modules.splice(idx, 0, mod)
+      else resources.modules.push(mod)
+      listed.add(mod)
+    }
+  })
+  return groups
+}
+
 // 模块分组定义：顺序与侧边栏目录（AppShell NAV_GROUPS）保持一致
 const MODULE_GROUPS = [
   {
@@ -29,7 +65,7 @@ const MODULE_GROUPS = [
   {
     key: 'resources',
     label: '资源管理',
-    modules: ['asset_overview', 'asset_list', 'asset_templates', 'deliverable'],
+    modules: ['asset_overview', 'asset_list', 'asset_templates', 'asset_discovery', 'deliverable'],
   },
   {
     key: 'operations',
@@ -184,17 +220,19 @@ function PermissionMatrixTable({ form, moduleDef, onToggle, onSetModuleAll, onSe
     return ALL_ACTIONS.filter((a) => set.has(a))
   }, [modules])
 
+  const groupedModules = useMemo(() => resolveModuleGroups(modules), [modules])
+
   // 按分组过滤
   const filteredGroups = useMemo(() => {
-    if (!search.trim()) return MODULE_GROUPS
+    if (!search.trim()) return groupedModules
     const q = search.toLowerCase()
-    return MODULE_GROUPS.map((g) => ({
+    return groupedModules.map((g) => ({
       ...g,
       modules: g.modules.filter((m) =>
         (moduleLabels[m] || m).toLowerCase().includes(q) || m.toLowerCase().includes(q)
       ),
     })).filter((g) => g.modules.length > 0)
-  }, [search, moduleLabels])
+  }, [search, moduleLabels, groupedModules])
 
   // 某动作是否全选（所有模块都勾选了该动作）
   const isActionAllChecked = (action) => {
@@ -228,7 +266,7 @@ function PermissionMatrixTable({ form, moduleDef, onToggle, onSetModuleAll, onSe
     let authorized = 0
     let total = 0
     group.modules.forEach((modName) => {
-      const actions = modules[modName]
+      const actions = modules[modName] || LOCAL_MODULE_FALLBACK[modName]
       if (!actions) return
       total += actions.length
       authorized += (form.permissions[modName] || []).filter((a) => actions.includes(a)).length
@@ -239,7 +277,7 @@ function PermissionMatrixTable({ form, moduleDef, onToggle, onSetModuleAll, onSe
   // 分组是否全选
   const isGroupAllChecked = (group) => {
     return group.modules.every((modName) => {
-      const actions = modules[modName]
+      const actions = modules[modName] || LOCAL_MODULE_FALLBACK[modName]
       if (!actions) return true
       return isModuleAllChecked(modName, actions)
     })
@@ -248,7 +286,7 @@ function PermissionMatrixTable({ form, moduleDef, onToggle, onSetModuleAll, onSe
   // 分组折叠状态：无任何已授权权限的分组默认折叠
   const [collapsed, setCollapsed] = useState(() => {
     const init = {}
-    MODULE_GROUPS.forEach((g) => {
+    groupedModules.forEach((g) => {
       const { authorized } = getGroupPermCount(g)
       init[g.key] = authorized === 0
     })
@@ -262,7 +300,7 @@ function PermissionMatrixTable({ form, moduleDef, onToggle, onSetModuleAll, onSe
   // 全选 / 清空本组
   const setGroupAll = (group, selectAll) => {
     group.modules.forEach((modName) => {
-      const actions = modules[modName]
+      const actions = modules[modName] || LOCAL_MODULE_FALLBACK[modName]
       if (!actions) return
       onSetModuleAll(modName, actions, selectAll)
     })
@@ -349,13 +387,13 @@ function PermissionMatrixTable({ form, moduleDef, onToggle, onSetModuleAll, onSe
                 </thead>
                 <tbody>
                   {group.modules.map((modName) => {
-                    const actions = modules[modName]
+                    const actions = modules[modName] || LOCAL_MODULE_FALLBACK[modName]
                     if (!actions) return null
                     const userActions = form.permissions[modName] || []
                     return (
                       <tr key={modName} className="border-b border-border/50 last:border-0 hover:bg-secondary/20">
                         <td className="px-3 py-3 text-xs text-foreground">
-                          <div className="font-medium">{moduleLabels[modName] || modName}</div>
+                          <div className="font-medium">{moduleLabels[modName] || LOCAL_MODULE_LABELS[modName] || modName}</div>
                           <div className="text-[10px] text-muted-foreground/60">{modName}</div>
                         </td>
                         {actionsInUse.map((action) => {
@@ -448,9 +486,7 @@ function RoleManagement() {
         rolesApi.modules(),
       ])
       setRows(Array.isArray(roleData) ? roleData : [])
-      setModuleDef(
-        modData || { modules: {}, module_labels: {}, action_labels: {} }
-      )
+      setModuleDef(mergeModuleDef(modData))
       setError('')
     } catch (err) {
       setError(err.message || '加载失败')

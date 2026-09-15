@@ -40,6 +40,7 @@ import About from './pages/About'
 import MyFeedback from './pages/MyFeedback'
 import FeedbackAdmin from './pages/FeedbackAdmin'
 import DeliverableManagement from './pages/DeliverableManagement'
+import GovCloudAssets from './pages/GovCloudAssets'
 import DutyMemberManagement from './pages/DutyMemberManagement'
 import DutySchedule from './pages/DutySchedule'
 import DutyLeave from './pages/DutyLeave'
@@ -105,6 +106,7 @@ const router = createBrowserRouter([
           { path: '/assets', element: <AssetOverview /> },
           { path: '/assets/list', element: <AssetList /> },
           { path: '/assets/templates', element: <AssetTemplates /> },
+          { path: '/assets/discovery', element: <GovCloudAssets /> },
           { path: '/assets/legacy', element: <Assets /> },
           { path: '/dashboard', element: <Dashboard /> },
           // 系统配置
@@ -121,6 +123,7 @@ const router = createBrowserRouter([
           { path: '/feedbacks/mine', element: <MyFeedback /> },
           { path: '/feedbacks/admin', element: <FeedbackAdmin /> },
           { path: '/deliverables', element: <DeliverableManagement /> },
+          { path: '/govcloud', element: <Navigate to="/assets/discovery" replace /> },
           // 运营管理 - 值班
           { path: '/duty/members', element: <DutyMemberManagement /> },
           { path: '/duty/schedule', element: <DutySchedule /> },

@@ -7,7 +7,7 @@
 
 模块粒度与侧边栏目录保持一致：
 - 工作流拆分为「工作流列表」「工作流编排」两个子模块；
-- 资产管理拆分为「资产总览」「资产清单」「类型模板」三个子模块；
+- 资产管理拆分为「资产总览」「资产清单」「类型模板」「资产发现」四个子模块；
 - 对话、设备对接从 agent / llm_config 中独立为单独模块。
 """
 from typing import Any
@@ -30,6 +30,7 @@ PERMISSION_MODULES: dict[str, list[str]] = {
     "asset_overview": ["view"],
     "asset_list": ["view", "edit", "delete"],
     "asset_templates": ["view", "edit", "delete"],
+    "asset_discovery": ["view", "edit", "delete"],
     "deliverable": ["view", "edit", "delete"],
     # 连接配置（设备对接下含：设备列表 / 解析策略 / 告警列表 / 入库监控）
     "llm_config": ["view", "edit", "delete"],
@@ -74,6 +75,7 @@ MODULE_LABELS: dict[str, str] = {
     "asset_overview": "资产总览",
     "asset_list": "资产清单",
     "asset_templates": "类型模板",
+    "asset_discovery": "资产发现",
     "deliverable": "材料管理",
     # 连接配置（设备对接下含：设备列表 / 解析策略 / 告警列表 / 入库监控）
     "llm_config": "模型设置",
@@ -114,19 +116,40 @@ ACTION_LABELS: dict[str, str] = {
 # 用于把旧角色 JSON 中的 workflow / asset 权限展开到细分模块
 _LEGACY_MODULE_MIGRATION: dict[str, list[str]] = {
     "workflow": ["workflow_list", "workflow_editor"],
-    "asset": ["asset_overview", "asset_list", "asset_templates"],
+    "asset": ["asset_overview", "asset_list", "asset_templates", "asset_discovery"],
+    "govcloud": ["asset_discovery"],
     "duty": ["duty_member", "duty_schedule", "duty_leave", "duty_log", "duty_dashboard"],
 }
+
+
+def _inherit_module_actions(
+    result: dict[str, list[str]],
+    new_mod: str,
+    *source_mods: str,
+) -> None:
+    """若新模块尚未配置，从旧模块动作中取交集补齐（不覆盖已有显式配置）。"""
+    if result.get(new_mod):
+        return
+    allowed = PERMISSION_MODULES.get(new_mod, [])
+    if not allowed:
+        return
+    for src in source_mods:
+        old_actions = result.get(src) or []
+        inherited = [a for a in old_actions if a in allowed]
+        if inherited:
+            result[new_mod] = inherited
+            return
 
 
 def migrate_permissions(perms: dict[str, list[str]] | None) -> dict[str, list[str]]:
     """把旧版权限矩阵迁移到新结构（保留已有动作，去重）。
 
     - ``workflow`` 的动作 → 复制到 ``workflow_list``（全量）+ ``workflow_editor``（仅 view/edit）
-    - ``asset`` 的动作 → 复制到 ``asset_overview``（仅 view）+ ``asset_list`` + ``asset_templates``
+    - ``asset`` 的动作 → 复制到 ``asset_overview`` / ``asset_list`` / ``asset_templates`` / ``asset_discovery``
+    - ``govcloud`` 过渡键 → ``asset_discovery``（与侧栏「资产发现」对齐）
     - 旧键保留，便于回滚；新键已存在则不覆盖
     - 兼容性补齐：原 ``chat`` 由 ``agent`` 权限覆盖、原 ``device`` 由 ``llm_config`` 覆盖；
-      迁移时为非空角色补 ``chat: ['view']`` 和 ``device: ['view']``，避免现有角色看不到菜单
+      已有 ``asset_list`` 的角色自动补 ``asset_discovery``（动作取交集），避免菜单可见但接口 403
     """
     if not perms:
         return {}
@@ -139,7 +162,6 @@ def migrate_permissions(perms: dict[str, list[str]] | None) -> dict[str, list[st
         for new_mod in new_mods:
             if new_mod in result and result[new_mod]:
                 continue  # 已显式配置，不覆盖
-            # 子模块按其动作集 ⨯ 旧动作取交集
             allowed = PERMISSION_MODULES.get(new_mod, [])
             inherited = [a for a in old_actions if a in allowed]
             if inherited:
@@ -152,6 +174,8 @@ def migrate_permissions(perms: dict[str, list[str]] | None) -> dict[str, list[st
     # 原有 llm_config 权限覆盖设备对接 → 自动补 device:view（仅 view，edit 需手动分配）
     if "device" not in result and perms.get("llm_config"):
         result["device"] = ["view"]
+    # 已有资产清单权限的角色补资产发现，保证侧栏与 API 同一套动作
+    _inherit_module_actions(result, "asset_discovery", "govcloud", "asset", "asset_list")
 
     return result
 
@@ -183,6 +207,7 @@ DEFAULT_ROLES: list[dict[str, Any]] = [
             "asset_overview": ["view"],
             "asset_list": ["view", "edit", "delete"],
             "asset_templates": ["view", "edit", "delete"],
+            "asset_discovery": ["view", "edit", "delete"],
             "deliverable": ["view", "edit"],
             "duty_member": ["view", "edit", "delete"],
             "duty_schedule": ["view", "edit", "delete"],
@@ -217,6 +242,7 @@ DEFAULT_ROLES: list[dict[str, Any]] = [
             "asset_overview": ["view"],
             "asset_list": ["view"],
             "asset_templates": ["view"],
+            "asset_discovery": ["view"],
             "deliverable": ["view"],
             "duty_member": ["view"],
             "duty_schedule": ["view"],

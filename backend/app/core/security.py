@@ -243,6 +243,41 @@ def ensure_columns(engine, table_name: str, columns: dict[str, str]) -> None:
     logger.info("轻量迁移完成: table=%s, checked=%d", table_name, len(columns))
 
 
+def _reset_govcloud_split_schema(engine) -> None:
+    """资产发现分表迁移：去掉旧 JSON 单表；纠正列名；清空与空新表脱节的旧批次。"""
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS govcloud_assets"))
+        insp2 = inspect(engine)
+        rebuild = False
+        if insp2.has_table("govcloud_cloud_hosts"):
+            cols = {c["name"] for c in insp2.get_columns("govcloud_cloud_hosts")}
+            if "cmdb_id" not in cols:
+                rebuild = True
+        if rebuild:
+            for tbl in (
+                "govcloud_cloud_hosts",
+                "govcloud_bare_metals",
+                "govcloud_networks",
+                "govcloud_elastic_ips",
+            ):
+                conn.execute(text(f"DROP TABLE IF EXISTS {tbl}"))
+            if insp2.has_table("govcloud_import_batches"):
+                conn.execute(text("TRUNCATE TABLE govcloud_import_batches RESTART IDENTITY"))
+            logger.info("轻量迁移: 已按 cmdb_id 重建政务云分表并清空旧导入批次")
+            return
+        if not insp2.has_table("govcloud_import_batches"):
+            return
+        live = 0
+        if insp2.has_table("govcloud_cloud_hosts"):
+            live = conn.execute(text("SELECT count(*) FROM govcloud_cloud_hosts")).scalar() or 0
+        stale = conn.execute(text(
+            "SELECT count(*) FROM govcloud_import_batches WHERE resource_type='cloud_host'"
+        )).scalar() or 0
+        if live == 0 and stale > 0:
+            conn.execute(text("TRUNCATE TABLE govcloud_import_batches RESTART IDENTITY"))
+            logger.info("轻量迁移: 新表为空，已清空旧导入批次避免误报未对齐")
+
+
 def run_lightweight_migrations(engine) -> None:
     """运行所有轻量迁移（启动时调用）。
 
@@ -737,6 +772,15 @@ def run_lightweight_migrations(engine) -> None:
                 logger.info("轻量迁移: agent_files 归属隔离列/索引已就绪")
         except Exception as exc:  # noqa: BLE001
             logger.warning("agent_files 索引调整失败: %s", exc)
+        ensure_columns(
+            engine,
+            "govcloud_import_batches",
+            {"import_mode": "VARCHAR(16) DEFAULT 'full'"},
+        )
+        try:
+            _reset_govcloud_split_schema(engine)
+        except Exception as extra_exc:  # noqa: BLE001
+            logger.warning("重置政务云分表/批次失败（忽略）: %s", extra_exc)
     except Exception as exc:  # noqa: BLE001
         logger.warning("轻量迁移失败（忽略继续）: %s", exc)
     finally:

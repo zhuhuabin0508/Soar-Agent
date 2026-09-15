@@ -95,6 +95,7 @@ _RESOURCE_MAP = {
     "agent-files": "agent_file",
     "executions": "execution",
     "assets": "asset",
+    "govcloud": "asset_discovery",
     "asset-templates": "asset_template",
     "banned-ips": "banned_ip",
     "devices": "device",
