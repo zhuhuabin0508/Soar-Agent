@@ -363,71 +363,15 @@ def get_sso_providers(db: Session = Depends(get_db)) -> dict:
 
 
 def _load_smtp_config(db: Session) -> Optional[dict]:
-    """从系统设置读取 SMTP 邮件配置（``security.smtp_*`` 前缀）。
-
-    Returns:
-        配置字典（host/port/username/password/from_email/use_ssl）；
-        未配置（缺 host/username/password 任一项）返回 None。
-    """
-    from app.models.system_config import SystemConfig
-
-    cfgs = (
-        db.query(SystemConfig)
-        .filter(SystemConfig.key.like("security.smtp_%"))
-        .all()
-    )
-    m = {c.key: (c.value or "").strip() for c in cfgs}
-    if not (m.get("security.smtp_host") and m.get("security.smtp_username")
-            and m.get("security.smtp_password")):
-        return None
-    try:
-        port = int(m.get("security.smtp_port") or 465)
-    except ValueError:
-        port = 465
-    use_ssl_raw = m.get("security.smtp_ssl")
-    use_ssl = (use_ssl_raw.lower() in ("true", "1", "yes", "on")) if use_ssl_raw else (port == 465)
-    return {
-        "host": m["security.smtp_host"],
-        "port": port,
-        "username": m["security.smtp_username"],
-        "password": m["security.smtp_password"],
-        "from_email": m.get("security.smtp_from") or m["security.smtp_username"],
-        "use_ssl": use_ssl,
-    }
+    """从系统设置读取 SMTP 邮件配置。"""
+    from app.core.mail import load_smtp_config
+    return load_smtp_config(db)
 
 
 def _send_otp_email(smtp: dict, to_email: str, code: str) -> bool:
-    """通过 SMTP 发送 OTP 登录验证码邮件（失败仅记录日志，不抛异常）。
-
-    Returns:
-        True 发送成功；False 发送失败（原因见日志）。
-    """
-    import smtplib
-    import ssl
-    from email.mime.text import MIMEText
-
-    msg = MIMEText(f"您的登录验证码为：{code}，5 分钟内有效。请勿泄露给他人。", "plain", "utf-8")
-    msg["Subject"] = "SOAR 平台登录验证码"
-    msg["From"] = smtp["from_email"]
-    msg["To"] = to_email
-    try:
-        context = ssl.create_default_context()
-        if smtp["use_ssl"]:
-            server = smtplib.SMTP_SSL(smtp["host"], smtp["port"], timeout=15, context=context)
-        else:
-            server = smtplib.SMTP(smtp["host"], smtp["port"], timeout=15)
-        try:
-            server.login(smtp["username"], smtp["password"])
-            server.sendmail(smtp["from_email"], [to_email], msg.as_string())
-        finally:
-            try:
-                server.quit()
-            except Exception:  # noqa: BLE001
-                pass
-        return True
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("OTP 验证码邮件发送失败: to=%s, host=%s, error=%s", to_email, smtp["host"], exc)
-        return False
+    """通过 SMTP 发送 OTP 登录验证码邮件。"""
+    from app.core.mail import send_otp_email
+    return send_otp_email(smtp, to_email, code)
 
 
 class OtpSendRequest(BaseModel):
