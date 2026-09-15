@@ -72,6 +72,12 @@ class StatusUpdate(BaseModel):
     status: Literal["pending", "processing", "replied", "resolved", "closed"] = Field(..., description="新状态")
 
 
+class AssigneeUpdate(BaseModel):
+    """管理员指派处理人请求体。"""
+
+    assignee_id: Optional[int] = Field(None, description="处理人 user_id；传 null 取消分配")
+
+
 class BatchAction(BaseModel):
     """批量操作反馈请求体。"""
 

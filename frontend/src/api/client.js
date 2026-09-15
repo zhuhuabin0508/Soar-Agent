@@ -544,6 +544,9 @@ export const feedbackApi = {
   // 状态变更（admin）
   setStatus: (id, status) =>
     request(`/feedbacks/${id}/status`, { method: 'PUT', body: { status } }),
+  assignees: () => request('/feedbacks/assignees'),
+  assign: (id, assignee_id) =>
+    request(`/feedbacks/${id}/assignee`, { method: 'PUT', body: { assignee_id } }),
   // 重新打开（提交者本人或 admin）
   reopen: (id) => request(`/feedbacks/${id}/reopen`, { method: 'POST' }),
   // 管理端全量列表

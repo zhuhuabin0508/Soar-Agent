@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   Bug, Eye, RotateCcw, Paperclip, MessageSquareWarning, X, Search, XCircle,
-  Trash2, Plus, Clock, Calendar, AlertTriangle,
+  Trash2, Plus, Clock, Calendar, AlertTriangle, ChevronDown,
 } from 'lucide-react'
 import { feedbackApi } from '../api/client'
 import { toast } from '../store/toastStore'
@@ -20,6 +20,7 @@ import {
   fmtSize,
   isImageAttachment,
 } from '../utils/feedback'
+import { isAdmin } from '../utils/permissions'
 
 const PAGE_SIZE = 20
 
@@ -29,6 +30,55 @@ function Tag({ cls, children }) {
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>
       {children}
     </span>
+  )
+}
+
+/** 自绘箭头的下拉：去掉系统默认错位箭头，文字在框内垂直居中 */
+function CompactSelect({
+  value,
+  onChange,
+  disabled,
+  children,
+  size = 'sm',
+  variant = 'field',
+  className = '',
+  title,
+  onClick,
+  onMouseDown,
+}) {
+  const tall = size === 'md'
+  const ghost = variant === 'ghost'
+  const empty = value === '' || value == null
+  const chrome = ghost
+    ? `border-transparent bg-transparent hover:border-border/40 hover:bg-muted/25 focus:border-border/60 focus:bg-muted/30 ${
+        empty ? 'text-muted-foreground' : 'text-foreground'
+      }`
+    : 'border-border/70 bg-secondary text-secondary-foreground hover:bg-accent focus:border-primary'
+  return (
+    <div
+      className={`group relative inline-flex items-center ${className}`}
+      onClick={onClick}
+      onMouseDown={onMouseDown}
+    >
+      <select
+        value={value}
+        disabled={disabled}
+        title={title}
+        onChange={onChange}
+        className={`appearance-none rounded-md border outline-none transition disabled:cursor-not-allowed disabled:opacity-60 ${chrome} ${
+          tall
+            ? 'h-8 min-w-[7.5rem] py-0 pl-2.5 pr-8 text-sm leading-8'
+            : 'h-7 min-w-[6.25rem] max-w-[8rem] py-0 pl-2 pr-7 text-xs leading-7'
+        }`}
+      >
+        {children}
+      </select>
+      <ChevronDown
+        className={`pointer-events-none absolute top-1/2 -translate-y-1/2 transition ${
+          tall ? 'right-2 h-3.5 w-3.5' : 'right-1.5 h-3 w-3'
+        } ${ghost ? 'text-muted-foreground/45 group-hover:text-muted-foreground' : 'text-muted-foreground/70'}`}
+      />
+    </div>
   )
 }
 
@@ -282,6 +332,9 @@ function AdminDetailDrawer({ open, onClose, feedbackId, onChanged }) {
   // 删除确认
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [assignees, setAssignees] = useState([])
+  const [assigning, setAssigning] = useState(false)
+  const canAssign = isAdmin()
 
   const load = useCallback(async () => {
     if (!feedbackId) return
@@ -301,6 +354,13 @@ function AdminDetailDrawer({ open, onClose, feedbackId, onChanged }) {
   useEffect(() => {
     if (open) load()
   }, [open, load])
+
+  useEffect(() => {
+    if (!open || !canAssign) return
+    feedbackApi.assignees()
+      .then((d) => setAssignees(d.items || d || []))
+      .catch(() => setAssignees([]))
+  }, [open, canAssign])
 
   useEffect(() => {
     if (!open) return
@@ -326,6 +386,23 @@ function AdminDetailDrawer({ open, onClose, feedbackId, onChanged }) {
   const p = priorityMeta(detail?.priority)
   const canReopen =
     detail && (detail.status === 'closed' || detail.status === 'resolved')
+
+  const handleAssign = async (assigneeId) => {
+    if (!detail || assigning) return
+    const next = assigneeId === '' || assigneeId == null ? null : Number(assigneeId)
+    if ((detail.assignee_id || null) === next) return
+    setAssigning(true)
+    try {
+      const d = await feedbackApi.assign(detail.id, next)
+      setDetail(d)
+      toast.success(next ? '已分配处理人' : '已取消分配')
+      if (onChanged) onChanged()
+    } catch (err) {
+      toast.error(err.message || '分配失败')
+    } finally {
+      setAssigning(false)
+    }
+  }
 
   // 提交回复（可选同时改状态）
   const handleSubmitReply = async () => {
@@ -535,21 +612,45 @@ function AdminDetailDrawer({ open, onClose, feedbackId, onChanged }) {
                   <div className="mb-3 flex flex-wrap items-center gap-4">
                     <label className="flex items-center gap-2 text-sm text-muted-foreground">
                       状态
-                      <select
+                      <CompactSelect
+                        size="md"
                         value={nextStatus}
                         onChange={(e) => setNextStatus(e.target.value)}
-                        className="rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground outline-none transition focus:border-primary"
                       >
                         {FEEDBACK_STATUSES.map((st) => (
                           <option key={st.value} value={st.value}>
                             {st.label}
                           </option>
                         ))}
-                      </select>
+                      </CompactSelect>
                     </label>
-                    <span className="text-xs text-muted-foreground">
-                      处理人：{detail.assignee_name || '未分配'}
-                    </span>
+                    {canAssign ? (
+                      <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                        处理人
+                        <CompactSelect
+                          size="md"
+                          value={detail.assignee_id || ''}
+                          disabled={assigning}
+                          onChange={(e) => handleAssign(e.target.value)}
+                        >
+                          <option value="">未分配</option>
+                          {detail.assignee_id && !assignees.some((u) => u.id === detail.assignee_id) && (
+                            <option value={detail.assignee_id}>
+                              {detail.assignee_name || '已停用账号'}
+                            </option>
+                          )}
+                          {assignees.map((u) => (
+                            <option key={u.id} value={u.id}>
+                              {u.display_name || u.username}
+                            </option>
+                          ))}
+                        </CompactSelect>
+                      </label>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        处理人：{detail.assignee_name || '未分配'}
+                      </span>
+                    )}
                     {canReopen && (
                       <Button size="sm" variant="secondary" loading={reopening} onClick={handleReopen}>
                         <RotateCcw className="h-3.5 w-3.5" />
@@ -662,6 +763,9 @@ function FeedbackAdmin() {
 
   // 批量删除确认
   const [confirmBatchDelete, setConfirmBatchDelete] = useState(false)
+  const canAssign = isAdmin()
+  const [assignees, setAssignees] = useState([])
+  const [assigningId, setAssigningId] = useState(null)
 
   const loadStats = useCallback(async () => {
     setStatsLoading(true)
@@ -704,6 +808,13 @@ function FeedbackAdmin() {
   useEffect(() => {
     load()
   }, [load])
+
+  useEffect(() => {
+    if (!canAssign) return
+    feedbackApi.assignees()
+      .then((d) => setAssignees(d.items || []))
+      .catch(() => setAssignees([]))
+  }, [canAssign])
 
   // 首次挂载加载统计；列表加载完成后同步刷新
   useEffect(() => {
@@ -769,7 +880,26 @@ function FeedbackAdmin() {
     await runBatch('delete', '批量删除')
   }
 
-  // 表格列定义
+  const handleListAssign = async (row, assigneeId) => {
+    if (!canAssign || assigningId) return
+    const next = assigneeId === '' || assigneeId == null ? null : Number(assigneeId)
+    if ((row.assignee_id || null) === next) return
+    setAssigningId(row.id)
+    try {
+      const d = await feedbackApi.assign(row.id, next)
+      setRows((prev) => prev.map((r) => (
+        r.id === row.id
+          ? { ...r, assignee_id: d.assignee_id, assignee_name: d.assignee_name }
+          : r
+      )))
+      toast.success(next ? '已分配处理人' : '已取消分配')
+    } catch (err) {
+      toast.error(err.message || '分配失败')
+    } finally {
+      setAssigningId(null)
+    }
+  }
+
   const columns = [
     {
       key: 'id',
@@ -810,6 +940,38 @@ function FeedbackAdmin() {
       width: '110px',
       render: (r) => (
         <span className="text-foreground">{r.user_name || `#${r.user_id}`}</span>
+      ),
+    },
+    {
+      key: 'assignee',
+      header: '处理人',
+      width: canAssign ? '132px' : '100px',
+      className: '!overflow-visible align-middle',
+      render: (r) => (
+        canAssign ? (
+          <CompactSelect
+            variant="ghost"
+            value={r.assignee_id || ''}
+            disabled={assigningId === r.id}
+            title="仅超管可分配处理人"
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onChange={(e) => {
+              e.stopPropagation()
+              handleListAssign(r, e.target.value)
+            }}
+          >
+            <option value="">未分配</option>
+            {r.assignee_id && !assignees.some((u) => u.id === r.assignee_id) && (
+              <option value={r.assignee_id}>{r.assignee_name || '已停用账号'}</option>
+            )}
+            {assignees.map((u) => (
+              <option key={u.id} value={u.id}>{u.display_name || u.username}</option>
+            ))}
+          </CompactSelect>
+        ) : (
+          <span className="inline-flex h-7 items-center text-foreground">{r.assignee_name || '未分配'}</span>
+        )
       ),
     },
     {
