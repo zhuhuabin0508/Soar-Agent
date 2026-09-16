@@ -46,8 +46,9 @@ def list_banned_ips(
     search: str = Query("", description="搜索 IP 地址"),
     status: str = Query("", description="状态过滤：active/expired/unblocked"),
     db: Session = Depends(get_db),
+    _: object = Depends(require_role("admin")),
 ) -> list[dict]:
-    """列出所有已封禁 IP（自动更新过期状态）。"""
+    """列出所有已封禁 IP（自动更新过期状态）（仅管理员）。"""
     query = db.query(BannedIP)
     if search:
         query = query.filter(BannedIP.ip.contains(search))
@@ -71,8 +72,11 @@ def list_banned_ips(
 
 
 @router.get("/stats")
-def get_banned_stats(db: Session = Depends(get_db)) -> dict:
-    """已封禁 IP 统计信息。"""
+def get_banned_stats(
+    db: Session = Depends(get_db),
+    _: object = Depends(require_role("admin")),
+) -> dict:
+    """已封禁 IP 统计信息（仅管理员）。"""
     total = db.query(BannedIP).count()
     active = db.query(BannedIP).filter(BannedIP.status == "active").count()
     expired = db.query(BannedIP).filter(BannedIP.status == "expired").count()
@@ -167,8 +171,12 @@ def manual_ban_ip(
 
 
 @router.get("/{ip}")
-def get_banned_ip(ip: str, db: Session = Depends(get_db)) -> dict:
-    """查询单个 IP 的封禁状态。"""
+def get_banned_ip(
+    ip: str,
+    db: Session = Depends(get_db),
+    _: object = Depends(require_role("admin")),
+) -> dict:
+    """查询单个 IP 的封禁状态（仅管理员）。"""
     record = db.query(BannedIP).filter(BannedIP.ip == ip).first()
     if record is None:
         raise HTTPException(status_code=404, detail="该 IP 不在封禁列表中")
@@ -228,8 +236,9 @@ def export_banned_ips(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     request: Request = None,
+    _: object = Depends(require_role("admin")),
 ):
-    """导出所有已封禁 IP 为 CSV 文件。"""
+    """导出所有已封禁 IP 为 CSV 文件（仅管理员）。"""
     # 审计：导出操作（GET 请求不被中间件捕获，需手动记录）
     from app.core.audit import get_client_ip, log_audit
     ip = get_client_ip(request) if request else "unknown"
@@ -267,8 +276,10 @@ def export_banned_ips(
 
 
 @router.get("/import/template")
-def download_import_template():
-    """下载 CSV 导入模板（仅含表头与一行示例）。
+def download_import_template(
+    _: object = Depends(require_role("admin")),
+):
+    """下载 CSV 导入模板（仅含表头与一行示例）（仅管理员）。
 
     表头与 ``import_banned_ips`` 解析逻辑及 ``export_banned_ips`` 导出格式保持一致。
     """

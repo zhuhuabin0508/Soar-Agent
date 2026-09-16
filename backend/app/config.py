@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     WEBHOOK_MAX_BODY_BYTES: int = 1024 * 1024
     # Webhook 限流：每个 workflow 每分钟最大请求数
     WEBHOOK_RATE_LIMIT_PER_MINUTE: int = 30
+    # 开发调试开关：OTP 登录验证码是否明文回显在响应中（dev_code）。
+    # 生产必须保持 false。未配置 SMTP 且此开关为 false 时，
+    # /auth/otp/send 返回 503 业务错误且响应中绝不含验证码。
+    ENABLE_DEV_CODE: bool = False
 
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",

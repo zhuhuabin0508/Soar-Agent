@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.core.timezone import BEIJING_TZ, beijing_now
 from app.database import SessionLocal, get_db
-from app.dependencies import get_current_user, require_permission
+from app.dependencies import get_current_user, require_permission, require_role
 from app.engine.enum_translator import translate as enum_translate
 from app.engine.field_mapper import apply_mappings
 from app.engine.parser_engine import ParseEngine, ParseSink
@@ -382,7 +382,7 @@ def _today_metrics_by_strategy(db: Session) -> dict[int, dict]:
     return agg
 
 
-@router.get("/strategies", dependencies=[Depends(require_permission("strategy", "view"))])
+@router.get("/strategies", dependencies=[Depends(require_role("admin"))])
 def list_strategies(db: Session = Depends(get_db)) -> list[dict]:
     """列出全部解析策略（含今日解析统计，走 ingestion_metrics 聚合）。"""
     rows = db.query(ParseStrategy).order_by(ParseStrategy.id.desc()).all()
@@ -413,7 +413,7 @@ def list_strategies(db: Session = Depends(get_db)) -> list[dict]:
     return result
 
 
-@router.get("/strategies/stats", dependencies=[Depends(require_permission("strategy", "view"))])
+@router.get("/strategies/stats", dependencies=[Depends(require_role("admin"))])
 def strategy_stats(db: Session = Depends(get_db)) -> dict:
     """策略列表页顶部统计卡片数据。"""
     rows = db.query(ParseStrategy).all()
@@ -443,7 +443,7 @@ def strategy_stats(db: Session = Depends(get_db)) -> dict:
     }
 
 
-@router.get("/strategies/fields", dependencies=[Depends(require_permission("strategy", "view"))])
+@router.get("/strategies/fields", dependencies=[Depends(require_role("admin"))])
 def strategy_target_fields() -> list[dict]:
     """返回标准模型（alert_events）全部可选目标字段及类型，供表单模式下拉选择。"""
     type_map = {"VARCHAR": "string", "TEXT": "string", "INTEGER": "int", "DATETIME": "datetime"}

@@ -423,9 +423,12 @@ function ApprovalCard({ item, onApprove, onReject, onDelete, busy }) {
 // ============ 工作台主组件 ============
 function ApprovalCenter() {
   const [searchParams, setSearchParams] = useSearchParams()
-  // 支持 URL ?tab=banned / all 直达；默认为统一审批中心
-  const initialTab = searchParams.get('tab') === 'banned' ? 'banned'
+  // 支持 URL ?tab=banned / all 直达；默认为统一审批中心。
+  // 「已封禁 IP」为仅管理员功能：非 admin 强制落到审批中心，避免其访问管理员专属数据。
+  const isAdminUser = isAdmin()
+  const requestedTab = searchParams.get('tab') === 'banned' ? 'banned'
     : searchParams.get('tab') === 'all' ? 'all' : 'approval'
+  const initialTab = (requestedTab === 'banned' && !isAdminUser) ? 'approval' : requestedTab
 
   const [items, setItems] = useState([])
   const [stats, setStats] = useState(null)
@@ -467,7 +470,9 @@ function ApprovalCenter() {
   }, [])
 
   // 拉取封禁工作流统计（待审批工单 + 生效中封禁）
+  // 「已封禁 IP」为仅管理员功能：非 admin 不请求，避免 403 报错。
   const loadBanStats = useCallback(async () => {
+    if (!isAdmin()) return
     try {
       const [st, active] = await Promise.all([
         banWorkflowApi.stats(),
@@ -599,14 +604,16 @@ function ApprovalCenter() {
           >
             待处理 {(stats?.pending ?? 0) + banStats.pendingApprovals}
           </button>
-          <button
-            type="button"
-            onClick={() => switchTab('banned')}
-            className="rounded-full bg-destructive/20 px-2.5 py-0.5 text-xs font-medium text-destructive transition hover:bg-destructive/30"
-            title="点击查看已封禁 IP"
-          >
-            封禁中 {banStats.activeBans}
-          </button>
+          {isAdmin() && (
+            <button
+              type="button"
+              onClick={() => switchTab('banned')}
+              className="rounded-full bg-destructive/20 px-2.5 py-0.5 text-xs font-medium text-destructive transition hover:bg-destructive/30"
+              title="点击查看已封禁 IP"
+            >
+              封禁中 {banStats.activeBans}
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-3">
           {lastUpdated && (
@@ -644,21 +651,23 @@ function ApprovalCenter() {
                 <span className="ml-1 rounded-full bg-warning/30 px-1.5 text-[10px]">{(stats?.pending ?? 0) + banStats.pendingApprovals}</span>
               )}
             </button>
-            <button
-              type="button"
-              onClick={() => switchTab('banned')}
-              className={`flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-colors ${
-                tab === 'banned'
-                  ? 'bg-destructive text-destructive-foreground shadow-sm'
-                  : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
-              }`}
-            >
-              <Ban className="h-4 w-4" />
-              已封禁 IP
-              {banStats.activeBans > 0 && tab !== 'banned' && (
-                <span className="ml-1 rounded-full bg-destructive/30 px-1.5 text-[10px]">{banStats.activeBans}</span>
-              )}
-            </button>
+            {isAdmin() && (
+              <button
+                type="button"
+                onClick={() => switchTab('banned')}
+                className={`flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+                  tab === 'banned'
+                    ? 'bg-destructive text-destructive-foreground shadow-sm'
+                    : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+                }`}
+              >
+                <Ban className="h-4 w-4" />
+                已封禁 IP
+                {banStats.activeBans > 0 && tab !== 'banned' && (
+                  <span className="ml-1 rounded-full bg-destructive/30 px-1.5 text-[10px]">{banStats.activeBans}</span>
+                )}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => switchTab('all')}
@@ -675,10 +684,10 @@ function ApprovalCenter() {
         </div>
 
         {/* ====== 审批中心 Tab：统一审批（封禁工单 + 工作流人工审批） ====== */}
-        {tab === 'approval' ? (
+        {tab === 'approval' || (tab === 'banned' && !isAdmin()) ? (
           <BanApprovals embedded />
         ) : tab === 'banned' ? (
-          /* ====== 已封禁 IP Tab：嵌入封禁工作台（新封禁工作流数据） ====== */
+          /* ====== 已封禁 IP Tab：嵌入封禁工作台（新封禁工作流数据，仅管理员） ====== */
           <BanWorkbench embedded />
         ) : (
           <>
@@ -824,13 +833,15 @@ function ApprovalCenter() {
                     >
                       前往审批中心
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => switchTab('banned')}
-                      className="rounded-md border border-border px-2.5 py-1 text-[11px] text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-                    >
-                      查看已封禁 IP
-                    </button>
+                    {isAdmin() && (
+                      <button
+                        type="button"
+                        onClick={() => switchTab('banned')}
+                        className="rounded-md border border-border px-2.5 py-1 text-[11px] text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                      >
+                        查看已封禁 IP
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={handleRefresh}

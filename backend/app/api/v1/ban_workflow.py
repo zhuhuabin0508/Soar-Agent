@@ -624,7 +624,7 @@ def _record_item(db: Session, r: BanRecord) -> dict:
     }
 
 
-@router.get("/banned-ips", dependencies=[Depends(require_permission("ban_workflow", "view"))])
+@router.get("/banned-ips", dependencies=[Depends(require_role("admin"))])
 def list_banned_ips(
     status: str = Query("", description="active/pending_approval/expired/unbanned/cancelled"),
     ip: str = Query("", description="IP 关键词"),
@@ -648,7 +648,7 @@ def list_banned_ips(
     return {"total": total, "items": [_record_item(db, r) for r in rows], "page": page, "page_size": page_size}
 
 
-@router.get("/banned-ips/{record_id}", dependencies=[Depends(require_permission("ban_workflow", "view"))])
+@router.get("/banned-ips/{record_id}", dependencies=[Depends(require_role("admin"))])
 def get_banned_ip(record_id: int, db: Session = Depends(get_db)) -> dict:
     """封禁记录详情：封禁方案 + 研判结论 + 决策依据 + 审批记录 + 关联告警列表。"""
     record = db.query(BanRecord).filter(BanRecord.id == record_id).first()

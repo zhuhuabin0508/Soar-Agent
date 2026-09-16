@@ -967,9 +967,16 @@ async def execute_end_node(
 async def execute_code_execute(
     node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
 ) -> dict:
-    """code_execute：执行用户自定义 Python3 代码。
+    """code_execute：执行用户自定义 Python3 代码（进程隔离沙箱）。
 
-    在受限命名空间中执行，支持通过 input_data 和 ctx 访问上游数据。
+    三层防御（渗透测试整改 漏洞2：Python 沙箱逃逸）：
+    1. 进程隔离（必须）：用户代码在独立子进程 ``sys.executable -I wrapper`` 中执行，
+       子进程 ``env={}``（切断 JWT/数据库/Redis 等凭据泄露路径）、``cwd`` 专用临时目录、
+       ``preexec_fn`` 设置 RLIMIT 资源上限并 setuid/setgid 降权到 nobody。
+    2. AST 预检（第二层）：执行前 ``ast.parse`` 用户代码，拒绝 dunder 属性访问
+       （``__class__.__mro__.__subclasses__`` 逃逸链）与危险内置名引用。
+    3. 攻击面收敛：``test_node`` / ``test_run_workflow`` 端点增加权限门槛。
+
     代码中可用变量：input_data（上游输入）、ctx（工作流上下文）、result（输出变量）。
     """
     nid = _node_id(node_data)
@@ -980,52 +987,136 @@ async def execute_code_execute(
 
     log(nid, _INFO, f"代码执行节点启动, 代码长度={len(code)}")
 
-    # 安全执行：受限命名空间，禁用危险内置
+    # ===== 第二层：AST 预检（拒绝危险代码，不执行） =====
+    reason = _check_code_forbidden(code)
+    if reason:
+        log(nid, _ERROR, f"代码被安全策略拒绝: {reason}")
+        return {"error": f"代码被安全策略拒绝: {reason}", "output": None}
+
     import asyncio
+    import json
+    import os
+    import subprocess
+    import sys
+    import tempfile
 
-    forbidden = {"open": None, "eval": None, "exec": None, "compile": None,
-                 "__import__": None, "globals": None, "locals": None}
-    safe_globals = {"__builtins__": {k: v for k, v in __builtins__.items() if k not in forbidden
-                                     if isinstance(__builtins__, dict)}}
-    # 如果 __builtins__ 不是 dict（某些环境），用安全子集
-    if not isinstance(safe_globals["__builtins__"], dict):
-        safe_builtins = {}
-        for name in ["print", "len", "str", "int", "float", "bool", "list", "dict",
-                     "set", "tuple", "range", "enumerate", "zip", "map", "filter",
-                     "sorted", "reversed", "sum", "min", "max", "abs", "round",
-                     "isinstance", "type", "None", "True", "False", "Exception",
-                     "ValueError", "TypeError", "KeyError", "IndexError", "ImportError",
-                     "json", "re", "math", "datetime", "time", "os.path", "hashlib",
-                     "base64", "urllib", "requests"]:
+    # 序列化输入；ctx 含不可序列化对象时降级为只传 input_data
+    payload = {"code": code, "input_data": input_data, "ctx": ctx}
+    try:
+        json.dumps(payload)
+    except (TypeError, ValueError):
+        payload = {"code": code, "input_data": input_data, "ctx": {}}
+        log(nid, _WARN, "ctx 含不可序列化对象，子进程内仅传入 input_data（ctx 不可用）")
+
+    runner = os.path.join(os.path.dirname(__file__), "safe_code_runner.py")
+    timeout = int(node_data.get("timeout") or 30)
+
+    def _preexec() -> None:
+        """子进程降权与资源限制（Linux 容器以 root 运行，可降权到 nobody=65534）。"""
+        import resource
+
+        def _setrlimit(res, lim):
             try:
-                if name in __builtins__:
-                    safe_builtins[name] = __builtins__[name]
-            except Exception:  # noqa: BLE001
+                resource.setrlimit(res, lim)
+            except (ValueError, OSError):
                 pass
-        safe_globals["__builtins__"] = safe_builtins
 
-    # 提供常用模块
-    local_vars = {"input_data": input_data, "ctx": ctx, "result": None}
-    safe_globals.update({
-        "json": __import__("json"), "re": __import__("re"), "math": __import__("math"),
-        "datetime": __import__("datetime"), "hashlib": __import__("hashlib"),
-        "base64": __import__("base64"),
-    })
+        _setrlimit(resource.RLIMIT_CPU, (timeout, timeout))
+        _setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))  # 512MB
+        _setrlimit(resource.RLIMIT_NPROC, (64, 64))
+        _setrlimit(resource.RLIMIT_FSIZE, (0, 0))
+        try:
+            os.setgid(65534)
+            os.setuid(65534)
+        except OSError:
+            # 父进程非 root 时降权失败不阻断（已是低权运行）
+            pass
 
-    def _run_sync():
-        exec(code, safe_globals, local_vars)  # noqa: S102
-        return local_vars.get("result")
+    def _run() -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, "-I", runner, inp, out],
+            env={},  # 空环境变量：切断宿主机凭据泄露路径
+            cwd=tmpdir,  # 专用临时目录作为工作目录
+            timeout=timeout,
+            capture_output=True,
+            # preexec_fn 在多线程父进程下略有不安全，但为满足降权/资源限制要求而使用；
+            # subprocess.run 已 fork 子进程后再执行，目标平台为 Linux 容器。
+            preexec_fn=_preexec if os.name != "nt" else None,
+        )
 
     try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
         loop = asyncio.get_event_loop()
-        output = await loop.run_in_executor(None, _run_sync)
-        log(nid, _INFO, f"代码执行完成, output={str(output)[:200]}")
-        return {"output": output}
-    except Exception as exc:  # noqa: BLE001
-        import traceback
-        log(nid, _ERROR, f"代码执行失败: {type(exc).__name__}: {exc}")
-        log(nid, _ERROR, traceback.format_exc(limit=3))
-        return {"error": str(exc), "output": None}
+
+    with tempfile.TemporaryDirectory(prefix="soar-code-") as tmpdir:
+        inp = os.path.join(tmpdir, "input.json")
+        out = os.path.join(tmpdir, "output.json")
+        with open(inp, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+
+        try:
+            proc = await loop.run_in_executor(None, _run)
+        except subprocess.TimeoutExpired:
+            log(nid, _ERROR, "代码执行超时，已强制终止")
+            return {"error": "代码执行超时，已强制终止", "output": None}
+        except Exception as exc:  # noqa: BLE001
+            log(nid, _ERROR, f"代码执行进程启动失败: {type(exc).__name__}: {exc}")
+            return {"error": f"代码执行进程启动失败: {exc}", "output": None}
+
+        # 读取子进程回传的 JSON 结果
+        if os.path.exists(out):
+            try:
+                with open(out, "r", encoding="utf-8") as f:
+                    res = json.load(f)
+            except (ValueError, json.JSONDecodeError):
+                res = {"error": "子进程输出无法解析"}
+        else:
+            stderr = (proc.stderr or b"").decode("utf-8", "replace")[:500]
+            res = {"error": stderr or "代码执行失败（无输出）"}
+
+    if "error" in res:
+        log(nid, _ERROR, f"代码执行失败: {res['error']}")
+        return {"error": res["error"], "output": None}
+    log(nid, _INFO, f"代码执行完成, output={str(res.get('result'))[:200]}")
+    return {"output": res.get("result")}
+
+
+def _check_code_forbidden(code: str):
+    """AST 预检用户自定义代码；通过返回 None，拒绝返回原因字符串。
+
+    第二层防御（第一层为子进程隔离）：
+    - 拒绝 ``Attribute`` 节点访问 dunder 属性（``__globals__``/``__subclasses__``/
+      ``__mro__``/``__class__``/``__builtins__``/``__init__``/``__import__``/``__dict__`` 等，
+      即渗透报告中的 ``().__class__.__mro__[1].__subclasses__()`` 逃逸链）；
+    - 拒绝 ``Name`` 节点引用 eval/exec/compile/open/getattr/setattr/globals/locals/vars/dir。
+    """
+    import ast
+
+    forbidden_attrs = {
+        "__globals__", "__subclasses__", "__mro__", "__class__", "__builtins__",
+        "__init__", "__import__", "__dict__", "__bases__", "__self__", "__closure__",
+        "__code__", "__func__", "__getattribute__", "__getattr__", "__setattr__",
+        "__delattr__", "__new__", "__reduce__", "__loader__", "__spec__",
+    }
+    forbidden_names = {
+        "eval", "exec", "compile", "open", "getattr", "setattr",
+        "globals", "locals", "vars", "dir", "__import__",
+    }
+
+    try:
+        tree = ast.parse(code, mode="exec")
+    except SyntaxError as exc:
+        return f"代码语法错误: {exc}"
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute):
+            if node.attr in forbidden_attrs:
+                return f"代码包含被禁止的 dunder 属性访问: {node.attr}"
+        elif isinstance(node, ast.Name):
+            if node.id in forbidden_names:
+                return f"代码引用了被禁止的内置名: {node.id}"
+    return None
 
 
 async def execute_loop(

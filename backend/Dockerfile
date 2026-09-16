@@ -40,6 +40,7 @@ ENV BUILD_DATE=${BUILD_DATE}
 
 # 复制应用代码与入口脚本
 COPY app ./app
+COPY scripts ./scripts
 COPY entrypoint.sh ./entrypoint.sh
 
 # 赋予入口脚本可执行权限

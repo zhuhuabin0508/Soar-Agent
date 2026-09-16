@@ -35,5 +35,9 @@ fi
 echo "==> Ensuring seed data (default tools & sample workflow)..."
 python -c "from app.core.seed import ensure_seed_data; ensure_seed_data()" || echo "==> WARNING: seed data init failed, continuing anyway"
 
+# 渗透测试整改（漏洞4/5）：剔除 analyst/viewer 系统角色中的越权模块（幂等，可重复执行）
+echo "==> Running legacy role permission cleanup (idempotent)..."
+python -m scripts.strip_legacy_role_permissions || echo "==> WARNING: role permission cleanup failed, continuing anyway"
+
 echo "==> Starting uvicorn server on 0.0.0.0:8000..."
 exec uvicorn app.main:app --host 0.0.0.0 --port 8000

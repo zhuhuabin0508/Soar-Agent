@@ -77,6 +77,8 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       SEED_ADMIN_USERNAME: ${SEED_ADMIN_USERNAME:-admin}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-admin123}
+      # 本地开发调试：OTP 验证码明文回显。生产请勿设置或设为 false。
+      ENABLE_DEV_CODE: ${ENABLE_DEV_CODE:-false}
     depends_on:
       postgres:
         condition: service_healthy

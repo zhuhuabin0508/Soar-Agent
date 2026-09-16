@@ -22,7 +22,7 @@ from app.core.security import (
 from app.core.workflow_runner import run_workflow
 from app.core.workflow_validator import validate_workflow
 from app.database import get_db
-from app.dependencies import check_resource_ownership, compute_can_edit_ids, get_current_user, resource_can_edit
+from app.dependencies import check_resource_ownership, compute_can_edit_ids, get_current_user, require_permission, resource_can_edit
 from app.models import Execution, ExecutionLog, ExecutionTrace, Workflow
 from app.models.user import User
 from app.schemas.workflow import (
@@ -230,12 +230,18 @@ def list_workflows(
 
 
 @router.patch("/{workflow_id}/favorite", response_model=WorkflowOut)
-def toggle_favorite(workflow_id: int, db: Session = Depends(get_db)) -> Workflow:
+def toggle_favorite(
+    workflow_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Workflow:
     """切换工作流收藏状态（常用工作流置顶）。"""
     logger.info("Toggling favorite: workflow_id=%s", workflow_id)
     db_workflow = db.query(Workflow).filter(Workflow.id == workflow_id).first()
     if db_workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    # 资源级 owner 校验
+    check_resource_ownership(current_user, db, "workflow", workflow_id, db_workflow)
     db_workflow.favorite = not db_workflow.favorite
     db.commit()
     db.refresh(db_workflow)
@@ -250,7 +256,10 @@ class StatusUpdateRequest(BaseModel):
 
 @router.patch("/{workflow_id}/status", response_model=WorkflowOut)
 def update_status(
-    workflow_id: int, body: StatusUpdateRequest, db: Session = Depends(get_db)
+    workflow_id: int,
+    body: StatusUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Workflow:
     """更新工作流生命周期状态（草稿/已发布/已停用）。"""
     if body.status not in ("draft", "published", "disabled"):
@@ -259,6 +268,8 @@ def update_status(
     db_workflow = db.query(Workflow).filter(Workflow.id == workflow_id).first()
     if db_workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    # 资源级 owner 校验
+    check_resource_ownership(current_user, db, "workflow", workflow_id, db_workflow)
     db_workflow.status = body.status
     # 已停用时同步禁用触发（webhook 触发返回 404）
     if body.status == "disabled":
@@ -279,13 +290,18 @@ class TagsUpdateRequest(BaseModel):
 
 @router.patch("/{workflow_id}/tags", response_model=WorkflowOut)
 def update_tags(
-    workflow_id: int, body: TagsUpdateRequest, db: Session = Depends(get_db)
+    workflow_id: int,
+    body: TagsUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Workflow:
     """更新工作流标签与分类。"""
     logger.info("Updating tags: workflow_id=%s, tags=%s, category=%s", workflow_id, body.tags, body.category)
     db_workflow = db.query(Workflow).filter(Workflow.id == workflow_id).first()
     if db_workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    # 资源级 owner 校验
+    check_resource_ownership(current_user, db, "workflow", workflow_id, db_workflow)
     db_workflow.tags = body.tags
     if body.category is not None:
         db_workflow.category = body.category
@@ -419,7 +435,9 @@ def delete_workflow(
 
 @router.post("/{workflow_id}/reset-secret", response_model=WorkflowOut)
 def reset_webhook_secret(
-    workflow_id: int, db: Session = Depends(get_db)
+    workflow_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Workflow:
     """重置工作流的 webhook 密钥（旧密钥立即失效）。
 
@@ -429,6 +447,8 @@ def reset_webhook_secret(
     db_workflow = db.query(Workflow).filter(Workflow.id == workflow_id).first()
     if db_workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    # 资源级 owner 校验：仅 admin/owner/被授权用户可重置密钥
+    check_resource_ownership(current_user, db, "workflow", workflow_id, db_workflow)
     db_workflow.webhook_secret = generate_webhook_secret()
     db.commit()
     db.refresh(db_workflow)
@@ -454,7 +474,11 @@ class EnvVarList(BaseModel):
 
 
 @router.get("/{workflow_id}/env-vars")
-def get_env_vars(workflow_id: int, db: Session = Depends(get_db)) -> dict:
+def get_env_vars(
+    workflow_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """获取工作流环境变量列表。
 
     返回结构：
@@ -466,6 +490,8 @@ def get_env_vars(workflow_id: int, db: Session = Depends(get_db)) -> dict:
     wf = db.query(Workflow).filter(Workflow.id == workflow_id).first()
     if wf is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    # 资源级 owner 校验：仅 admin/owner/被授权用户可读取环境变量
+    check_resource_ownership(current_user, db, "workflow", workflow_id, wf)
     raw = wf.env_vars or []
     items = []
     for v in raw:
@@ -485,7 +511,10 @@ def get_env_vars(workflow_id: int, db: Session = Depends(get_db)) -> dict:
 
 @router.put("/{workflow_id}/env-vars")
 def update_env_vars(
-    workflow_id: int, body: EnvVarList, db: Session = Depends(get_db)
+    workflow_id: int,
+    body: EnvVarList,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """保存工作流环境变量（值加密存储）。
 
@@ -498,6 +527,8 @@ def update_env_vars(
     wf = db.query(Workflow).filter(Workflow.id == workflow_id).first()
     if wf is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    # 资源级 owner 校验：仅 admin/owner/被授权用户可修改环境变量
+    check_resource_ownership(current_user, db, "workflow", workflow_id, wf)
 
     # 取原值用于"保留掩码项"
     prev_map: dict[str, str] = {}
@@ -543,7 +574,10 @@ def update_env_vars(
 
 @router.post("/{workflow_id}/env-vars/reveal")
 def reveal_env_var(
-    workflow_id: int, body: dict, db: Session = Depends(get_db)
+    workflow_id: int,
+    body: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """查看单个环境变量的明文值（敏感操作，审计建议记录）。
 
@@ -558,6 +592,8 @@ def reveal_env_var(
     wf = db.query(Workflow).filter(Workflow.id == workflow_id).first()
     if wf is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    # 资源级 owner 校验：仅 admin/owner/被授权用户可查看明文环境变量
+    check_resource_ownership(current_user, db, "workflow", workflow_id, wf)
     for v in (wf.env_vars or []):
         if isinstance(v, dict) and v.get("name") == name:
             return {"name": name, "value": decrypt_env_value(v.get("value") or "")}
@@ -579,13 +615,18 @@ class TestNodeRequest(BaseModel):
 
 @router.post("/{workflow_id}/test-run")
 async def test_run_workflow(
-    workflow_id: int, body: TestRunRequest, db: Session = Depends(get_db)
+    workflow_id: int,
+    body: TestRunRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """测试运行整个工作流，写入 Execution（trigger_type=test_run）与 ExecutionLog。"""
     logger.info("测试运行工作流: id=%s", workflow_id)
     workflow = db.query(Workflow).filter(Workflow.id == workflow_id).first()
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    # 资源级 owner 校验：仅 admin/owner/被授权用户可测试运行
+    check_resource_ownership(current_user, db, "workflow", workflow_id, workflow)
 
     # 创建执行记录（测试触发）
     execution = Execution(
@@ -690,8 +731,16 @@ async def test_run_workflow(
 
 
 @router.post("/test-node")
-async def test_node(body: TestNodeRequest) -> dict:
-    """测试单个节点，不写 Execution，仅返回 output 与 logs。"""
+async def test_node(
+    body: TestNodeRequest,
+    _: User = Depends(require_permission("workflow_editor", "edit")),
+) -> dict:
+    """测试单个节点，不写 Execution，仅返回 output 与 logs。
+
+    安全说明：本端点请求体不含 ``workflow_id``，无法做资源级 owner 校验，
+    故以权限矩阵 ``require_permission("workflow_editor", "edit")`` 作为门槛，
+    仅允许具备工作流编排编辑权限的用户执行。
+    """
     logger.info("测试单节点: node=%s", body.node.get("id"))
     node = body.node or {}
     node_id = str(node.get("id", "test"))

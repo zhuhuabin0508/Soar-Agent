@@ -263,12 +263,20 @@ def delete_knowledge_base(
 
 
 @router.get("/{kb_id}/documents")
-def list_documents(kb_id: int, db: Session = Depends(get_db)) -> list[dict]:
-    """列出知识库下所有文档。"""
+def list_documents(
+    kb_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[dict]:
+    """列出知识库下所有文档。
+
+    资源级 owner 校验：仅 admin/owner/被授权用户可访问该知识库文档。
+    """
     logger.info("查询文档列表: kb_id=%s", kb_id)
     kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
     if kb is None:
         raise HTTPException(status_code=404, detail="KnowledgeBase not found")
+    check_resource_ownership(current_user, db, "knowledge_base", kb_id, kb)
     docs = (
         db.query(KnowledgeDocument)
         .filter(KnowledgeDocument.kb_id == kb_id)
@@ -280,16 +288,21 @@ def list_documents(kb_id: int, db: Session = Depends(get_db)) -> list[dict]:
 
 @router.post("/{kb_id}/documents", status_code=201)
 async def create_document(
-    kb_id: int, body: DocBase, db: Session = Depends(get_db)
+    kb_id: int,
+    body: DocBase,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """向知识库添加文档（含元数据与高级配置）。
 
     文档入库后自动按知识库配置执行分段与向量化（见 ``kb_service.ingest_document``）。
+    资源级 owner 校验：仅 admin/owner/被授权用户可新增文档。
     """
     logger.info("添加文档: kb_id=%s, title=%s", kb_id, body.title)
     kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
     if kb is None:
         raise HTTPException(status_code=404, detail="KnowledgeBase not found")
+    check_resource_ownership(current_user, db, "knowledge_base", kb_id, kb)
     from datetime import datetime
     doc = KnowledgeDocument(
         kb_id=kb_id,
@@ -318,11 +331,16 @@ async def create_document(
 
 @router.put("/{kb_id}/documents/{doc_id}")
 async def update_document(
-    kb_id: int, doc_id: int, body: DocBase, db: Session = Depends(get_db)
+    kb_id: int,
+    doc_id: int,
+    body: DocBase,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """编辑文档标题、内容与元数据。
 
     内容变化时自动重新分段与向量化。
+    资源级 owner 校验：仅 admin/owner/被授权用户可编辑文档。
     """
     logger.info("编辑文档: kb_id=%s, doc_id=%s", kb_id, doc_id)
     doc = (
@@ -333,6 +351,7 @@ async def update_document(
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
     kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
+    check_resource_ownership(current_user, db, "knowledge_base", kb_id, kb)
     content_changed = (doc.content or "") != (body.content or "")
     from datetime import datetime
     doc.title = body.title
@@ -363,16 +382,19 @@ async def upload_document(
     kb_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """上传文件到知识库，自动解析文本内容写入 ``content``。
 
     支持的文件格式与解析规则见 ``app/core/file_parser.py``。
     文件保存到 ``backend/uploads/``，文件名加 uuid 前缀防冲突。
+    资源级 owner 校验：仅 admin/owner/被授权用户可上传文档。
     """
     logger.info("上传知识库文档: kb_id=%s, filename=%s", kb_id, file.filename)
     kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
     if kb is None:
         raise HTTPException(status_code=404, detail="KnowledgeBase not found")
+    check_resource_ownership(current_user, db, "knowledge_base", kb_id, kb)
 
     original_filename = file.filename or "untitled"
     title, file_type = parse_filename(original_filename)
@@ -431,9 +453,15 @@ class FetchUrlRequest(BaseModel):
 
 @router.post("/{kb_id}/documents/fetch-url", status_code=201)
 async def fetch_url_document(
-    kb_id: int, body: FetchUrlRequest, db: Session = Depends(get_db)
+    kb_id: int,
+    body: FetchUrlRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
-    """从 URL 抓取网页内容，解析为纯文本后存入知识库。"""
+    """从 URL 抓取网页内容，解析为纯文本后存入知识库。
+
+    资源级 owner 校验：仅 admin/owner/被授权用户可新增网页文档。
+    """
     import httpx
     import re
 
@@ -441,6 +469,7 @@ async def fetch_url_document(
     kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
     if kb is None:
         raise HTTPException(status_code=404, detail="KnowledgeBase not found")
+    check_resource_ownership(current_user, db, "knowledge_base", kb_id, kb)
 
     try:
         async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
@@ -495,9 +524,15 @@ async def fetch_url_document(
 
 @router.delete("/{kb_id}/documents/{doc_id}")
 def delete_document(
-    kb_id: int, doc_id: int, db: Session = Depends(get_db)
+    kb_id: int,
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
-    """删除指定文档（分段、上传文件一并清掉，避免工具仍按旧分段/文件检索）。"""
+    """删除指定文档（分段、上传文件一并清掉，避免工具仍按旧分段/文件检索）。
+
+    资源级 owner 校验：仅 admin/owner/被授权用户可删除文档。
+    """
     logger.info("删除文档: kb_id=%s, doc_id=%s", kb_id, doc_id)
     doc = (
         db.query(KnowledgeDocument)
@@ -506,6 +541,8 @@ def delete_document(
     )
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
+    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
+    check_resource_ownership(current_user, db, "knowledge_base", kb_id, kb)
     file_path = doc.file_path
     # 与删除整个知识库相同：批量 DELETE 分段，避免 ORM cascade 把万级分段载入内存。
     # 且 knowledge_segments.doc_id 外键无 ON DELETE CASCADE，Postgres 上只删文档会 500。
@@ -529,11 +566,15 @@ def delete_document(
 
 @router.get("/{kb_id}/documents/{doc_id}/segments")
 def get_document_segments(
-    kb_id: int, doc_id: int, db: Session = Depends(get_db)
+    kb_id: int,
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """查看文档的分段（解析与切片结果）。
 
     返回文档的分段列表与统计信息，用于前端展示"解析→分段→向量化"过程。
+    资源级 owner 校验：仅 admin/owner/被授权用户可查看分段。
     """
     doc = (
         db.query(KnowledgeDocument)
@@ -543,6 +584,7 @@ def get_document_segments(
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
     kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
+    check_resource_ownership(current_user, db, "knowledge_base", kb_id, kb)
     segments = list_segments(db, doc_id)
     total_tokens = sum(s.get("token_count", 0) for s in segments)
     emb_count = sum(1 for s in segments if s.get("has_embedding"))
@@ -571,11 +613,15 @@ def get_document_segments(
 
 @router.post("/{kb_id}/documents/{doc_id}/reparse")
 async def reparse_document(
-    kb_id: int, doc_id: int, db: Session = Depends(get_db)
+    kb_id: int,
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """重新解析并分段文档。
 
     知识库分段/索引配置变更后，或文档内容更新后调用，按最新配置重新分段与向量化。
+    资源级 owner 校验：仅 admin/owner/被授权用户可重新解析文档。
     """
     logger.info("重新解析文档: kb_id=%s, doc_id=%s", kb_id, doc_id)
     # 异步重新解析（不阻塞响应，前端轮询进度）
@@ -586,6 +632,8 @@ async def reparse_document(
     )
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
+    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
+    check_resource_ownership(current_user, db, "knowledge_base", kb_id, kb)
     doc.status = "parsing"
     doc.progress = 0
     db.commit()
@@ -598,13 +646,19 @@ async def reparse_document(
 
 @router.post("/{kb_id}/reparse-all")
 async def reparse_all_documents(
-    kb_id: int, db: Session = Depends(get_db)
+    kb_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
-    """重新解析知识库下所有文档（配置变更后批量重建索引）。"""
+    """重新解析知识库下所有文档（配置变更后批量重建索引）。
+
+    资源级 owner 校验：仅 admin/owner/被授权用户可批量重新解析。
+    """
     logger.info("批量重新解析: kb_id=%s", kb_id)
     kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
     if kb is None:
         raise HTTPException(status_code=404, detail="KnowledgeBase not found")
+    check_resource_ownership(current_user, db, "knowledge_base", kb_id, kb)
     docs = (
         db.query(KnowledgeDocument)
         .filter(KnowledgeDocument.kb_id == kb_id)
@@ -626,17 +680,22 @@ async def reparse_all_documents(
 
 @router.post("/{kb_id}/search")
 async def search_knowledge_base(
-    kb_id: int, body: SearchRequest, db: Session = Depends(get_db)
+    kb_id: int,
+    body: SearchRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
     """在知识库中检索文档。
 
     使用知识库配置的 retrieval_top_k 与 score_threshold 进行过滤。
     若请求体未指定 top_k，则回退到知识库配置值。
+    资源级 owner 校验：仅 admin/owner/被授权用户可检索该知识库。
     """
     logger.info("检索知识库: kb_id=%s, query=%s", kb_id, body.query)
     kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
     if kb is None:
         raise HTTPException(status_code=404, detail="KnowledgeBase not found")
+    check_resource_ownership(current_user, db, "knowledge_base", kb_id, kb)
     # 优先使用请求参数，回退到知识库配置
     top_k = body.top_k if body.top_k and body.top_k > 0 else (kb.retrieval_top_k or 5)
     results = await search_kb(kb_id, body.query, top_k)
@@ -658,16 +717,24 @@ class FileQueryRequest(BaseModel):
 
 @router.post("/{kb_id}/file-query")
 def file_query(
-    kb_id: int, body: FileQueryRequest, db: Session = Depends(get_db)
+    kb_id: int,
+    body: FileQueryRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """查询知识库中的表格文件（Excel/CSV），返回结构化行列数据。
 
     与语义检索（``/search``）互补：本端点直接读取原始文件，按条件精确过滤行，
     适合查询 IP 列表、资产台账等结构化数据。
+    资源级 owner 校验：仅 admin/owner/被授权用户可查询该知识库文件。
     """
     from app.core.kb_file_query import query_kb_file
 
     logger.info("文件查询: kb_id=%s, query=%s, doc_id=%s", kb_id, body.query, body.doc_id)
+    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
+    if kb is None:
+        raise HTTPException(status_code=404, detail="KnowledgeBase not found")
+    check_resource_ownership(current_user, db, "knowledge_base", kb_id, kb)
     return query_kb_file(
         query=body.query,
         kb_id=kb_id,

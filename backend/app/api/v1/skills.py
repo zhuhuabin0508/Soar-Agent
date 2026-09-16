@@ -367,12 +367,15 @@ async def test_skill(
     skill_id: int,
     body: SkillTestRequest,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("skill", "view")),
 ) -> dict:
     """测试技能：把该技能注入到指定智能体的 system prompt，查看回复是否符合预期。
 
     - 支持测试已保存技能（``skill_id``）或未保存草稿（``body.content`` 非空时优先）。
     - 复用智能体的模型 / 工具 / 知识库配置，在其 system prompt 末尾追加本技能正文。
     - 返回注入后的完整 prompt、AI 回复、消息链路、日志，供前端对比展示。
+
+    资源级 owner 校验：仅 admin/owner/被授权用户可测试该技能及其关联智能体。
     """
     logger.info("测试技能: skill_id=%s, agent_id=%s", skill_id, body.agent_id)
     skill = db.query(Skill).filter(Skill.id == skill_id).first()
@@ -381,6 +384,9 @@ async def test_skill(
     agent = db.query(Agent).filter(Agent.id == body.agent_id).first()
     if agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
+    # 资源级 owner 校验：技能与智能体均需可编辑，防止越权读取他人技能/驱动他人智能体
+    check_resource_ownership(current_user, db, "skill", skill_id, skill)
+    check_resource_ownership(current_user, db, "agent", body.agent_id, agent)
 
     # 待测试正文：body.content 优先（支持未保存草稿），否则用已保存技能正文
     test_content = body.content if (body.content and body.content.strip()) else (skill.content or "")

@@ -396,7 +396,8 @@ def otp_send(body: OtpSendRequest, request: Request, db: Session = Depends(get_d
     - 单用户 60 秒内仅可发送一次（Redis ``otp_send_limit:{user_id}``）；
     - 验证码为 6 位数字，存 Redis ``otp_login:{user_id}``，5 分钟有效、登录成功后一次性消费；
     - 系统配置了 SMTP（``security.smtp_*``）时发送真实邮件（用户无邮箱返回 400）；
-      未配置 SMTP 时响应附带 ``dev_code``（开发模式，同时记录 WARNING 日志）。
+      未配置 SMTP 且开启 ``ENABLE_DEV_CODE`` 时响应附带 ``dev_code``（仅本地调试）；
+      未配置 SMTP 且开关关闭时返回 503 业务错误，响应中绝不含验证码。
     """
     _rate_limit_ip(request, "otp_send", max_count=5, window=60, message="请求过于频繁，请稍后重试")
     from app.core.security_policy import get_security_policy, is_account_locked
@@ -459,12 +460,25 @@ def otp_send(body: OtpSendRequest, request: Request, db: Session = Depends(get_d
                   detail={"channel": "email"})
         return {"sent": True}
 
-    # 开发模式：邮件服务未配置，验证码仅返回给前端（保证功能可测试可用）
-    logger.warning("邮件服务未配置，验证码仅返回给前端（开发模式）: username=%s", user.username)
+    # 开发调试模式：仅当显式开启 ENABLE_DEV_CODE 时，验证码才明文回显到响应
+    # （供本地开发调试便利）。生产环境该开关必须为 false。
+    if settings.ENABLE_DEV_CODE:
+        logger.info("邮件服务未配置且 ENABLE_DEV_CODE 开启，验证码返回给前端（仅限本地开发）: username=%s", user.username)
+        log_audit(db, user_id=user.id, username=user.username, action="otp_send",
+                  resource_type="auth", ip_address=ip, result="success",
+                  detail={"channel": "dev_code"})
+        return {"sent": True, "dev_code": code}
+
+    # 邮件服务未配置且未开启 dev_code：不生成可用上下文，返回统一业务错误，
+    # 响应中绝不包含验证码或任何暗示验证码值的信息（防未授权账号接管）。
+    logger.warning("邮件服务未配置且 ENABLE_DEV_CODE 关闭，拒绝发送 OTP 验证码: username=%s", user.username)
     log_audit(db, user_id=user.id, username=user.username, action="otp_send",
-              resource_type="auth", ip_address=ip, result="success",
-              detail={"channel": "dev_code"})
-    return {"sent": True, "dev_code": code}
+              resource_type="auth", ip_address=ip, result="failed",
+              detail={"reason": "smtp_not_configured"})
+    raise HTTPException(
+        status_code=503,
+        detail="验证码邮件服务未配置，请联系管理员",
+    )
 
 
 class OtpDirectLoginRequest(BaseModel):

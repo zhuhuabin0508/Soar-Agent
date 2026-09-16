@@ -11,7 +11,7 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import get_current_user, require_permission
+from app.dependencies import check_resource_ownership, get_current_user, require_permission
 from app.models import Workflow
 from app.models.user import User
 from app.models.workflow_version import WorkflowVersion
@@ -98,6 +98,8 @@ def create_workflow_version(
         current_user.username,
     )
     workflow = _get_workflow_or_404(db, workflow_id)
+    # 资源级 owner 校验：仅 admin/owner/被授权用户可创建版本快照
+    check_resource_ownership(current_user, db, "workflow", workflow_id, workflow)
 
     # 计算下一个版本号
     latest = (
@@ -130,10 +132,15 @@ def create_workflow_version(
 def list_workflow_versions(
     workflow_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("workflow_list", "view")),
+    current_user: User = Depends(require_permission("workflow_list", "view")),
 ) -> list[WorkflowVersion]:
-    """列出指定工作流的所有版本（按 version_number 降序）。"""
+    """列出指定工作流的所有版本（按 version_number 降序）。
+
+    资源级 owner 校验：仅 admin/owner/被授权用户可查看版本列表。
+    """
     logger.info("Listing workflow versions: workflow_id=%s", workflow_id)
+    workflow = _get_workflow_or_404(db, workflow_id)
+    check_resource_ownership(current_user, db, "workflow", workflow_id, workflow)
     versions = (
         db.query(WorkflowVersion)
         .filter(WorkflowVersion.workflow_id == workflow_id)
@@ -151,14 +158,19 @@ def get_workflow_version(
     workflow_id: int,
     version_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("workflow_list", "view")),
+    current_user: User = Depends(require_permission("workflow_list", "view")),
 ) -> WorkflowVersion:
-    """获取指定版本详情。"""
+    """获取指定版本详情。
+
+    资源级 owner 校验：仅 admin/owner/被授权用户可查看版本详情。
+    """
     logger.info(
         "Fetching workflow version: workflow_id=%s, version_id=%s",
         workflow_id,
         version_id,
     )
+    workflow = _get_workflow_or_404(db, workflow_id)
+    check_resource_ownership(current_user, db, "workflow", workflow_id, workflow)
     return _get_version_or_404(db, workflow_id, version_id)
 
 
@@ -181,6 +193,8 @@ def rollback_workflow_version(
         current_user.username,
     )
     workflow = _get_workflow_or_404(db, workflow_id)
+    # 资源级 owner 校验：仅 admin/owner/被授权用户可回滚版本
+    check_resource_ownership(current_user, db, "workflow", workflow_id, workflow)
     version = _get_version_or_404(db, workflow_id, version_id)
 
     snapshot = version.snapshot or {}
