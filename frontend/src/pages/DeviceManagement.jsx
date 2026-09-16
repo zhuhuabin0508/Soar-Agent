@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Shield, Check, X, Plus, Search, RefreshCw, Copy, Eye, EyeOff,
   ChevronDown, ChevronRight, ExternalLink, History, Files,
@@ -14,6 +15,7 @@ import { TutorialButton, TutorialDrawer } from '../components/TutorialDrawer'
 import { DEVICE_TUTORIAL } from '../components/tutorialContent'
 import { useUnsavedChanges } from '../hooks/useUnsavedChanges'
 import { usePersistedFilters } from '../hooks/usePersistedFilters'
+import useLockBackgroundScroll from '../hooks/useLockBackgroundScroll'
 import FilterBar from '../components/FilterBar'
 
 // ============ 常量映射 ============
@@ -1250,6 +1252,7 @@ function TemplateCreateModal({ open, template, onClose, onSubmit, saving }) {
 // ============ 动作测试抽屉 ============
 function ActionTestDrawer({ open, action, onClose, onRun, running, result }) {
   const [params, setParams] = useState({})
+  useLockBackgroundScroll(open)
 
   useEffect(() => {
     if (open && action) {
@@ -1300,7 +1303,7 @@ function ActionTestDrawer({ open, action, onClose, onRun, running, result }) {
     )
   }
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[9000] flex justify-end">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="relative flex h-full w-full max-w-2xl flex-col bg-background shadow-2xl ring-1 ring-border">
@@ -1324,7 +1327,7 @@ function ActionTestDrawer({ open, action, onClose, onRun, running, result }) {
         </header>
 
         {/* 内容 */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div data-allow-scroll className="flex-1 overflow-y-auto overscroll-contain p-6">
           <div className="flex flex-col gap-4">
             {/* 参数输入 */}
             <div>
@@ -1439,7 +1442,8 @@ function ActionTestDrawer({ open, action, onClose, onRun, running, result }) {
           </button>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

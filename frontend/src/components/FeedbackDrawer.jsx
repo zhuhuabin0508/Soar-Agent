@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { X, MessageSquareWarning, UploadCloud, Paperclip } from 'lucide-react'
 import { feedbackApi } from '../api/client'
 import { toast } from '../store/toastStore'
+import useLockBackgroundScroll from '../hooks/useLockBackgroundScroll'
 import {
   FEEDBACK_PRIORITIES,
   ATTACH_EXT_WHITELIST,
@@ -105,14 +107,7 @@ function FeedbackDrawer({ open, onClose, onSubmitted }) {
     return () => document.removeEventListener('keydown', handler)
   }, [open, onClose])
 
-  // 打开时禁止背景滚动
-  useEffect(() => {
-    if (!open) return
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.body.style.overflow = ''
-    }
-  }, [open])
+  useLockBackgroundScroll(open)
 
   if (!open) return null
 
@@ -219,7 +214,7 @@ function FeedbackDrawer({ open, onClose, onSubmitted }) {
         : 'border-border focus:border-primary focus:ring-primary'
     }`
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[100] flex justify-end">
       <style>{`
         @keyframes feedbackSlideIn {
@@ -250,7 +245,7 @@ function FeedbackDrawer({ open, onClose, onSubmitted }) {
         </div>
 
         {/* 表单滚动区 */}
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+        <div data-allow-scroll className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-5">
           {/* 填写须知：进入抽屉即前置告知用户填写规范 */}
           <div className="mb-5 rounded-md border border-primary/30 bg-primary/5 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
             <span className="font-medium text-primary">填写须知：</span>
@@ -504,7 +499,8 @@ function FeedbackDrawer({ open, onClose, onSubmitted }) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

@@ -10,12 +10,14 @@
  * sections 格式：[{ icon, title, content: JSX | string, tips?: [string] }]
  */
 import { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import {
   BookOpen, Lightbulb, X,
   Wrench, Sparkles, ClipboardList, FlaskConical, Link, Library, Upload,
   Search, Target, Settings, RefreshCw, Brain, BarChart3, Plug, FileText,
   MessageSquare, Database, Send, Shield, Tag, Code2, Zap,
 } from 'lucide-react'
+import useLockBackgroundScroll from '../hooks/useLockBackgroundScroll'
 
 // emoji → lucide 图标映射：教程内容中 icon 字段存的是 emoji 字符串，
 // 渲染时统一转换为 lucide 图标，保持全站图标风格一致
@@ -51,19 +53,11 @@ export function TutorialDrawer({ open, onClose, title, subtitle, sections = [] }
     return () => window.removeEventListener('keydown', handler)
   }, [open, onClose])
 
-  // 阻止滚动穿透
-  useEffect(() => {
-    if (open) {
-      document.body.style.overflow = 'hidden'
-      return () => {
-        document.body.style.overflow = ''
-      }
-    }
-  }, [open])
+  useLockBackgroundScroll(open)
 
   if (!open) return null
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[9000] flex justify-end">
       {/* 遮罩 */}
       <div
@@ -88,7 +82,7 @@ export function TutorialDrawer({ open, onClose, title, subtitle, sections = [] }
         </header>
 
         {/* 内容滚动区 */}
-        <div className="flex-1 overflow-y-auto px-6 py-6">
+        <div data-allow-scroll className="flex-1 overflow-y-auto overscroll-contain px-6 py-6">
           <div className="space-y-8">
             {sections.map((sec, idx) => (
               <section key={idx} className="scroll-mt-6">
@@ -123,7 +117,8 @@ export function TutorialDrawer({ open, onClose, title, subtitle, sections = [] }
           </button>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

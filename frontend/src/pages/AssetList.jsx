@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { useSearchParams } from 'react-router-dom'
 import {
   Plus, Download, Upload, RefreshCw, Trash2, Pencil, Search,
@@ -15,6 +16,7 @@ import {
 } from '../components/ui'
 import { toast } from '../store/toastStore'
 import { confirm } from '../components/ConfirmDialog'
+import useLockBackgroundScroll from '../hooks/useLockBackgroundScroll'
 
 // ===== 常量映射 =====
 const STATUS_LABELS = { in_use: '在用', idle: '闲置', repair: '维修', retired: '报废', lost: '丢失' }
@@ -193,6 +195,7 @@ function AssetFormModal({ open, template, templates, initial, onClose, onSubmit,
 function DetailDrawer({ open, record, template, templates, onClose, onEdit, onDelete, canManage, canDelete }) {
   const [changes, setChanges] = useState([])
   const [loadingChanges, setLoadingChanges] = useState(false)
+  useLockBackgroundScroll(open)
 
   useEffect(() => {
     if (!open || !record) return
@@ -214,7 +217,7 @@ function DetailDrawer({ open, record, template, templates, onClose, onEdit, onDe
     .slice()
     .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
 
-  return (
+  return createPortal(
     <>
       {/* 遮罩 */}
       {open && (
@@ -244,7 +247,7 @@ function DetailDrawer({ open, record, template, templates, onClose, onEdit, onDe
           </button>
         </div>
         {/* 内容 */}
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+        <div data-allow-scroll className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
           {/* 字段信息 */}
           <div className="mb-5">
             <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -323,7 +326,8 @@ function DetailDrawer({ open, record, template, templates, onClose, onEdit, onDe
           )}
         </div>
       </div>
-    </>
+    </>,
+    document.body,
   )
 }
 

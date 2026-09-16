@@ -1,11 +1,13 @@
 // 我的反馈页：当前用户提交的 BUG / 优化建议列表
 // 功能：类型/状态筛选 + 列表 + 详情抽屉（完整字段/附件/回复/时间线）+ 重新打开 + 提交反馈入口
 import { useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Inbox, Eye, RotateCcw, MessageSquareWarning, Paperclip, Download, X } from 'lucide-react'
 import { feedbackApi } from '../api/client'
 import { toast } from '../store/toastStore'
 import FeedbackDrawer from '../components/FeedbackDrawer'
 import { PageContainer, PageHeader, DataTable, Pagination, Button } from '../components/ui'
+import useLockBackgroundScroll from '../hooks/useLockBackgroundScroll'
 import {
   FEEDBACK_TYPES,
   FEEDBACK_STATUSES,
@@ -113,13 +115,7 @@ function DetailDrawer({ open, onClose, feedbackId, onReopened }) {
     return () => document.removeEventListener('keydown', handler)
   }, [open, onClose])
 
-  useEffect(() => {
-    if (!open) return
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.body.style.overflow = ''
-    }
-  }, [open])
+  useLockBackgroundScroll(open)
 
   if (!open) return null
 
@@ -145,7 +141,7 @@ function DetailDrawer({ open, onClose, feedbackId, onReopened }) {
     }
   }
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[100] flex justify-end">
       <style>{`
         @keyframes myFeedbackSlideIn {
@@ -181,7 +177,7 @@ function DetailDrawer({ open, onClose, feedbackId, onReopened }) {
         </div>
 
         {/* 内容区 */}
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+        <div data-allow-scroll className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-5">
           {loading || !detail ? (
             <div className="flex h-40 items-center justify-center text-sm text-muted-foreground/70">
               加载中...
@@ -330,7 +326,8 @@ function DetailDrawer({ open, onClose, feedbackId, onReopened }) {
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

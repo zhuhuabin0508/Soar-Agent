@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
+import useLockBackgroundScroll from '../hooks/useLockBackgroundScroll'
 
 /**
  * 通用半屏抽屉组件：右侧滑入，宽度 50%（max-w-3xl）。
@@ -24,14 +25,7 @@ function HalfDrawer({ open, onClose, title, children, loading, footer }) {
     return () => document.removeEventListener('keydown', handler)
   }, [open, onClose])
 
-  // 打开时禁止背景滚动
-  useEffect(() => {
-    if (!open) return
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.body.style.overflow = ''
-    }
-  }, [open])
+  useLockBackgroundScroll(open)
 
   if (!open) return null
 
@@ -67,7 +61,7 @@ function HalfDrawer({ open, onClose, title, children, loading, footer }) {
         </div>
 
         {/* 内容滚动区 */}
-        <div className="min-h-0 flex-1 overflow-y-auto p-6">
+        <div data-allow-scroll className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-6">
           {loading ? (
             <div className="flex h-40 items-center justify-center text-sm text-muted-foreground/70">
               加载中...

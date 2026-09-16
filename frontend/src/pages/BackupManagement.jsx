@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Download, RotateCcw, Trash2, X, FileText, Upload, HardDrive, Clock,
   Calendar, HeartPulse, Settings as SettingsIcon, ShieldCheck, Lock,
@@ -13,6 +14,7 @@ import BatchActions from '../components/BatchActions'
 import { usePagination } from '../hooks/usePagination'
 import { useSelection } from '../hooks/useSelection'
 import { usePersistedFilters } from '../hooks/usePersistedFilters'
+import useLockBackgroundScroll from '../hooks/useLockBackgroundScroll'
 
 // ============ 工具函数 ============
 function fmtTime(t) {
@@ -584,6 +586,7 @@ function StrategySection({ strategy, loading, saving, onSave }) {
 
 // ============ 创建备份弹窗（表单 + 进度条） ============
 function CreateBackupModal({ onClose, onConfirm, onCompleted }) {
+  useLockBackgroundScroll(true)
   const ts = useMemo(() => {
     const d = new Date()
     const p = (n) => String(n).padStart(2, '0')
@@ -836,6 +839,7 @@ function CreateBackupModal({ onClose, onConfirm, onCompleted }) {
 
 // ============ 恢复安全确认弹窗 ============
 function RestoreModal({ backup, onClose, onConfirm }) {
+  useLockBackgroundScroll(true)
   const [mode, setMode] = useState('full')
   const [modules, setModules] = useState([])
   const [password, setPassword] = useState('')
@@ -926,6 +930,7 @@ function RestoreModal({ backup, onClose, onConfirm }) {
 function DetailDrawer({ id, onClose, onDownload, onRestore, onDelete }) {
   const [detail, setDetail] = useState(null)
   const [loading, setLoading] = useState(true)
+  useLockBackgroundScroll(true)
   useEffect(() => {
     (async () => {
       setLoading(true)
@@ -938,7 +943,7 @@ function DetailDrawer({ id, onClose, onDownload, onRestore, onDelete }) {
   }, [id])
   const r = detail?.record
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
       <div className="flex h-full w-full max-w-xl flex-col border-l border-border bg-card shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-border px-5 py-3">
@@ -950,7 +955,7 @@ function DetailDrawer({ id, onClose, onDownload, onRestore, onDelete }) {
         ) : !detail ? (
           <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground/70">加载失败</div>
         ) : (
-          <div className="flex-1 overflow-y-auto p-5">
+          <div data-allow-scroll className="flex-1 overflow-y-auto overscroll-contain p-5">
             {/* 基本信息 */}
             <Section title="基本信息">
               <div className="grid grid-cols-2 gap-2 text-xs">
@@ -1035,7 +1040,8 @@ function DetailDrawer({ id, onClose, onDownload, onRestore, onDelete }) {
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -1058,6 +1064,7 @@ function Info({ label, value }) {
 
 // ============ 上传备份弹窗 ============
 function UploadModal({ onClose, onUploaded }) {
+  useLockBackgroundScroll(true)
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [file, setFile] = useState(null)

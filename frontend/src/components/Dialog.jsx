@@ -4,7 +4,7 @@
 // - 修复硬编码 text-foreground（亮色主题下白底白字）
 // - ESC 键关闭（open 期间监听）
 // - 焦点陷阱：打开后焦点进入弹窗，Tab/Shift+Tab 在弹窗内循环；关闭后还原焦点
-// - 背景滚动锁：open 期间 body overflow:hidden
+// - 背景滚动锁：open 期间禁止背后列表滚动（含 AppShell overflow-auto）
 // - 进场动画：遮罩淡入 + 弹窗 scale+fade（尊重 prefers-reduced-motion）
 // - size 枚举：sm/md/lg/xl/full（与 maxWidth 字符串向后兼容：size 优先，否则 maxWidth，再否则默认 max-w-2xl）
 // - closeOnOverlayClick：是否允许点击遮罩关闭（默认 false，防误操作）
@@ -13,8 +13,10 @@
 //   <Modal open size="lg" title="..." onClose={...}>...</Modal>
 //   <Modal open maxWidth="max-w-3xl" title="..." onClose={...}>...</Modal>
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { inputCls } from './property/FormControls'
+import useLockBackgroundScroll from '../hooks/useLockBackgroundScroll'
 
 // size 预设映射到 Tailwind max-width 类
 const SIZE_MAP = {
@@ -58,15 +60,7 @@ export function Modal({
     return () => document.removeEventListener('keydown', handler)
   }, [open, onClose])
 
-  // 背景滚动锁
-  useEffect(() => {
-    if (!open) return
-    const original = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.body.style.overflow = original
-    }
-  }, [open])
+  useLockBackgroundScroll(open)
 
   // 焦点陷阱：进入时聚焦弹窗，Tab 循环，关闭时还原
   useEffect(() => {
@@ -111,7 +105,7 @@ export function Modal({
 
   const widthCls = size ? (SIZE_MAP[size] || SIZE_MAP.md) : (maxWidth || 'max-w-2xl')
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-modal flex items-center justify-center bg-black/60 p-4 modal-overlay-enter"
       onClick={closeOnOverlayClick ? onClose : undefined}
@@ -136,14 +130,15 @@ export function Modal({
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-4 flex flex-col gap-2">{children}</div>
+        <div data-allow-scroll className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 flex flex-col gap-2">{children}</div>
         {footer && (
           <div className="flex shrink-0 justify-end gap-2 border-t border-border px-4 py-3">
             {footer}
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -175,15 +170,7 @@ export function Drawer({
     return () => document.removeEventListener('keydown', handler)
   }, [open, onClose])
 
-  // 背景滚动锁
-  useEffect(() => {
-    if (!open) return
-    const original = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.body.style.overflow = original
-    }
-  }, [open])
+  useLockBackgroundScroll(open)
 
   // 焦点陷阱
   useEffect(() => {
@@ -223,7 +210,7 @@ export function Drawer({
 
   if (!open) return null
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-drawer flex justify-end bg-black/60 modal-overlay-enter"
       onClick={closeOnOverlayClick ? onClose : undefined}
@@ -250,7 +237,7 @@ export function Drawer({
           </button>
         </div>
         {/* 内容区：可滚动 */}
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
+        <div data-allow-scroll className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">{children}</div>
         {/* 底部操作栏（sticky） */}
         {footer && (
           <div className="flex shrink-0 justify-end gap-2 border-t border-border bg-card/80 px-5 py-3">
@@ -258,7 +245,8 @@ export function Drawer({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

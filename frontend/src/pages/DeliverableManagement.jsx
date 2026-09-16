@@ -15,6 +15,7 @@ import { confirm } from '../components/ConfirmDialog'
 import { hasPermission } from '../utils/permissions'
 import { TutorialButton, TutorialDrawer } from '../components/TutorialDrawer'
 import { DELIVERABLE_TUTORIAL } from '../components/tutorialContent'
+import useLockBackgroundScroll from '../hooks/useLockBackgroundScroll'
 const OfficePreview = lazy(() => import('../components/OfficePreview'))
 
 const PAGE_SIZE = 20
@@ -163,10 +164,12 @@ function buildTree(items) {
 
 // 通用小 Modal
 function Modal({ title, children, onClose, footer, wide = false }) {
+  useLockBackgroundScroll(true)
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div
-        className={`w-full rounded-lg border border-border bg-card p-5 shadow-xl ${wide ? 'max-w-xl' : 'max-w-md'}`}
+        data-allow-scroll
+        className={`max-h-[90vh] w-full overflow-y-auto overscroll-contain rounded-lg border border-border bg-card p-5 shadow-xl ${wide ? 'max-w-xl' : 'max-w-md'}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
@@ -665,6 +668,7 @@ export default function DeliverableManagement() {
   }
 
   const overlayPreview = previewModal && previewModal.type !== 'text'
+  useLockBackgroundScroll(!!overlayPreview)
 
   useEffect(() => {
     if (!overlayPreview) return
@@ -1889,7 +1893,7 @@ export default function DeliverableManagement() {
                 </button>
               </div>
             </div>
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div data-allow-scroll className="flex min-h-0 flex-1 flex-col overflow-auto overscroll-contain">
               {previewModal.loading ? (
                 <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
