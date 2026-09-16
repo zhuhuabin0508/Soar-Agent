@@ -25,14 +25,13 @@ import {
   SelectInput,
 } from '../components/property/FormControls'
 
-// 格式化时间
+// 格式化时间（紧凑，避免表格 table-fixed 把「最后登录」裁成 16:4…）
 function fmtTime(t) {
   if (!t) return '-'
-  try {
-    return new Date(t).toLocaleString('zh-CN', { hour12: false })
-  } catch {
-    return t
-  }
+  const d = new Date(t)
+  if (Number.isNaN(d.getTime())) return String(t)
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
 // 角色中文映射
@@ -68,14 +67,39 @@ function calcPasswordStrength(pwd, policy = {}) {
   return { score, label, checks }
 }
 
-// 生成随机密码
-function generateRandomPassword(len = 12) {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%^&*'
-  let pwd = ''
-  for (let i = 0; i < len; i++) {
-    pwd += chars[Math.floor(Math.random() * chars.length)]
+function _pickChar(chars) {
+  const buf = new Uint32Array(1)
+  crypto.getRandomValues(buf)
+  return chars[buf[0] % chars.length]
+}
+
+function _shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const buf = new Uint32Array(1)
+    crypto.getRandomValues(buf)
+    const j = buf[0] % (i + 1)
+    ;[arr[i], arr[j]] = [arr[j], arr[i]]
   }
-  return pwd
+  return arr
+}
+
+// 生成符合当前密码策略的随机密码（各类字符至少各 1 个，再填充打乱）
+function generateRandomPassword(policy = {}) {
+  const minLen = Math.max(Number(policy.min_length) || 8, 12)
+  const UPPER = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
+  const LOWER = 'abcdefghjkmnpqrstuvwxyz'
+  const DIGIT = '23456789'
+  const SPECIAL = '!@#$%^&*'
+  const pools = []
+  if (policy.require_uppercase !== false) pools.push(UPPER)
+  if (policy.require_lowercase !== false) pools.push(LOWER)
+  if (policy.require_digit !== false) pools.push(DIGIT)
+  if (policy.require_special !== false) pools.push(SPECIAL)
+  if (!pools.length) pools.push(UPPER, LOWER, DIGIT)
+  const all = pools.join('')
+  const chars = pools.map((set) => _pickChar(set))
+  while (chars.length < minLen) chars.push(_pickChar(all))
+  return _shuffle(chars).join('')
 }
 
 // ============ Switch 开关组件 ============
@@ -117,9 +141,9 @@ function PasswordField({ label, value, onChange, placeholder, hint, required, sh
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 pr-20 text-sm text-foreground outline-none transition placeholder:text-muted-foreground hover:border-primary/50 focus:border-primary focus:ring-1 focus:ring-primary"
+          className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 pr-28 text-sm text-foreground outline-none transition placeholder:text-muted-foreground hover:border-primary/50 focus:border-primary focus:ring-1 focus:ring-primary"
         />
-        <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
+        <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
           {rightSlot}
           <button
             type="button"
@@ -143,13 +167,18 @@ function PasswordField({ label, value, onChange, placeholder, hint, required, sh
             </div>
             <span className="text-[10px] text-muted-foreground">{strength.label}</span>
           </div>
-          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
+          <div className="mt-2 grid grid-cols-2 gap-1.5">
             {strength.checks.map((c, i) => (
               <span
                 key={i}
-                className={`text-[10px] ${c.pass ? 'text-success' : 'text-muted-foreground/50'}`}
+                className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] leading-none ${
+                  c.pass
+                    ? 'bg-success/10 text-success'
+                    : 'bg-muted/80 text-muted-foreground/60'
+                }`}
               >
-                {c.pass ? '✓' : '○'} {c.label}
+                <span className="w-3 shrink-0 text-center">{c.pass ? '✓' : '○'}</span>
+                {c.label}
               </span>
             ))}
           </div>
@@ -755,59 +784,67 @@ function UserManagement() {
   // 表格列定义
   const columns = [
     {
-      key: 'id', header: 'ID', width: '60px',
-      render: (r) => <span className="font-mono text-primary">#{r.id}</span>,
+      key: 'id', header: 'ID', width: '56px',
+      render: (r) => <span className="font-mono text-xs text-muted-foreground">#{r.id}</span>,
     },
     {
       key: 'username', header: (
         <button type="button" onClick={() => handleSort('username')} className="flex items-center gap-1 hover:text-foreground">
-          用户名 <SortIcon colKey="username" />
+          用户 <SortIcon colKey="username" />
         </button>
       ),
+      width: '22%',
+      className: '!whitespace-normal',
       render: (r) => (
-        <button
-          type="button"
-          onClick={() => setDetailUser(r)}
-          className="text-primary hover:underline"
-        >
-          {r.username}
-        </button>
+        <div className="min-w-0 py-0.5 leading-tight">
+          <button
+            type="button"
+            onClick={() => setDetailUser(r)}
+            title={r.username}
+            className="block max-w-full truncate text-left font-medium text-primary hover:underline"
+          >
+            {r.username}
+          </button>
+          <div className="mt-0.5 truncate text-[11px] text-muted-foreground" title={r.display_name || ''}>
+            {r.display_name && r.display_name !== r.username ? r.display_name : '—'}
+          </div>
+        </div>
       ),
-    },
-    {
-      key: 'display_name', header: (
-        <button type="button" onClick={() => handleSort('display_name')} className="flex items-center gap-1 hover:text-foreground">
-          显示名 <SortIcon colKey="display_name" />
-        </button>
-      ),
-      render: (r) => <span className="truncate text-foreground">{r.display_name || '-'}</span>,
     },
     {
       key: 'email', header: '邮箱',
       render: (r) => r.email
-        ? <span className="truncate text-muted-foreground">{r.email}</span>
+        ? <span className="truncate text-muted-foreground" title={r.email}>{r.email}</span>
         : <span className="rounded bg-secondary px-2 py-0.5 text-[10px] text-muted-foreground/60">未绑定</span>,
     },
     {
-      key: 'role', header: '角色', width: '100px',
-      render: (r) => <span className="rounded bg-primary/20 px-2 py-0.5 text-[11px] font-medium text-primary">{ROLE_LABELS[r.role_name] || r.role_name || ROLE_LABELS[r.role] || r.role}</span>,
+      key: 'role', header: '角色', width: '96px',
+      render: (r) => (
+        <span className="inline-block max-w-full truncate rounded bg-primary/20 px-2 py-0.5 text-[11px] font-medium text-primary" title={ROLE_LABELS[r.role_name] || r.role_name || ROLE_LABELS[r.role] || r.role}>
+          {ROLE_LABELS[r.role_name] || r.role_name || ROLE_LABELS[r.role] || r.role}
+        </span>
+      ),
     },
     {
-      key: 'is_active', header: '状态', width: '80px',
+      key: 'is_active', header: '状态', width: '76px',
       render: (r) => r.is_active
-        ? <span className="flex items-center gap-1 rounded bg-success/20 px-2 py-0.5 text-[11px] font-medium text-success"><span className="h-1.5 w-1.5 rounded-full bg-success" />启用</span>
-        : <span className="flex items-center gap-1 rounded bg-destructive/20 px-2 py-0.5 text-[11px] font-medium text-destructive"><span className="h-1.5 w-1.5 rounded-full bg-destructive" />禁用</span>,
+        ? <span className="inline-flex items-center gap-1 rounded bg-success/20 px-2 py-0.5 text-[11px] font-medium text-success"><span className="h-1.5 w-1.5 rounded-full bg-success" />启用</span>
+        : <span className="inline-flex items-center gap-1 rounded bg-destructive/20 px-2 py-0.5 text-[11px] font-medium text-destructive"><span className="h-1.5 w-1.5 rounded-full bg-destructive" />禁用</span>,
     },
     {
       key: 'last_login_at', header: (
         <button type="button" onClick={() => handleSort('last_login_at')} className="flex items-center gap-1 hover:text-foreground">
           最后登录 <SortIcon colKey="last_login_at" />
         </button>
-      ), width: '150px',
-      render: (r) => <span className="text-muted-foreground">{fmtTime(r.last_login_at)}</span>,
+      ), width: '148px',
+      render: (r) => (
+        <span className="font-mono text-[12px] tabular-nums text-muted-foreground" title={r.last_login_at || ''}>
+          {fmtTime(r.last_login_at)}
+        </span>
+      ),
     },
     {
-      key: '__actions', header: '操作', width: '140px',
+      key: '__actions', header: '操作', width: '128px',
       render: (r) => (
         <RowActions
           row={r}
@@ -999,7 +1036,7 @@ function UserManagement() {
                 rightSlot={
                   <button
                     type="button"
-                    onClick={() => setField('password')(generateRandomPassword())}
+                    onClick={() => setField('password')(generateRandomPassword(pwdPolicy))}
                     className="flex items-center gap-1 whitespace-nowrap text-[10px] text-primary hover:underline"
                     title="随机生成密码"
                   >
@@ -1120,7 +1157,7 @@ function UserManagement() {
           rightSlot={
             <button
               type="button"
-              onClick={() => setNewPassword(generateRandomPassword())}
+              onClick={() => setNewPassword(generateRandomPassword(pwdPolicy))}
               className="flex items-center gap-1 whitespace-nowrap text-[10px] text-primary hover:underline"
               title="随机生成密码"
             >
@@ -1159,7 +1196,7 @@ function UserManagement() {
           rightSlot={
             <button
               type="button"
-              onClick={() => setBatchResetPassword(generateRandomPassword())}
+              onClick={() => setBatchResetPassword(generateRandomPassword(pwdPolicy))}
               className="flex items-center gap-1 whitespace-nowrap text-[10px] text-primary hover:underline"
               title="随机生成密码"
             >
