@@ -1,3 +1,4 @@
+import './csp-style-shim'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'

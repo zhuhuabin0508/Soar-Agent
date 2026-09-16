@@ -4,6 +4,11 @@ import react from '@vitejs/plugin-react'
 // Vite 配置：开启 /api 代理方便本地联调后端
 export default defineConfig({
   plugins: [react()],
+  build: {
+    // 关闭 Vite 默认注入的 modulepreload 内联 polyfill，
+    // 保证 dist/index.html 无内联脚本，生产 CSP 可用纯 'self'（无 nonce / unsafe-*）
+    modulePreload: { polyfill: false },
+  },
   server: {
     // 宿主机 Vite dev server 监听 8080（与 dev 后端 8001 配套；生产 nginx 容器已停用）
     port: 8080,
