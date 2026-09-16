@@ -230,7 +230,7 @@ def _build_file_query_tool(enabled_kbs: list[int]):
         query: str = Field(
             "",
             description="查询条件。支持关键词（任意列包含即命中）或 '列名=值' 精确过滤。"
-            "例如 '192.168.1.1' 或 '部门=研发部'。留空则返回前几行预览。",
+            "例如 '203.0.113.1' 或 '部门=研发部'。留空则返回前几行预览。",
         )
         doc_id: Optional[int] = Field(
             None, description="指定文档 id（优先级最高）。不传则在所有启用知识库中搜索。"
@@ -289,7 +289,7 @@ def _build_asset_tool(enabled_asset_types: list[str]):
     - keyword 为单个 IPv4 时：做 **IP 包含判断**（查询 IP 是否落在存储值的
       网段/范围内），而非子串匹配。例：查 ``113.108.60.240`` 会命中
       ``113.108.60.224-113.108.60.254`` 的网段资产。
-    - keyword 为 CIDR（如 ``10.144.0.0/15``）时：做网段重叠判断。
+    - keyword 为 CIDR（如 ``198.51.100.0/24``）时：做网段重叠判断。
     - keyword 非 IP 时：走 ilike 子串匹配（IP/名称/标识/负责人）。
     """
     if not enabled_asset_types:
@@ -301,7 +301,7 @@ def _build_asset_tool(enabled_asset_types: list[str]):
     class SearchAssetsArgs(BaseModel):
         keyword: str = Field(
             "",
-            description="按 IP/名称/标识/负责人模糊搜索。传入单个 IP（如 10.144.1.1）"
+            description="按 IP/名称/标识/负责人模糊搜索。传入单个 IP（如 198.51.100.1）"
             "会自动匹配包含该 IP 的网段/CIDR/范围资产。",
         )
         department: str = Field("", description="按使用单位/部门精确筛选")
@@ -322,9 +322,9 @@ def _build_asset_tool(enabled_asset_types: list[str]):
             return None
 
     def _complete_ip(s: str):
-        """对不完整 IP 字符串补 .0 后解析（如 ``10.160.0`` → ``10.160.0.0``）。
+        """对不完整 IP 字符串补 .0 后解析（如 ``198.51.100`` → ``198.51.100.0``）。
 
-        资产数据存在质量问题（如 ``10.160.0-10.169.255.254`` 起始 IP 缺最后一段），
+        资产数据存在质量问题（如 ``198.51.100-198.51.100.254`` 起始 IP 缺最后一段），
         这里做防御性补全。
         """
         s = (s or "").strip()
@@ -348,16 +348,16 @@ def _build_asset_tool(enabled_asset_types: list[str]):
             True 表示 target 落在 stored 描述的范围内
 
         支持的格式：
-        - 逗号分隔多值: ``10.0.0.1,10.0.0.2``（逐个判断，任一命中即 True）
+        - 逗号分隔多值: ``203.0.113.1,203.0.113.2``（逐个判断，任一命中即 True）
         - 完整范围: ``113.108.60.224-113.108.60.254``
         - 末段简写: ``61.144.224.185-187``（仅最后一位变化，等价 185-187）
-        - 不完整 IP（数据质量）: ``10.160.0-10.169.255.254``（起始缺段自动补 .0）
+        - 不完整 IP（数据质量）: ``198.51.100-198.51.100.254``（起始缺段自动补 .0）
         """
         stored = (stored or "").strip()
         if not stored:
             return False
 
-        # 方案 A：逗号分隔的多 IP 值，逐个判断（如 "10.0.0.1,10.0.0.2"）
+        # 方案 A：逗号分隔的多 IP 值，逐个判断（如 "203.0.113.1,203.0.113.2"）
         if "," in stored:
             for part in stored.split(","):
                 part = part.strip()
@@ -373,7 +373,7 @@ def _build_asset_tool(enabled_asset_types: list[str]):
         if not stored:
             return False
 
-        # 1. CIDR 格式 (10.144.0.0/15)
+        # 1. CIDR 格式 (198.51.100.0/24)
         if "/" in stored:
             try:
                 net = ipaddress.IPv4Network(stored, strict=False)
@@ -540,8 +540,8 @@ def _build_asset_tool(enabled_asset_types: list[str]):
         name="search_assets",
         description=(
             f"检索已关联的资产（类型: {type_codes}）。可按关键词/使用单位/类型筛选。"
-            "支持 IP 包含查询：传入单个 IP（如 10.144.1.1）会自动匹配包含该 IP 的"
-            "网段/CIDR/IP范围资产；传入 CIDR（如 10.144.0.0/15）会匹配重叠网段。"
+            "支持 IP 包含查询：传入单个 IP（如 198.51.100.1）会自动匹配包含该 IP 的"
+            "网段/CIDR/IP范围资产；传入 CIDR（如 198.51.100.0/24）会匹配重叠网段。"
             "用于回答资产归属、网段查询等问题。"
         ),
         args_schema=SearchAssetsArgs,

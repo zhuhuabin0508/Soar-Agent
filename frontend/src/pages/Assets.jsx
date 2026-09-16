@@ -162,7 +162,7 @@ function AssetFormModal({ open, form, setForm, onSubmit, onClose, submitting, is
             className={inputCls}
             value={form.ip || ''}
             onChange={(e) => set('ip', e.target.value)}
-            placeholder="192.168.1.10"
+            placeholder="192.0.2.10"
           />
         </div>
         <div className="flex flex-col">
@@ -751,7 +751,7 @@ function Assets() {
             <ol className="mt-1 list-inside list-decimal space-y-0.5">
               <li>点击「下载模板」获取 CSV 模板（含当前所有自定义字段列）</li>
               <li>在模板中填写资产数据（首行表头勿改，从第二行开始填）</li>
-              <li>IP 列支持多种格式：单个 IP、CIDR 网段（如 192.168.1.0/24）、IP 范围（如 10.0.0.1-10.0.0.50 或 172.16.0.1-100），会自动展开为每 IP 一条资产</li>
+              <li>IP 列支持多种格式：单个 IP、CIDR 网段（如 192.0.2.0/24）、IP 范围（如 198.51.100.1-198.51.100.50 或 203.0.113.1-100），会自动展开为每 IP 一条资产</li>
               <li>选择冲突策略后上传文件</li>
             </ol>
           </div>

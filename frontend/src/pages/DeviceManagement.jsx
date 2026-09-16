@@ -482,7 +482,7 @@ function DeviceFormModal({ open, initial, onClose, onSubmit, saving, onTest }) {
               className={inputCls}
               value={form.api_url}
               onChange={(e) => set('api_url')(e.target.value)}
-              placeholder="https://10.0.0.1:8443/api"
+              placeholder="https://203.0.113.1:8443/api"
             />
           </label>
           <div className="grid grid-cols-3 gap-3">
@@ -1066,7 +1066,7 @@ function ActionFormModal({ open, initial, onClose, onSubmit, saving }) {
               rows={3}
               value={form.example_payload}
               onChange={(e) => set('example_payload')(e.target.value)}
-              placeholder='{"ip": "192.168.1.1"}'
+              placeholder='{"ip": "198.51.100.1"}'
             />
           </label>
           <label className="block">
@@ -1219,7 +1219,7 @@ function TemplateCreateModal({ open, template, onClose, onSubmit, saving }) {
             className={inputCls}
             value={form.api_url}
             onChange={(e) => setForm((p) => ({ ...p, api_url: e.target.value }))}
-            placeholder="https://10.0.0.1:8443/api"
+            placeholder="https://203.0.113.1:8443/api"
           />
         </label>
         <label>

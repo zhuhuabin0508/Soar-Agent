@@ -313,7 +313,7 @@ function ProfileTab({ user, onSaved }) {
           label="邮箱"
           value={profile.email}
           onChange={(v) => setProfile((p) => ({ ...p, email: v }))}
-          placeholder="user@example.com"
+          placeholder="请输入邮箱地址"
           icon={Mail}
           suffix={
             profile.email ? (

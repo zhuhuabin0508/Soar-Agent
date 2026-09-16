@@ -21,7 +21,7 @@ class Device(Base):
     name = Column(String(255), nullable=False, comment="设备名称")
     type = Column(String(64), nullable=False, default="firewall", comment="设备类型: firewall/waf/ips/ids/edr/soar/custom")
     vendor = Column(String(128), nullable=False, default="", comment="厂商: 如 深信服/绿盟/天融信/paloalto/fortinet")
-    api_url = Column(String(512), nullable=False, default="", comment="设备 API 基地址，如 https://10.0.0.1:8443/api")
+    api_url = Column(String(512), nullable=False, default="", comment="设备 API 基地址，如 https://203.0.113.1:8443/api")
     api_key = Column(String(512), nullable=False, default="", comment="API Key 或 Token")
     username = Column(String(128), nullable=False, default="", comment="用户名（Basic Auth 时用）")
     password = Column(String(256), nullable=False, default="", comment="密码（Basic Auth 时用）")

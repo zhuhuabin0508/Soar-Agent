@@ -36,7 +36,7 @@ DEFAULT_TOOLS: list[dict[str, Any]] = [
             "async def run(**kwargs):\n"
             "    ip = kwargs.get('ip') or ''\n"
             "    # 演示白名单：实际应查 DB / 配置中心\n"
-            "    whitelist = ['10.0.0.1', '192.168.1.1', '127.0.0.1']\n"
+            "    whitelist = ['203.0.113.1', '192.0.2.1', '127.0.0.1']\n"
             "    return {'ip': ip, 'in_whitelist': ip in whitelist}\n"
         ),
         "enabled": True,
@@ -52,8 +52,8 @@ DEFAULT_TOOLS: list[dict[str, Any]] = [
             "    ip = kwargs.get('ip') or ''\n"
             "    # 演示资产库：实际应对接 CMDB\n"
             "    assets = {\n"
-            "        '10.0.0.5': {'owner': '运维部', 'type': '服务器', 'critical': True},\n"
-            "        '192.168.1.100': {'owner': '研发部', 'type': '工作站', 'critical': False},\n"
+            "        '203.0.113.5': {'owner': '运维部', 'type': '服务器', 'critical': True},\n"
+            "        '192.0.2.100': {'owner': '研发部', 'type': '工作站', 'critical': False},\n"
             "    }\n"
             "    return {'ip': ip, 'asset': assets.get(ip, {'owner': '未知', 'type': '未知', 'critical': False})}\n"
         ),
@@ -1931,7 +1931,7 @@ SAMPLE_WORKFLOW: dict[str, Any] = {
                     "severity": "critical",
                     "subject": "【SOAR】已封禁恶意 IP {{agent_decision.target_ip}}",
                     "body": "检测到来自 {{payload.src_ip}} 的攻击行为，已自动封禁。\n处置建议：{{agent_decision.reason}}",
-                    "recipients": "soc-team@example.com",
+                    "recipients": "安全运营团队邮箱",
                 },
             },
             {
@@ -2106,7 +2106,7 @@ PRESET_ASSET_TEMPLATES = [
             {"key": "name", "label": "资产名称", "type": "text", "mapped_to": "standard:name",
              "required": True, "width": "half", "sort_order": 2, "show_in_list": True, "show_in_detail": True},
             {"key": "ip", "label": "IP", "type": "ip", "mapped_to": "standard:ip",
-             "required": True, "unique": True, "placeholder": "192.168.1.10",
+             "required": True, "unique": True, "placeholder": "192.0.2.10",
              "width": "half", "sort_order": 3, "show_in_list": True, "show_in_detail": True},
             {"key": "eip", "label": "EIP", "type": "ip", "mapped_to": "extra",
              "placeholder": "弹性公网 IP", "width": "half", "sort_order": 4, "show_in_list": True, "show_in_detail": True},
@@ -2145,7 +2145,7 @@ PRESET_ASSET_TEMPLATES = [
         "sort_order": 2,
         "fields": [
             {"key": "cidr", "label": "网段", "type": "cidr", "mapped_to": "standard:ip",
-             "required": True, "unique": True, "placeholder": "192.168.1.0/24",
+             "required": True, "unique": True, "placeholder": "192.0.2.0/24",
              "width": "half", "sort_order": 1, "show_in_list": True, "show_in_detail": True},
             {"key": "usage_unit", "label": "使用单位", "type": "text", "mapped_to": "standard:department",
              "required": True, "width": "half", "sort_order": 2, "show_in_list": True, "show_in_detail": True},

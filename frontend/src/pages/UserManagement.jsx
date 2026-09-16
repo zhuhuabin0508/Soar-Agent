@@ -1069,7 +1069,7 @@ function UserManagement() {
               label="邮箱"
               value={form.email}
               onChange={setField('email')}
-              placeholder="user@example.com"
+              placeholder="请输入邮箱地址"
             />
           </div>
           {formErrors.email && <p className="mt-1 text-[11px] text-destructive">{formErrors.email}</p>}

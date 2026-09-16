@@ -261,7 +261,7 @@ function AgentTutorial() {
             <ConfigCard icon="💡" title="建议问题" name="suggested_questions">
               对话页面展示的快捷提问按钮。用户点击即可快速发送预设问题。
               建议设置 3-5 个典型问题，覆盖智能体的核心功能场景。
-              例如：['查询 IP 10.0.0.5 的资产信息', '分析告警：源IP 1.2.3.4 端口扫描']
+              例如：['查询 IP 198.51.100.5 的资产信息', '分析告警：源IP 1.2.3.4 端口扫描']
             </ConfigCard>
           </Section>
 

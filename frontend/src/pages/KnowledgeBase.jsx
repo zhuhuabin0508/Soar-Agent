@@ -2239,7 +2239,7 @@ function KnowledgeBase() {
                         </select>
                         <input
                           className={inputCls}
-                          placeholder="如 192.168.1.1 或 公网地址=61.144.224.4"
+                          placeholder="如 198.51.100.1 或 公网地址=203.0.113.4"
                           value={fileQuery}
                           onChange={(e) => setFileQuery(e.target.value)}
                           onKeyDown={(e) => {

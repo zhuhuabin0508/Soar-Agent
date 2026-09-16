@@ -881,7 +881,7 @@ async def crackmapexec_run(
 
     Args:
         protocol: 协议 smb / winrm / ldap / ssh / mssql / ftp
-        target: 目标 IP / CIDR（如 192.168.1.0/24）
+        target: 目标 IP / CIDR（如 192.0.2.0/24）
         username: 用户名（支持 user@domain）
         password: 密码（空则尝试空密码）
         options: 附加参数，如 "--sam" / "--shares" / "--lsa"

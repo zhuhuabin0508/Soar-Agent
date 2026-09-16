@@ -289,7 +289,7 @@ function ForgotPasswordModal({ open, onClose }) {
         <ul className="ml-5 list-disc space-y-1.5">
           <li>联系系统管理员重置密码（管理员可在「用户管理」中操作）</li>
           <li>拨打运维支持电话：<span className="text-primary">400-xxx-xxxx</span></li>
-          <li>发送邮件至：<a href="mailto:soar-admin@company.com" className="text-primary hover:underline">soar-admin@company.com</a></li>
+          <li>发送邮件至运维支持邮箱（地址请查阅内部运维文档）</li>
         </ul>
         <div className="rounded-md border border-warning/30 bg-warning/5 p-3 text-xs text-warning/80">
           出于安全考虑，本平台暂不支持自助密码找回。管理员重置后，您首次登录将需要修改密码。
@@ -1459,13 +1459,13 @@ function Login() {
               <LifeBuoy className="h-3 w-3" />
               使用帮助
             </button>
-            <a
-              href="mailto:soar-admin@company.com"
-              className="flex items-center gap-1 transition hover:text-foreground"
+            <span
+              className="flex items-center gap-1"
+              title="如需账号开通或权限调整，请联系系统管理员"
             >
               <BookOpen className="h-3 w-3" />
               联系管理员
-            </a>
+            </span>
             <a
               href="https://docs.example.com/privacy"
               target="_blank"

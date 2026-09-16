@@ -1030,9 +1030,9 @@ def download_import_template(
             elif ftype == "date":
                 example_row.append("2026-01-01")
             elif ftype == "ip":
-                example_row.append("192.168.1.10")
+                example_row.append("192.0.2.10")
             elif ftype == "cidr":
-                example_row.append("192.168.1.0/24")
+                example_row.append("192.0.2.0/24")
             else:
                 example_row.append(f"示例{f.get('label', f.get('key', ''))}")
         writer.writerow(example_row)
@@ -1057,10 +1057,10 @@ def download_import_template(
         if id_field_def and id_field_def.get("type") in ("ip",):
             writer.writerow([])
             writer.writerow(["# IP 标识字段支持多格式（导入时请删除说明行）："])
-            writer.writerow(["#   单个 IP：192.168.1.10"])
-            writer.writerow(["#   CIDR 网段：192.168.1.0/24（展开为该网段所有主机 IP，合并为一条资产）"])
-            writer.writerow(["#   完整范围：10.0.0.1-10.0.0.50（起止 IP 之间所有地址，合并为一条资产）"])
-            writer.writerow(["#   短格式范围：172.16.0.1-100（同前缀末段范围，等价于 172.16.0.1-172.16.0.100）"])
+            writer.writerow(["#   单个 IP：192.0.2.10"])
+            writer.writerow(["#   CIDR 网段：192.0.2.0/24（展开为该网段所有主机 IP，合并为一条资产）"])
+            writer.writerow(["#   完整范围：198.51.100.1-198.51.100.50（起止 IP 之间所有地址，合并为一条资产）"])
+            writer.writerow(["#   短格式范围：203.0.113.1-100（同前缀末段范围，等价于 203.0.113.1-203.0.113.100）"])
             writer.writerow(["#   多 IP 合并：展开后的所有 IP 以逗号拼接存为一条资产记录"])
 
         output.seek(0)
@@ -1086,7 +1086,7 @@ def download_import_template(
 
     # 示例行：标准字段示例 + 自定义字段占位示例
     std_example = [
-        "192.168.1.10", "Web服务器-01", "服务器",
+        "192.0.2.10", "Web服务器-01", "服务器",
         "运维部", "张三", "机房A-01", "high", "in_use",
     ]
     # 为每个自定义字段生成示例值（select 类型取第一个选项，其他类型给占位文本）
@@ -1104,25 +1104,25 @@ def download_import_template(
 
     # 多 IP 格式示例行
     writer.writerow([
-        "192.168.1.0/24", "网段服务器", "服务器",
+        "192.0.2.0/24", "网段服务器", "服务器",
         "运维部", "李四", "机房B", "medium", "in_use",
     ] + [""] * len(cf_labels))
     writer.writerow([
-        "10.0.0.1-10.0.0.50", "办公终端", "工作站",
+        "198.51.100.1-198.51.100.50", "办公终端", "工作站",
         "行政部", "王五", "办公区", "low", "in_use",
     ] + [""] * len(cf_labels))
     writer.writerow([
-        "172.16.0.1-100", "内网设备", "网络设备",
+        "203.0.113.1-100", "内网设备", "网络设备",
         "网络部", "赵六", "机柜C", "high", "in_use",
     ] + [""] * len(cf_labels))
 
     # IP 格式说明
     writer.writerow([])  # 空行分隔
     writer.writerow(["# IP 地址支持以下格式（导入时请删除以 # 开头的说明行）："])
-    writer.writerow(["#   单个 IP：192.168.1.10"])
-    writer.writerow(["#   CIDR 网段：192.168.1.0/24（展开为该网段所有主机 IP，合并为一条资产）"])
-    writer.writerow(["#   完整范围：10.0.0.1-10.0.0.50（起止 IP 之间所有地址，合并为一条资产）"])
-    writer.writerow(["#   短格式范围：172.16.0.1-100（同前缀末段范围，等价于 172.16.0.1-172.16.0.100）"])
+    writer.writerow(["#   单个 IP：192.0.2.10"])
+    writer.writerow(["#   CIDR 网段：192.0.2.0/24（展开为该网段所有主机 IP，合并为一条资产）"])
+    writer.writerow(["#   完整范围：198.51.100.1-198.51.100.50（起止 IP 之间所有地址，合并为一条资产）"])
+    writer.writerow(["#   短格式范围：203.0.113.1-100（同前缀末段范围，等价于 203.0.113.1-203.0.113.100）"])
     writer.writerow(["#   多 IP 合并：CIDR/范围展开后的所有 IP 以逗号拼接存为一条资产"])
     writer.writerow(["#   多 IP 设备：一台设备多个 IP 时，合并为一条资产记录便于统一管理"])
 
@@ -1146,10 +1146,10 @@ def _expand_ip_expression(ip_expr: str, max_count: int = 65536) -> list[str]:
     """将 IP 表达式展开为单个 IP 地址列表。
 
     支持以下格式：
-    - 单个 IP：``192.168.1.10``
-    - CIDR：``192.168.1.0/24``、``10.0.0.0/16``
-    - 完整范围：``192.168.1.1-192.168.1.100``
-    - 短格式范围（同前缀）：``192.168.1.1-100``
+    - 单个 IP：``192.0.2.10``
+    - CIDR：``192.0.2.0/24``、``198.51.100.0/24``
+    - 完整范围：``192.0.2.1-192.0.2.100``
+    - 短格式范围（同前缀）：``192.0.2.1-100``
 
     Args:
         ip_expr: IP 表达式字符串
@@ -1190,7 +1190,7 @@ def _expand_ip_expression(ip_expr: str, max_count: int = 65536) -> list[str]:
 
         # 判断 end_str 是完整 IP 还是短格式（纯数字）
         if end_str.isdigit():
-            # 短格式：192.168.1.1-100 → 起始 IP 的前三段 + 末段数字
+            # 短格式：192.0.2.1-100 → 起始 IP 的前三段 + 末段数字
             prefix = start_str.rsplit('.', 1)[0]
             end_ip = ipaddress.ip_address(f"{prefix}.{end_str}")
         else:

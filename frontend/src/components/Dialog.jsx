@@ -261,7 +261,7 @@ export function JsonInputDialog({
 }) {
   const [text, setText] = useState(
     defaultValue ||
-      '{\n  "alert_data": {\n    "src_ip": "192.168.1.100",\n    "alert_type": "brute_force"\n  }\n}'
+      '{\n  "alert_data": {\n    "src_ip": "203.0.113.100",\n    "alert_type": "brute_force"\n  }\n}'
   )
   const [parseErr, setParseErr] = useState('')
 

@@ -1276,7 +1276,7 @@ function renderForm(node, update, toolOptions, toolsList, llmOptions, agentOptio
                   label="发件邮箱"
                   value={node.data.smtp_username}
                   onChange={setField('smtp_username')}
-                  placeholder="xxx@qq.com"
+                  placeholder="请输入发件邮箱地址"
                 />
                 <TextInput
                   label="密码 / 授权码"
@@ -1297,13 +1297,13 @@ function renderForm(node, update, toolOptions, toolsList, llmOptions, agentOptio
                   label="收件人（逗号分隔）"
                   value={node.data.recipients}
                   onChange={setField('recipients')}
-                  placeholder="soc-team@example.com"
+                  placeholder="多个收件邮箱，逗号分隔"
                 />
                 <TextInput
                   label="抄送（可选）"
                   value={node.data.cc}
                   onChange={setField('cc')}
-                  placeholder="soc-lead@example.com"
+                  placeholder="多个抄送邮箱，逗号分隔"
                 />
               </Section>
             </>

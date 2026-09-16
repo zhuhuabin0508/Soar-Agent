@@ -12,7 +12,7 @@
 5. 返回结构化 JSON：``{doc_id, title, columns, rows, total, matched}``。
 
 典型用法（Agent 工具调用）：
-    query_kb_file(query="192.168.1.1", kb_id=1)
+    query_kb_file(query="203.0.113.1", kb_id=1)
     query_kb_file(query="部门=研发部", doc_id=5)
     query_kb_file(query="", doc_id=5, limit=10)  # 查看前10行
 """

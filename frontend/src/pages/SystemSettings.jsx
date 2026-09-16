@@ -919,7 +919,7 @@ function SystemSettings() {
                         <Network className="h-3.5 w-3.5 text-primary" />
                         <span className="text-xs font-medium text-muted-foreground">登录 IP 白名单</span>
                       </div>
-                      <TagInput value={security['security.login_ip_whitelist'] || ''} onChange={setSecurityField('security.login_ip_whitelist')} placeholder="输入 IP/CIDR 后回车，如 10.0.0.0/8（空表示不限制）" />
+                      <TagInput value={security['security.login_ip_whitelist'] || ''} onChange={setSecurityField('security.login_ip_whitelist')} placeholder="输入 IP/CIDR 后回车，如 203.0.113.0/24（空表示不限制）" />
                     </div>
 
                     {/* 登录通知 */}
