@@ -1,6 +1,6 @@
 // 反馈管理页（admin）：全量反馈的筛选 / 批量处理 / 详情处理抽屉
 // 功能：多条件筛选 + 复选框批量操作 + 详情抽屉（字段/附件 lightbox/回复/改状态/重新打开/时间线）
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, Children } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Bug, Eye, RotateCcw, Paperclip, MessageSquareWarning, X, Search, XCircle,
@@ -35,7 +35,7 @@ function Tag({ cls, children }) {
   )
 }
 
-/** 自绘箭头的下拉：去掉系统默认错位箭头，文字在框内垂直居中 */
+/** 主题化下拉：Portal 菜单，避免原生 select 在深色主题下弹出浅色系统列表且错位 */
 function CompactSelect({
   value,
   onChange,
@@ -48,38 +48,139 @@ function CompactSelect({
   onClick,
   onMouseDown,
 }) {
+  const [open, setOpen] = useState(false)
+  const btnRef = useRef(null)
+  const [pos, setPos] = useState({ top: 0, left: 0, minWidth: 0 })
   const tall = size === 'md'
   const ghost = variant === 'ghost'
   const empty = value === '' || value == null
+
+  const options = useMemo(() => (
+    Children.toArray(children).flatMap((child) => {
+      if (!child || child.type !== 'option') return []
+      return [{
+        value: child.props.value == null ? '' : String(child.props.value),
+        label: child.props.children,
+        disabled: Boolean(child.props.disabled),
+      }]
+    })
+  ), [children])
+
+  const selected = options.find((o) => o.value === String(value ?? ''))
+  const label = selected?.label ?? '请选择'
+
   const chrome = ghost
     ? `border-transparent bg-transparent hover:border-border/40 hover:bg-muted/25 focus:border-border/60 focus:bg-muted/30 ${
         empty ? 'text-muted-foreground' : 'text-foreground'
       }`
     : 'border-border/70 bg-secondary text-secondary-foreground hover:bg-accent focus:border-primary'
+
+  const close = () => setOpen(false)
+
+  const toggle = (e) => {
+    e.stopPropagation()
+    onClick?.(e)
+    if (disabled) return
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect()
+      const menuH = Math.min(options.length * 32 + 8, 280)
+      let top = rect.bottom + 4
+      if (top + menuH > window.innerHeight - 8) {
+        top = Math.max(8, rect.top - menuH - 4)
+      }
+      let left = rect.left
+      const minWidth = Math.max(rect.width, tall ? 132 : 112)
+      if (left + minWidth > window.innerWidth - 8) {
+        left = Math.max(8, window.innerWidth - minWidth - 8)
+      }
+      setPos({ top, left, minWidth })
+    }
+    setOpen((v) => !v)
+  }
+
+  useEffect(() => {
+    if (!open) return undefined
+    const onDoc = (e) => {
+      if (btnRef.current?.contains(e.target)) return
+      if (e.target.closest?.('[data-compact-select-menu]')) return
+      close()
+    }
+    const onKey = (e) => { if (e.key === 'Escape') close() }
+    const onScroll = () => close()
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', close)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('resize', close)
+    }
+  }, [open])
+
+  const pick = (opt) => {
+    if (opt.disabled) return
+    close()
+    if (String(opt.value) === String(value ?? '')) return
+    onChange?.({ target: { value: opt.value }, stopPropagation() {} })
+  }
+
   return (
     <div
-      className={`group relative inline-flex items-center ${className}`}
-      onClick={onClick}
+      className={`relative inline-flex items-center ${className}`}
       onMouseDown={onMouseDown}
     >
-      <select
-        value={value}
+      <button
+        ref={btnRef}
+        type="button"
         disabled={disabled}
         title={title}
-        onChange={onChange}
-        className={`appearance-none rounded-md border outline-none transition disabled:cursor-not-allowed disabled:opacity-60 ${chrome} ${
+        onClick={toggle}
+        className={`inline-flex items-center rounded-md border text-left outline-none transition disabled:cursor-not-allowed disabled:opacity-60 ${chrome} ${
           tall
-            ? 'h-8 min-w-[7.5rem] py-0 pl-2.5 pr-8 text-sm leading-8'
-            : 'h-7 min-w-[6.25rem] max-w-[8rem] py-0 pl-2 pr-7 text-xs leading-7'
+            ? 'h-8 min-w-[7.5rem] py-0 pl-2.5 pr-8 text-sm'
+            : 'h-7 min-w-[6.25rem] max-w-[8rem] py-0 pl-2 pr-7 text-xs'
         }`}
       >
-        {children}
-      </select>
+        <span className="block min-w-0 flex-1 truncate">{label}</span>
+      </button>
       <ChevronDown
         className={`pointer-events-none absolute top-1/2 -translate-y-1/2 transition ${
           tall ? 'right-2 h-3.5 w-3.5' : 'right-1.5 h-3 w-3'
-        } ${ghost ? 'text-muted-foreground/45 group-hover:text-muted-foreground' : 'text-muted-foreground/70'}`}
+        } ${open ? 'rotate-180' : ''} ${ghost ? 'text-muted-foreground/45' : 'text-muted-foreground/70'}`}
       />
+      {open && createPortal(
+        <div
+          data-compact-select-menu
+          data-allow-scroll
+          className="fixed z-[10000] max-h-[280px] overflow-y-auto overscroll-contain rounded-md border border-border bg-card py-1 text-foreground shadow-2xl"
+          style={{ top: pos.top, left: pos.left, minWidth: pos.minWidth }}
+          role="listbox"
+        >
+          {options.map((opt) => {
+            const active = opt.value === String(value ?? '')
+            return (
+              <button
+                key={opt.value || '__empty'}
+                type="button"
+                role="option"
+                aria-selected={active}
+                disabled={opt.disabled}
+                onClick={() => pick(opt)}
+                className={`flex w-full items-center px-3 py-1.5 text-left text-xs transition disabled:opacity-50 ${
+                  active
+                    ? 'bg-primary/20 text-primary'
+                    : 'text-foreground hover:bg-accent'
+                }`}
+              >
+                <span className="truncate">{opt.label}</span>
+              </button>
+            )
+          })}
+        </div>,
+        document.body,
+      )}
     </div>
   )
 }
