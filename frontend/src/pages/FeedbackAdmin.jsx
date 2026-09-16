@@ -1,6 +1,7 @@
 // 反馈管理页（admin）：全量反馈的筛选 / 批量处理 / 详情处理抽屉
 // 功能：多条件筛选 + 复选框批量操作 + 详情抽屉（字段/附件 lightbox/回复/改状态/重新打开/时间线）
 import { useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Bug, Eye, RotateCcw, Paperclip, MessageSquareWarning, X, Search, XCircle,
   Trash2, Plus, Clock, Calendar, AlertTriangle, ChevronDown,
@@ -21,6 +22,7 @@ import {
   isImageAttachment,
 } from '../utils/feedback'
 import { isAdmin } from '../utils/permissions'
+import useLockBackgroundScroll from '../hooks/useLockBackgroundScroll'
 
 const PAGE_SIZE = 20
 
@@ -371,13 +373,7 @@ function AdminDetailDrawer({ open, onClose, feedbackId, onChanged }) {
     return () => document.removeEventListener('keydown', handler)
   }, [open, onClose, lightbox])
 
-  useEffect(() => {
-    if (!open) return
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.body.style.overflow = ''
-    }
-  }, [open])
+  useLockBackgroundScroll(open)
 
   if (!open) return null
 
@@ -460,7 +456,7 @@ function AdminDetailDrawer({ open, onClose, feedbackId, onChanged }) {
     }
   }
 
-  return (
+  return createPortal(
     <>
       <div className="fixed inset-0 z-[100] flex justify-end">
         <style>{`
@@ -494,7 +490,10 @@ function AdminDetailDrawer({ open, onClose, feedbackId, onChanged }) {
           </div>
 
           {/* 内容区 */}
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          <div
+            data-allow-scroll
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-5"
+          >
             {loading || !detail ? (
               <div className="flex h-40 items-center justify-center text-sm text-muted-foreground/70">
                 加载中...
@@ -716,7 +715,8 @@ function AdminDetailDrawer({ open, onClose, feedbackId, onChanged }) {
         onConfirm={handleDelete}
         onClose={() => setConfirmDelete(false)}
       />
-    </>
+    </>,
+    document.body,
   )
 }
 

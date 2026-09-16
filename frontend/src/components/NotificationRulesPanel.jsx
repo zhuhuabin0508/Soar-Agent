@@ -19,6 +19,7 @@ import { usersApi } from '../api/users'
 import { rolesApi } from '../api/roles'
 import { toast } from '../store/toastStore'
 import { confirm } from './ConfirmDialog'
+import useLockBackgroundScroll from '../hooks/useLockBackgroundScroll'
 
 const EMPTY_FORM = {
   name: '',
@@ -47,6 +48,7 @@ export default function NotificationRulesPanel() {
   const [error, setError] = useState('')
   // 弹窗：null | { mode: 'create' | 'edit', data: rule }
   const [modal, setModal] = useState(null)
+  useLockBackgroundScroll(!!modal)
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [togglingId, setTogglingId] = useState(null)
@@ -377,8 +379,9 @@ export default function NotificationRulesPanel() {
           onClick={handleCloseModal}
         >
           <div
-            className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg border border-border bg-card shadow-2xl"
+            className="max-h-[90vh] w-full max-w-lg overflow-y-auto overscroll-contain rounded-lg border border-border bg-card shadow-2xl"
             onClick={(e) => e.stopPropagation()}
+            data-allow-scroll
           >
             {/* 弹窗头部 */}
             <div className="flex items-center justify-between border-b border-border px-5 py-3">

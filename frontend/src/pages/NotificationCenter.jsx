@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Bell, Megaphone, AlertTriangle, XCircle, ExternalLink, Settings2 } from 'lucide-react'
 import { notificationsApi } from '../api/notifications'
 import NotificationRulesPanel from '../components/NotificationRulesPanel'
+import useLockBackgroundScroll from '../hooks/useLockBackgroundScroll'
 
 // 根据通知关联资源生成跳转链接
 function buildNotificationLink(n) {
@@ -102,6 +103,7 @@ function NotificationCenter() {
   const [actionId, setActionId] = useState(null)
   // 通知详情弹窗
   const [detailItem, setDetailItem] = useState(null)
+  useLockBackgroundScroll(!!detailItem)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -469,7 +471,7 @@ function NotificationCenter() {
                 ✕
               </button>
             </div>
-            <div className="space-y-3 p-5">
+            <div data-allow-scroll className="max-h-[70vh] space-y-3 overflow-y-auto overscroll-contain p-5">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-base font-semibold text-foreground">{detailItem.title || '(无标题)'}</span>
                 {detailItem.type && (

@@ -18,6 +18,7 @@ import { HoverTip } from '../components/InfoTip'
 import { usePagination } from '../hooks/usePagination'
 import { useSelection } from '../hooks/useSelection'
 import { usePersistedFilters } from '../hooks/usePersistedFilters'
+import useLockBackgroundScroll from '../hooks/useLockBackgroundScroll'
 import SkillEditor from './SkillEditor'
 import ShareDialog from '../components/ShareDialog'
 import BatchShareDialog from '../components/BatchShareDialog'
@@ -636,6 +637,7 @@ function CardView({ rows, loading, selectable, selectedKeys, onSelectChange, can
 
 // ============ 技能导入弹窗（三步流程 + 模板下载 + 宽弹窗） ============
 function SkillImportModal({ onClose, onCompleted }) {
+  useLockBackgroundScroll(true)
   // 步骤：upload 选择文件 / preview 预览校验 / importing 导入中 / done 完成 / error 失败
   const [step, setStep] = useState('upload')
   const [file, setFile] = useState(null)
@@ -934,7 +936,7 @@ function SkillImportModal({ onClose, onCompleted }) {
         </div>
 
         {/* 步骤内容（可滚动） */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div data-allow-scroll className="flex-1 overflow-y-auto overscroll-contain p-6">
           {/* 步骤 1：上传区 */}
           {step === 'upload' && (
             <div className="flex flex-col items-center gap-4 py-4">

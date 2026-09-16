@@ -10,6 +10,7 @@ import { createPortal } from 'react-dom'
 import { X, Copy, Download, FileJson, Info, ArrowLeftRight, Server, FileText, Braces, FileCode } from 'lucide-react'
 import { toast } from '../store/toastStore'
 import { alertApi } from '../api/alert'
+import useLockBackgroundScroll from '../hooks/useLockBackgroundScroll'
 
 // Tab 定义
 const TABS = [
@@ -77,17 +78,15 @@ export default function AlertDetailDrawer({ open, alertId, onClose }) {
       .finally(() => setLoading(false))
   }, [open, alertId])
 
-  // ESC 关闭 + 背景滚动锁
+  // ESC 关闭
   useEffect(() => {
     if (!open) return
     const handler = (e) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', handler)
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.removeEventListener('keydown', handler)
-      document.body.style.overflow = ''
-    }
+    return () => document.removeEventListener('keydown', handler)
   }, [open, onClose])
+
+  useLockBackgroundScroll(open)
 
   if (!open) return null
 
@@ -145,7 +144,7 @@ export default function AlertDetailDrawer({ open, alertId, onClose }) {
         </div>
 
         {/* 内容区 */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div data-allow-scroll className="flex-1 overflow-y-auto overscroll-contain p-6">
           {loading ? (
             <div className="py-16 text-center text-sm text-muted-foreground">加载中…</div>
           ) : !detail ? (

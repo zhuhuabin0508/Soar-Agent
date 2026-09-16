@@ -24,6 +24,7 @@ import {
   TextInput,
   SelectInput,
 } from '../components/property/FormControls'
+import useLockBackgroundScroll from '../hooks/useLockBackgroundScroll'
 
 // 格式化时间（紧凑，避免表格 table-fixed 把「最后登录」裁成 16:4…）
 function fmtTime(t) {
@@ -190,11 +191,13 @@ function PasswordField({ label, value, onChange, placeholder, hint, required, sh
 
 // ============ 用户详情抽屉 ============
 function UserDetailDrawer({ open, user, onClose, onEdit }) {
+  useLockBackgroundScroll(open)
   if (!open || !user) return null
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
       <div
-        className="flex h-full w-full max-w-md flex-col overflow-y-auto border-l border-border bg-card shadow-2xl"
+        data-allow-scroll
+        className="flex h-full w-full max-w-md flex-col overflow-y-auto overscroll-contain border-l border-border bg-card shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 头部 */}
@@ -265,7 +268,8 @@ function UserDetailDrawer({ open, user, onClose, onEdit }) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
