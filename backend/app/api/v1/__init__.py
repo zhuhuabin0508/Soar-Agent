@@ -3,8 +3,6 @@
 所有业务路由统一前缀 ``/api/v1``，在此处聚合注册。
 新增模块的 router 在此 include 即可。
 """
-import logging
-
 from fastapi import APIRouter
 
 from app.api.v1 import (
@@ -45,8 +43,6 @@ from app.api.v1 import (
     workflows,
     workflow_versions,
 )
-
-logger = logging.getLogger(__name__)
 
 api_router = APIRouter()
 
@@ -118,10 +114,3 @@ api_router.include_router(monitor.router)
 api_router.include_router(ban_workflow.router)
 # 内置 mock 服务（IP 风险研判智能体 + 封禁工具，/internal 前缀免鉴权）
 api_router.include_router(internal_mock.router)
-
-
-@api_router.get("/health", tags=["health"])
-def health_check() -> dict:
-    """健康检查端点。"""
-    logger.info("Health check called")
-    return {"status": "ok"}

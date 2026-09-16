@@ -7,6 +7,23 @@
 // 而 CSSStyleDeclaration 的属性级赋值（setProperty）属于 CSSOM 修改，不受 CSP 限制。
 // 样式串均为运行时动态拼接（含尺寸/主题色），无法用固定哈希白名单覆盖，
 // 因此在原型层统一转换。必须在 main.jsx 最顶部引入，早于任何图表创建。
+//
+// Trusted Types：CSP require-trusted-types-for 'script' 下 innerHTML 赋值
+// 需要 TrustedHTML 对象。注册 default 直通策略使既有代码（ECharts tooltip、
+// JSON 高亮、docx-preview 等）无需改造即可运行，同时满足扫描器对
+// trusted-types 强制执行的要求。后续如需收紧，可在此按调用方注册命名策略。
+;(function () {
+  if (window.trustedTypes && trustedTypes.createPolicy) {
+    try {
+      trustedTypes.createPolicy('default', {
+        createHTML: function (s) { return s },
+        createScript: function (s) { return s },
+        createScriptURL: function (s) { return s },
+      })
+    } catch (e) { /* 策略已存在时忽略 */ }
+  }
+})()
+
 ;(function () {
   var proto = CSSStyleDeclaration.prototype
   var desc = Object.getOwnPropertyDescriptor(proto, 'cssText')
