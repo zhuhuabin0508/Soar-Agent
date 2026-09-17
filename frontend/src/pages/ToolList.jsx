@@ -291,7 +291,9 @@ function ToolList() {
     if (statusFilter === 'disabled' && r.enabled) return false
     if (search) {
       const q = search.toLowerCase()
-      if (!(r.name || '').toLowerCase().includes(q)) return false
+      const name = (r.name || '').toLowerCase()
+      const desc = (r.description || '').toLowerCase()
+      if (!name.includes(q) && !desc.includes(q)) return false
     }
     return true
   })
@@ -643,7 +645,7 @@ function ToolList() {
         </div>
 
         <FilterBar
-          search={{ value: search, onChange: (v) => { setSearch(v); setPage(1) }, placeholder: '搜索工具名称...' }}
+          search={{ value: search, onChange: (v) => { setSearch(v); setPage(1) }, placeholder: '搜索工具名称或描述...' }}
           filters={[
             { key: 'agent', label: '智能体', value: agentFilter, onChange: (v) => { setAgentFilter(v); setPage(1) }, options: agentOptions },
             { key: 'type', label: '类型', value: typeFilter, onChange: (v) => { setTypeFilter(v); setPage(1) }, options: TOOL_TYPE_OPTIONS },

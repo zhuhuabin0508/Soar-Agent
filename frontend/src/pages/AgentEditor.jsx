@@ -251,7 +251,7 @@ function AgentEditor() {
     if (!abilitySearch.trim()) return null
     const kw = abilitySearch.trim().toLowerCase()
     return {
-      tools: toolOptions.filter((t) => t.label.toLowerCase().includes(kw) || (t.description || '').toLowerCase().includes(kw)),
+      tools: toolOptions.filter((t) => t.label.toLowerCase().includes(kw) || (t.value || '').toLowerCase().includes(kw) || (t.description || '').toLowerCase().includes(kw)),
       kbs: kbOptions.filter((k) => k.label.toLowerCase().includes(kw) || (k.description || '').toLowerCase().includes(kw)),
       skills: skillOptions.filter((s) => s.label.toLowerCase().includes(kw) || (s.description || '').toLowerCase().includes(kw)),
       assets: assetTypeOptions.filter((a) => a.label.toLowerCase().includes(kw)),
@@ -263,7 +263,7 @@ function AgentEditor() {
     const kw = abilitySearch.trim().toLowerCase()
     return groupedTools.map((grp) => {
       let tools = grp.tools
-      if (kw) tools = tools.filter((t) => t.label.toLowerCase().includes(kw) || (t.description || '').toLowerCase().includes(kw))
+      if (kw) tools = tools.filter((t) => t.label.toLowerCase().includes(kw) || (t.value || '').toLowerCase().includes(kw) || (t.description || '').toLowerCase().includes(kw))
       if (onlySelectedTools) tools = tools.filter((t) => form.enabled_tools.includes(t.value))
       return { ...grp, tools }
     }).filter((grp) => grp.tools.length > 0)
