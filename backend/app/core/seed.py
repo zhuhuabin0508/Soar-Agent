@@ -261,6 +261,41 @@ HERMES_BUILTIN_TOOLS: list[dict[str, Any]] = [
         "enabled": True,
     },
     {
+        "name": "search_assets",
+        "description": (
+            "资产检索：按 IP/名称/标识/部门查询资产清单"
+            "（主机资产、网段/IP 信息、出口地址等已配置类型）。"
+            "传入单个 IP 会匹配包含该 IP 的 CIDR/范围资产。"
+            "用于研判时对比告警 IP 是否属于已知资产。"
+            "按智能体勾选的资产类型检索：未勾选则不可用；勾选部分则只查这些类型；"
+            "全部勾选则不按类型过滤。同一 IP 若出现在主机/网段/出口等多类下会全部返回。"
+        ),
+        "parameters_schema": [
+            {"name": "keyword", "type": "String", "required": False, "description": "IP/名称/标识/负责人；单个 IP 会做网段包含匹配"},
+            {"name": "ip", "type": "String", "required": False, "description": "待查询 IP（与 keyword 二选一，优先 keyword）"},
+            {"name": "department", "type": "String", "required": False, "description": "按使用单位/部门精确筛选"},
+            {"name": "type_code", "type": "String", "required": False, "description": "忽略；范围由智能体勾选的资产类型决定，同一 IP 跨类型全部返回"},
+            {"name": "limit", "type": "Number", "required": False, "description": "非 IP 查询条数上限；按 IP 查询会跨类型返回全部命中"},
+        ],
+        "code": (
+            "async def run(**kwargs):\n"
+            "    keyword = (kwargs.get('keyword') or kwargs.get('ip') or '').strip()\n"
+            "    department = (kwargs.get('department') or '').strip()\n"
+            "    type_code = kwargs.get('type_code') or None\n"
+            "    if type_code:\n"
+            "        type_code = str(type_code).strip() or None\n"
+            "    limit = int(kwargs.get('limit') or 20)\n"
+            "    return await run_search_assets(\n"
+            "        keyword=keyword, department=department,\n"
+            "        type_code=type_code, limit=limit,\n"
+            "        type_codes=list(enabled_asset_types or []),\n"
+            "    )\n"
+        ),
+        "tool_type": "code",
+        "category": "security",
+        "enabled": True,
+    },
+    {
         "name": "get_threat_intel",
         "description": "查询 IP 威胁情报（恶意判定/威胁标签/威胁类型/严重程度/置信度/首次发现/最后发现/情报来源/威胁描述/地理位置/关联恶意软件/攻击模式）。内网白名单 IP 视为非恶意",
         "parameters_schema": [

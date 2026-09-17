@@ -177,7 +177,7 @@ class HermesToolEngine:
         self._register_db_tools()
         # 2. 知识库工具
         self._register_kb_tools()
-        # 3. 资产检索工具（按关联的资产类型范围检索）
+        # 3. 资产检索工具（勾选资产类型 或 工具列表启用 search_assets）
         self._register_asset_tools()
         # 注意：内置安全工具（check_whitelist 等）已迁移为 DB code 类型工具，
         # 由 _register_db_tools 统一加载，不再需要 _register_builtin_tools 兜底。
@@ -202,6 +202,8 @@ class HermesToolEngine:
             # framework 类型工具（delegate_task/clarify 等）由 executor 作为 extra_tool_defs
             # 注入并在 _react_loop 中拦截处理，不走 tool_engine 执行管线
             if (tool.tool_type or "code").lower() == "framework":
+                continue
+            if name == "search_assets":
                 continue
             try:
                 from app.core.tool_runner import load_tool_function

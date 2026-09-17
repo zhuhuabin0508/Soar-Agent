@@ -1,4 +1,4 @@
-"""Agent 决策入口模块。
+﻿"""Agent 决策入口模块。
 
 对外暴露 ``run_agent_decision``，作为后端调用 Agent 的唯一入口。
 按以下优先级选择 LLM 配置：传入的 ``model_config_id`` > DB 中 ``is_default`` 的 LLMConfig
@@ -148,6 +148,9 @@ def _build_db_tools(db, enabled_tools: list[str]) -> list:
     if not enabled_tools:
         return tools
     for name in enabled_tools:
+        # search_assets 由 _build_asset_tool 注册，避免与 DB code 工具重复挂载
+        if name == "search_assets":
+            continue
         tool = db.query(Tool).filter(Tool.name == name, Tool.enabled.is_(True)).first()
         if tool is None:
             logger.warning("DB 工具未找到或未启用: %s", name)
@@ -278,12 +281,64 @@ def _build_file_query_tool(enabled_kbs: list[int]):
     )
 
 
+def _all_asset_type_codes() -> list[str]:
+    """读取全部资产类型 code；无模板时返回空列表。"""
+    return list(_asset_type_labels().keys())
+
+
+def _asset_type_labels() -> dict[str, str]:
+    """资产类型 code → 中文显示名（来自 AssetTypeTemplate）。"""
+    from app.database import SessionLocal
+    from app.models.asset import AssetTypeTemplate
+
+    db = SessionLocal()
+    try:
+        rows = db.query(AssetTypeTemplate.code, AssetTypeTemplate.name).order_by(
+            AssetTypeTemplate.sort_order.asc(), AssetTypeTemplate.id.asc()
+        ).all()
+        return {code: name for code, name in rows}
+    except Exception:  # noqa: BLE001
+        logger.warning("读取资产类型模板失败，search_assets 无类型名称映射")
+        return {}
+    finally:
+        db.close()
+
+
+def _should_attach_search_assets(
+    enabled_tools: list[str] | None,
+    enabled_asset_types: list[str] | None,
+) -> bool:
+    """未勾选任何资产类型时不注册 search_assets。"""
+    return bool(enabled_asset_types)
+
+
+async def execute_search_assets(
+    keyword: str = "",
+    department: str = "",
+    type_code: str | None = None,
+    limit: int = 20,
+    type_codes: list[str] | None = None,
+):
+    """供工具沙箱 / 测试页调用的资产检索入口。"""
+    tool = _build_asset_tool(list(type_codes or []))
+    if tool is None:
+        return {"error": "未勾选资产类型，search_assets 不可用", "count": 0}
+    result = await tool.coroutine(
+        keyword=keyword or "",
+        department=department or "",
+        type_code=type_code,
+        limit=limit,
+    )
+    return result if isinstance(result, dict) else {"count": len(result or []), "assets": result or []}
+
+
 def _build_asset_tool(enabled_asset_types: list[str]):
     """构造资产检索工具（在关联的资产类型范围内检索）。
 
-    与 ``_build_kb_tool`` 同模式：``enabled_asset_types`` 非空时返回
-    ``StructuredTool``，供 LLM 按需检索关联类型的资产（IP/名称/部门/负责人等）。
-    资产增减自动生效（按 type_code 实时查询），无需重新配置。
+    检索范围由智能体勾选的 ``enabled_asset_types`` 决定：
+    - 未勾选：不注册本工具
+    - 勾选部分类型：只查这些 ``type_code``
+    - 勾选全部类型：不按类型过滤（同一 IP 在主机/网段/出口等多类下都会返回）
 
     IP 匹配策略（ip 列可能存储单 IP / IP 范围 / CIDR 三种格式）：
     - keyword 为单个 IPv4 时：做 **IP 包含判断**（查询 IP 是否落在存储值的
@@ -292,7 +347,8 @@ def _build_asset_tool(enabled_asset_types: list[str]):
     - keyword 为 CIDR（如 ``198.51.100.0/24``）时：做网段重叠判断。
     - keyword 非 IP 时：走 ilike 子串匹配（IP/名称/标识/负责人）。
     """
-    if not enabled_asset_types:
+    type_codes_in = list(dict.fromkeys(enabled_asset_types or []))
+    if not type_codes_in:
         return None
     import ipaddress
     from langchain_core.tools import StructuredTool
@@ -305,10 +361,16 @@ def _build_asset_tool(enabled_asset_types: list[str]):
             "会自动匹配包含该 IP 的网段/CIDR/范围资产。",
         )
         department: str = Field("", description="按使用单位/部门精确筛选")
-        type_code: Optional[str] = Field(None, description="指定资产类型 code（须在已关联范围内）")
-        limit: int = Field(20, description="返回条数上限，默认20，最大50")
+        type_code: Optional[str] = Field(
+            None,
+            description="忽略。检索范围由智能体勾选的资产类型决定，同一 IP 会返回所有类型下的命中。",
+        )
+        limit: int = Field(20, description="非 IP 查询的条数上限，默认20。按 IP 查询会跨类型返回全部命中。")
 
-    type_codes = list(enabled_asset_types)
+    type_codes = list(type_codes_in)
+    all_template_codes = set(_all_asset_type_codes())
+    # 全选（勾选覆盖当前全部模板）时不按 type_code 过滤，避免漏掉未分类或同 IP 多类型记录
+    filter_by_types = None if (all_template_codes and set(type_codes) >= all_template_codes) else type_codes
 
     # ---- IP 解析辅助函数 ----
     def _parse_single_ip(s: str):
@@ -478,20 +540,73 @@ def _build_asset_tool(enabled_asset_types: list[str]):
 
         return False
 
+    def _ip_field_values(r) -> list[str]:
+        """资产上可能存放 IP 的字段：标准 ip、identifier、extra_fields 中的 IP/EIP。"""
+        values = [r.ip or "", r.identifier or ""]
+        extra = r.extra_fields if isinstance(r.extra_fields, dict) else {}
+        for key, val in extra.items():
+            if not val:
+                continue
+            lk = str(key).lower()
+            if lk in ("eip", "ip", "cidr", "public_ip", "wan_ip", "nat_ip") or "ip" in lk or "cidr" in lk:
+                values.append(str(val))
+        return values
+
+    def _record_has_ip(r, query_ip) -> bool:
+        return any(_ip_in_value(query_ip, v) for v in _ip_field_values(r) if v)
+
+    def _record_overlaps_net(r, query_net) -> bool:
+        return any(_network_overlaps(query_net, v) for v in _ip_field_values(r) if v)
+
+    type_labels = _asset_type_labels()
+
+    def _serialize(r) -> dict:
+        extra = r.extra_fields if isinstance(r.extra_fields, dict) else {}
+        code = r.type_code or "(uncategorized)"
+        return {
+            "id": r.id, "name": r.name, "ip": r.ip, "identifier": r.identifier,
+            "department": r.department, "owner": r.owner,
+            "type_code": code,
+            "type_name": type_labels.get(code, code),
+            "status": r.status, "criticality": r.criticality,
+            "eip": extra.get("eip") or extra.get("EIP"),
+            "extra_fields": extra or None,
+        }
+
+    def _pack(rows) -> dict:
+        """按资产类型分组返回，顶层 key 为类型中文名（如 出口地址 / 主机资产）。"""
+        bucket_codes = list(type_labels.keys()) if filter_by_types is None else list(type_codes)
+        if not bucket_codes:
+            bucket_codes = list(dict.fromkeys(
+                [(r.type_code or "(uncategorized)") for r in rows]
+            ))
+        grouped: dict[str, list] = {code: [] for code in bucket_codes}
+        for r in rows:
+            code = r.type_code or "(uncategorized)"
+            if code not in grouped:
+                grouped[code] = []
+            grouped[code].append(_serialize(r))
+
+        result: dict = {"count": len(rows)}
+        for code in bucket_codes:
+            label = type_labels.get(code, code)
+            result[label] = grouped.get(code, [])
+        return result
+
     async def _coroutine(keyword="", department="", type_code=None, limit=20):
         from app.database import SessionLocal
         from app.models.asset import Asset
         db = SessionLocal()
         try:
-            q = db.query(Asset).filter(Asset.type_code.in_(type_codes))
-            if type_code and type_code in type_codes:
-                q = q.filter(Asset.type_code == type_code)
+            q = db.query(Asset)
+            if filter_by_types is not None:
+                q = q.filter(Asset.type_code.in_(filter_by_types))
             if department:
                 q = q.filter(Asset.department == department)
 
             max_limit = min(max(limit, 1), 50)
+            ip_hit_cap = 500
 
-            # 判断 keyword 类型：单 IP / CIDR / 文本
             query_ip = _parse_single_ip(keyword) if keyword else None
             query_net = None
             if query_ip is None and keyword and "/" in keyword:
@@ -501,48 +616,33 @@ def _build_asset_tool(enabled_asset_types: list[str]):
                     query_net = None
 
             if query_ip is not None:
-                # keyword 是单个 IP：做 IP 包含判断
-                # SQL 无法表达 CIDR/范围包含，拉取全部候选后在 Python 层判断。
-                # 50000 为安全上限（防极端数据量），常规万级数据内存判断 <100ms。
                 candidates = q.order_by(Asset.id.desc()).limit(50000).all()
-                rows = []
-                for r in candidates:
-                    if _ip_in_value(query_ip, r.ip or ""):
-                        rows.append(r)
-                        if len(rows) >= max_limit:
-                            break
+                rows = [r for r in candidates if _record_has_ip(r, query_ip)][:ip_hit_cap]
             elif query_net is not None:
-                # keyword 是 CIDR：做网段重叠判断
                 candidates = q.order_by(Asset.id.desc()).limit(50000).all()
-                rows = []
-                for r in candidates:
-                    if _network_overlaps(query_net, r.ip or ""):
-                        rows.append(r)
-                        if len(rows) >= max_limit:
-                            break
+                rows = [r for r in candidates if _record_overlaps_net(r, query_net)][:ip_hit_cap]
             else:
-                # 非 IP keyword：走 ilike 子串匹配
                 if keyword:
                     kw = f"%{keyword}%"
                     q = q.filter(or_(Asset.ip.ilike(kw), Asset.name.ilike(kw),
                                      Asset.identifier.ilike(kw), Asset.owner.ilike(kw)))
                 rows = q.order_by(Asset.id.desc()).limit(max_limit).all()
 
-            return [{
-                "id": r.id, "name": r.name, "ip": r.ip, "identifier": r.identifier,
-                "department": r.department, "owner": r.owner, "type_code": r.type_code,
-                "status": r.status, "criticality": r.criticality,
-            } for r in rows]
+            return _pack(rows)
         finally:
             db.close()
 
+    scope_desc = (
+        "已勾选全部资产类型，不按类型过滤；同一 IP 在主机资产/网段/出口地址等类型下的记录都会返回。"
+        if filter_by_types is None
+        else f"仅检索已勾选类型 {type_codes}；同一 IP 在这些类型下的记录都会返回。"
+    )
     return StructuredTool.from_function(
         name="search_assets",
         description=(
-            f"检索已关联的资产（类型: {type_codes}）。可按关键词/使用单位/类型筛选。"
-            "支持 IP 包含查询：传入单个 IP（如 198.51.100.1）会自动匹配包含该 IP 的"
-            "网段/CIDR/IP范围资产；传入 CIDR（如 198.51.100.0/24）会匹配重叠网段。"
-            "用于回答资产归属、网段查询等问题。"
+            f"检索资产清单。{scope_desc}"
+            "传入单个 IP 会匹配包含该 IP 的网段/CIDR/范围/EIP；"
+            "传入 CIDR 会匹配重叠网段。"
         ),
         args_schema=SearchAssetsArgs,
         coroutine=_coroutine,
@@ -877,10 +977,11 @@ async def run_agent_decision(
         if file_query_tool is not None:
             tools.append(file_query_tool)
             logs.append(_new_log("info", f"已追加文件查询工具(Excel/CSV精确查询)"))
-        asset_tool = _build_asset_tool(enabled_asset_types or [])
-        if asset_tool is not None:
-            tools.append(asset_tool)
-            logs.append(_new_log("info", f"已追加资产检索工具(types={enabled_asset_types})"))
+        if _should_attach_search_assets(enabled_tools, enabled_asset_types):
+            asset_tool = _build_asset_tool(enabled_asset_types or [])
+            if asset_tool is not None:
+                tools.append(asset_tool)
+                logs.append(_new_log("info", f"已追加资产检索工具(types={enabled_asset_types or 'all'})"))
     finally:
         db.close()
 
@@ -974,10 +1075,11 @@ async def run_agent_decision_stream(
         if file_query_tool is not None:
             tools.append(file_query_tool)
             logs.append(_new_log("info", f"已追加文件查询工具(Excel/CSV精确查询)"))
-        asset_tool = _build_asset_tool(enabled_asset_types or [])
-        if asset_tool is not None:
-            tools.append(asset_tool)
-            logs.append(_new_log("info", f"已追加资产检索工具(types={enabled_asset_types})"))
+        if _should_attach_search_assets(enabled_tools, enabled_asset_types):
+            asset_tool = _build_asset_tool(enabled_asset_types or [])
+            if asset_tool is not None:
+                tools.append(asset_tool)
+                logs.append(_new_log("info", f"已追加资产检索工具(types={enabled_asset_types or 'all'})"))
     finally:
         db.close()
 
@@ -1126,3 +1228,5 @@ async def run_agent_decision_stream(
         result = {"response": last_content, **action_decision, "messages": messages_dict, "logs": logs}
 
     yield {"type": "done", "result": result}
+
+
