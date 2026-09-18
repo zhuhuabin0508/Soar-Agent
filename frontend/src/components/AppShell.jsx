@@ -35,8 +35,9 @@ const NAV_GROUPS = [
   {
     title: '智能体编排',
     items: [
-      { to: '/agents', icon: Bot, label: '智能体', perm: ['agent', 'view'] },
+      { subsection: '执行', to: '/agents', icon: Bot, label: '智能体', perm: ['agent', 'view'] },
       {
+        subsection: '执行',
         to: '/workflows',
         icon: FolderKanban,
         label: '工作流',
@@ -47,9 +48,9 @@ const NAV_GROUPS = [
           { to: '/ban-workflow/rules', icon: Filter, label: '触发规则', end: true, perm: ['ban_workflow', 'view'] },
         ],
       },
-      { to: '/skills', icon: Target, label: '技能', perm: ['skill', 'view'] },
-      { to: '/tools', icon: Wrench, label: '工具', perm: ['tool', 'view'] },
-      { to: '/knowledge-base', icon: BookOpen, label: '知识库', perm: ['knowledge_base', 'view'] },
+      { subsection: '能力', to: '/tools', icon: Wrench, label: '工具', perm: ['tool', 'view'] },
+      { subsection: '内容', to: '/skills', icon: Target, label: '技能', perm: ['skill', 'view'] },
+      { subsection: '内容', to: '/knowledge-base', icon: BookOpen, label: '知识库', perm: ['knowledge_base', 'view'] },
     ],
   },
   {
@@ -528,7 +529,7 @@ function AppShell() {
                     {group.title}
                   </div>
                 )}
-                {group.items.map((item) => {
+                {group.items.map((item, itemIdx) => {
                   const hasChildren = item.children && item.children.length > 0
                   const isExpanded = expandedParents.has(item.to)
                   // 父项高亮：自身激活或任一子项激活
@@ -536,8 +537,16 @@ function AppShell() {
                     (c) => location.pathname === c.to
                   )
                   const ItemIcon = item.icon
+                  const showSubsection = !collapsed && item.subsection && (
+                    itemIdx === 0 || group.items[itemIdx - 1]?.subsection !== item.subsection
+                  )
                   return (
                     <div key={item.to} className="flex flex-col gap-1">
+                      {showSubsection && (
+                        <div className="px-3 pt-1.5 pb-0.5 text-[10px] font-medium tracking-wide text-muted-foreground/60">
+                          {item.subsection}
+                        </div>
+                      )}
                       <div className="flex items-center">
                         <NavLink
                           to={item.to}
