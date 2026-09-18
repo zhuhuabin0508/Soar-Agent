@@ -116,6 +116,8 @@ class KnowledgeDocument(Base):
     progress = Column(Integer, nullable=False, default=0)
     # 检索权重（1-10，数值越高优先级越高）
     retrieval_weight = Column(Integer, nullable=False, default=1)
+    enabled = Column(Boolean, nullable=False, default=True)
+    error_message = Column(Text, nullable=True)
 
     kb = relationship("KnowledgeBase", back_populates="documents")
     # 文档下的分段（chunking 产物），级联删除

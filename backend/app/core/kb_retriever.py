@@ -15,7 +15,10 @@
 """
 import logging
 import math
+from datetime import datetime
 from typing import Any
+
+from sqlalchemy import or_
 
 from app.database import SessionLocal
 from app.models.knowledge_base import KnowledgeBase, KnowledgeDocument, KnowledgeSegment
@@ -133,10 +136,25 @@ async def search_kb(kb_id: int, query: str, top_k: int = 5) -> list[dict[str, An
         if kb is None:
             return []
         # 只检索仍存在文档的分段，避免文档已删但分段残留（SQLite 未强制 FK）时脏数据干扰打分
+        now = datetime.now()
         segments = (
             db.query(KnowledgeSegment)
             .join(KnowledgeDocument, KnowledgeDocument.id == KnowledgeSegment.doc_id)
             .filter(KnowledgeSegment.kb_id == kb_id)
+            .filter(KnowledgeDocument.enabled.is_(True))
+            .filter(KnowledgeDocument.status == "available")
+            .filter(
+                or_(
+                    KnowledgeDocument.effective_from.is_(None),
+                    KnowledgeDocument.effective_from <= now,
+                )
+            )
+            .filter(
+                or_(
+                    KnowledgeDocument.effective_to.is_(None),
+                    KnowledgeDocument.effective_to >= now,
+                )
+            )
             .all()
         )
         logger.debug("知识库 %s 共 %d 个分段", kb_id, len(segments))
@@ -173,7 +191,9 @@ async def search_kb(kb_id: int, query: str, top_k: int = 5) -> list[dict[str, An
         kw = (kb.hybrid_keyword_weight or 30) / 100.0 if index_mode == "hybrid" else 0.0
         # vector 模式：纯向量；hybrid：加权；keyword：纯 BM25
         seg_map = {seg.id: seg for seg in segments}
-        doc_map: dict[int, KnowledgeDocument] = {}
+        doc_ids_all = {seg.doc_id for seg in segments}
+        docs = db.query(KnowledgeDocument).filter(KnowledgeDocument.id.in_(doc_ids_all)).all()
+        doc_map = {d.id: d for d in docs}
         combined: dict[int, float] = {}
         for seg in segments:
             b = bm25_norm.get(seg.id, 0.0)
@@ -185,32 +205,26 @@ async def search_kb(kb_id: int, query: str, top_k: int = 5) -> list[dict[str, An
             else:
                 score = b
             if score > 0:
-                combined[seg.id] = score
+                doc = doc_map.get(seg.doc_id)
+                weight = 1
+                if doc is not None:
+                    weight = max(1, min(10, int(doc.retrieval_weight or 1)))
+                combined[seg.id] = score * (0.5 + 0.5 * weight / 10.0)
         if not combined:
             return []
 
-        # 4. Rerank（轻量：查询词在标题命中 + 段内密度加权）
         if kb.rerank_enabled:
-            doc_ids = {seg.doc_id for seg in segments}
-            docs = db.query(KnowledgeDocument).filter(KnowledgeDocument.id.in_(doc_ids)).all()
-            doc_map = {d.id: d for d in docs}
             q_terms_set = set(query_tokens)
             for sid, sc in combined.items():
                 seg = seg_map[sid]
                 doc = doc_map.get(seg.doc_id)
                 title = (doc.title or "") if doc else ""
                 title_hit = 1.0 if any(t in title.lower() for t in q_terms_set) else 0.0
-                # 段内查询词密度
                 seg_toks = tokenize(seg.content or "")
                 density = sum(1 for t in seg_toks if t in q_terms_set) / max(1, len(seg_toks))
                 combined[sid] = sc * (1.0 + 0.15 * title_hit + 0.25 * min(density, 1.0))
 
-        # 5. 排序 + top_k
         ranked = sorted(combined.items(), key=lambda x: x[1], reverse=True)[: max(top_k, 1)]
-        if not doc_map:
-            doc_ids = {seg_map[sid].doc_id for sid, _ in ranked}
-            docs = db.query(KnowledgeDocument).filter(KnowledgeDocument.id.in_(doc_ids)).all()
-            doc_map = {d.id: d for d in docs}
 
         results: list[dict[str, Any]] = []
         for sid, score in ranked:
@@ -220,6 +234,10 @@ async def search_kb(kb_id: int, query: str, top_k: int = 5) -> list[dict[str, An
                 "segment_id": seg.id,
                 "doc_id": seg.doc_id,
                 "title": (doc.title if doc else "") or f"文档 #{seg.doc_id}",
+                "file_name": (doc.file_name if doc else None),
+                "source_type": (doc.source_type if doc else None),
+                "category": (doc.category if doc else None),
+                "retrieval_weight": (doc.retrieval_weight if doc else 1),
                 "content": seg.content,
                 "score": round(score, 4),
                 "bm25_score": round(bm25_norm.get(sid, 0.0), 4),

@@ -1,9 +1,9 @@
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import {
   BookOpen, FileText, Paperclip, Globe, Settings, ClipboardList, RefreshCw, Lightbulb,
   Check, X, Loader2, File, Sheet, Braces, FileCode, AlertTriangle,
   ChevronDown, ChevronRight, ChevronUp,
-  Search, ArrowUpDown, Database, ShieldCheck, Activity, Zap, Target, Share2,
+  Search, ArrowUpDown, Database, ShieldCheck, Activity, Zap, Target, Share2, Download, EyeOff,
 } from 'lucide-react'
 import { knowledgeBases as kbApi, llmConfigs as llmApi } from '../api/client'
 import { Modal } from '../components/Dialog'
@@ -72,7 +72,8 @@ function fileBadge(fileType) {
 
 // 分段模式选项（5种，对标 Dify）
 const CHUNK_MODES = [
-  { value: 'auto', label: '自动解析', hint: '系统自动根据段落、标点切分，自动识别 IP 列表/日志等结构化数据按行切分' },
+  { value: 'auto', label: '自动解析', hint: '按段落/标点切分；Markdown 有标题时按标题切分（接近 Dify / LangChain）' },
+  { value: 'heading', label: '按标题切分', hint: '按 Markdown # 标题分块，适合手册、方案、技术文档（FastGPT / RAGFlow 常用）' },
   { value: 'line', label: '按行切分', hint: '每行或每N行一段，适合 IP 列表、日志、CSV 表格等行级数据' },
   { value: 'fixed_length', label: '按固定长度切分', hint: '设置每个块的最大字符数，如 500' },
   { value: 'delimiter', label: '按分隔符切分', hint: '自定义分隔符（如 \\n\\n、---），适合结构化文档' },
@@ -118,6 +119,8 @@ function KBFormModal({ open, initial, onClose, onSubmit, saving }) {
   const [embeddingConfigs, setEmbeddingConfigs] = useState([])
   const [loadingConfigs, setLoadingConfigs] = useState(false)
 
+  const [createFiles, setCreateFiles] = useState([])
+
   const [form, setForm] = useState(() => ({
     name: '',
     description: '',
@@ -154,6 +157,7 @@ function KBFormModal({ open, initial, onClose, onSubmit, saving }) {
 
   useEffect(() => {
     if (open) {
+      setCreateFiles([])
       setForm({
         name: '',
         description: '',
@@ -218,12 +222,12 @@ function KBFormModal({ open, initial, onClose, onSubmit, saving }) {
           </button>
           <button
             type="button"
-            onClick={() => onSubmit(form)}
+            onClick={() => onSubmit(form, createFiles)}
             disabled={saving || !form.name || !canEdit}
             title={!canEdit ? '无编辑权限（仅 owner 或被授权用户可编辑）' : undefined}
             className="btn-primary"
           >
-            {saving ? '保存中…' : '保存'}
+            {saving ? '保存中…' : initial ? '保存' : (createFiles.length ? `创建并上传 ${createFiles.length} 个文件` : '创建')}
           </button>
         </>
       }
@@ -244,6 +248,30 @@ function KBFormModal({ open, initial, onClose, onSubmit, saving }) {
           </div>
         </div>
 
+        {!initial && (
+          <div className="flex flex-col gap-2 rounded-md border border-border bg-card/40 p-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">初始文档（可选）</h3>
+            <input
+              type="file"
+              multiple
+              className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-foreground hover:file:bg-primary"
+              onChange={(e) => setCreateFiles(Array.from(e.target.files || []))}
+            />
+            <div className="text-[11px] text-muted-foreground/70">
+              支持同时选择多个 PDF / Word / Excel / TXT / Markdown / CSV。创建后仍可继续追加。
+            </div>
+            {createFiles.length > 0 && (
+              <ul className="max-h-28 overflow-y-auto text-[11px] text-muted-foreground">
+                {createFiles.map((f) => (
+                  <li key={`${f.name}-${f.size}-${f.lastModified}`} className="truncate">
+                    {f.name}（{(f.size / 1024).toFixed(1)} KB）
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
         {/* ===== 分段设置 ===== */}
         <div className="flex flex-col gap-3 rounded-md border border-border bg-card/40 p-4">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">分段设置（解析与切片）</h3>
@@ -255,6 +283,7 @@ function KBFormModal({ open, initial, onClose, onSubmit, saving }) {
                 { label: 'IP / 资产台账', mode: 'line', reason: '每行一条 IP/资产，按行切分精确匹配' },
                 { label: 'FAQ / 问答对', mode: 'qa', reason: '自动识别问答结构，分别提取 Q 和 A' },
                 { label: '普通文档', mode: 'auto', reason: '系统自动根据段落、标点切分' },
+                { label: 'Markdown 手册', mode: 'heading', reason: '按 # 标题分块，适合方案/制度/技术文档' },
                 { label: '日志文件', mode: 'fixed_length', reason: '按固定长度切分，适合结构化日志' },
               ].map((sc) => (
                 <button
@@ -605,13 +634,11 @@ function DocEditModal({ open, initial, onClose, onSubmit, saving, canEdit = true
 
 // ===== 新增知识文档弹窗（5维度渐进式表单 + 实时预览） =====
 function DocAddModal({ open, kbConfig, onClose, onSubmit, saving }) {
-  // 文档来源 tab：upload / web / text
-  const [sourceTab, setSourceTab] = useState('text')
-  // 基础配置
+  const [sourceTab, setSourceTab] = useState('upload')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [content, setContent] = useState('')
-  const [uploadFile, setUploadFile] = useState(null)
+  const [uploadFiles, setUploadFiles] = useState([])
   const [webUrl, setWebUrl] = useState('')
   // 高级配置展开
   const [showAdvanced, setShowAdvanced] = useState(false)
@@ -629,11 +656,11 @@ function DocAddModal({ open, kbConfig, onClose, onSubmit, saving }) {
 
   useEffect(() => {
     if (open) {
-      setSourceTab('text')
+      setSourceTab('upload')
       setTitle('')
       setDescription('')
       setContent('')
-      setUploadFile(null)
+      setUploadFiles([])
       setWebUrl('')
       setShowAdvanced(false)
       setAutoChunk(true)
@@ -665,7 +692,7 @@ function DocAddModal({ open, kbConfig, onClose, onSubmit, saving }) {
   }, [content, autoChunk, chunkSize, chunkOverlap])
 
   const canSubmit = () => {
-    if (sourceTab === 'upload') return !!uploadFile
+    if (sourceTab === 'upload') return uploadFiles.length > 0
     if (sourceTab === 'web') return !!webUrl.trim()
     return !!content.trim()
   }
@@ -676,7 +703,7 @@ function DocAddModal({ open, kbConfig, onClose, onSubmit, saving }) {
       if (t.key.trim()) tagObj[t.key.trim()] = t.value.trim()
     })
     const meta = {
-      title: title || (uploadFile?.name || webUrl || '未命名文档'),
+      title: title || (uploadFiles[0]?.name || webUrl || '未命名文档'),
       description,
       category: category || null,
       tags: Object.keys(tagObj).length > 0 ? tagObj : null,
@@ -687,15 +714,15 @@ function DocAddModal({ open, kbConfig, onClose, onSubmit, saving }) {
     if (sourceTab === 'text') {
       onSubmit({ ...meta, sourceType: 'text', content })
     } else if (sourceTab === 'upload') {
-      onSubmit({ ...meta, sourceType: 'upload', file: uploadFile })
+      onSubmit({ ...meta, sourceType: 'upload', files: uploadFiles })
     } else if (sourceTab === 'web') {
       onSubmit({ ...meta, sourceType: 'web', url: webUrl })
     }
   }
 
   const sourceTabs = [
-    { value: 'text', label: '文本粘贴', icon: <FileText className="h-4 w-4" /> },
     { value: 'upload', label: '本地文件', icon: <Paperclip className="h-4 w-4" /> },
+    { value: 'text', label: '文本粘贴', icon: <FileText className="h-4 w-4" /> },
     { value: 'web', label: '网页抓取', icon: <Globe className="h-4 w-4" /> },
   ]
 
@@ -716,7 +743,7 @@ function DocAddModal({ open, kbConfig, onClose, onSubmit, saving }) {
             disabled={saving || !canSubmit()}
             className="btn-primary"
           >
-            {saving ? '处理中…' : '添加文档'}
+            {saving ? '处理中…' : sourceTab === 'upload' && uploadFiles.length > 1 ? `添加 ${uploadFiles.length} 个文件` : '添加文档'}
           </button>
         </>
       }
@@ -758,19 +785,25 @@ function DocAddModal({ open, kbConfig, onClose, onSubmit, saving }) {
             <div className="flex flex-col gap-2 rounded-md border border-border bg-card/40 p-4">
               <input
                 type="file"
+                multiple
                 className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-foreground hover:file:bg-primary"
                 onChange={(e) => {
-                  setUploadFile(e.target.files?.[0] || null)
-                  if (e.target.files?.[0]) setTitle(e.target.files[0].name.replace(/\.[^.]+$/, ''))
+                  const list = Array.from(e.target.files || [])
+                  setUploadFiles(list)
+                  if (list[0] && !title) setTitle(list[0].name.replace(/\.[^.]+$/, ''))
                 }}
               />
               <div className="text-[11px] text-muted-foreground/70">
-                支持 PDF / Word / Excel / TXT / Markdown / CSV，单文件 ≤ 50MB
+                可多选，支持 PDF / Word / Excel / TXT / Markdown / CSV，单文件 ≤ 50MB
               </div>
-              {uploadFile && (
-                <div className="text-[11px] text-muted-foreground">
-                  已选择：{uploadFile.name}（{(uploadFile.size / 1024).toFixed(1)} KB）
-                </div>
+              {uploadFiles.length > 0 && (
+                <ul className="max-h-28 overflow-y-auto text-[11px] text-muted-foreground">
+                  {uploadFiles.map((f) => (
+                    <li key={`${f.name}-${f.size}-${f.lastModified}`} className="truncate">
+                      {f.name}（{(f.size / 1024).toFixed(1)} KB）
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
           )}
@@ -996,6 +1029,7 @@ const DOC_STATUS_MAP = {
   indexing: { label: '索引中', color: 'bg-info/20 text-info', icon: <RefreshCw className="inline h-3 w-3" /> },
   available: { label: '就绪', color: 'bg-success/20 text-success', icon: <Check className="inline h-3 w-3" /> },
   failed: { label: '失败', color: 'bg-destructive/20 text-destructive', icon: <X className="inline h-3 w-3" /> },
+  disabled: { label: '已停用', color: 'bg-muted text-muted-foreground', icon: <EyeOff className="inline h-3 w-3" /> },
 }
 
 // 分段查看弹窗：展示文档解析→分段→向量化的完整过程
@@ -1267,6 +1301,10 @@ function KnowledgeBase() {
   const [kbSort, setKbSort] = useState('updated') // updated | created | docs
   // 统一搜索 Tab
   const [searchTab, setSearchTab] = useState('semantic') // semantic | file
+  const [docSearch, setDocSearch] = useState('')
+  const [selectedDocIds, setSelectedDocIds] = useState([])
+  const replaceInputRef = useRef(null)
+  const [replaceTargetId, setReplaceTargetId] = useState(null)
 
   // 新建/编辑文档
   const [newDocTitle, setNewDocTitle] = useState('')
@@ -1359,6 +1397,9 @@ function KnowledgeBase() {
       if (!Array.isArray(data)) return
       setDocs((prev) => {
         const dataMap = new Map(data.map((d) => [d.id, d]))
+        const prevIds = prev.map((d) => d.id).join(',')
+        const nextIds = data.map((d) => d.id).join(',')
+        if (prevIds !== nextIds) return data
         let changed = false
         const next = prev.map((d) => {
           const updated = dataMap.get(d.id)
@@ -1366,16 +1407,16 @@ function KnowledgeBase() {
           if (
             updated.status !== d.status ||
             updated.progress !== d.progress ||
-            updated.segment_count !== d.segment_count
+            updated.segment_count !== d.segment_count ||
+            updated.enabled !== d.enabled ||
+            updated.error_message !== d.error_message
           ) {
             changed = true
             return updated
           }
           return d
         })
-        // 有新增或删除的文档时也需要更新
-        if (data.length !== prev.length) changed = true
-        return changed ? (data.length !== prev.length ? data : next) : prev
+        return changed ? next : prev
       })
     } catch {
       // 静默失败，不影响用户体验
@@ -1385,6 +1426,8 @@ function KnowledgeBase() {
   useEffect(() => {
     if (selectedId) loadDocs(selectedId)
     else setDocs([])
+    setSelectedDocIds([])
+    setSearchResults([])
   }, [selectedId, loadDocs])
 
   // 轮询：有文档处于解析/索引中时，每 2.5s 静默刷新进度
@@ -1398,17 +1441,29 @@ function KnowledgeBase() {
   }, [docs, selectedId, pollDocs])
 
   // 新建/编辑知识库
-  const handleKbSubmit = async (form) => {
+  const handleKbSubmit = async (form, files = []) => {
     setKbSaving(true)
     try {
       if (kbEditing) {
         await kbApi.update(kbEditing.id, form)
+        setKbFormOpen(false)
+        setKbEditing(null)
+        await loadKb()
       } else {
-        await kbApi.create(form)
+        const created = await kbApi.create(form)
+        setKbFormOpen(false)
+        setKbEditing(null)
+        if (created?.id) setSelectedId(created.id)
+        if (created?.id && files.length > 0) {
+          const res = await kbApi.uploadDocuments(created.id, files)
+          const failed = res?.errors?.length || 0
+          const ok = res?.documents?.length || 0
+          if (failed) toast.warning(`知识库已创建：成功 ${ok} 个，失败 ${failed} 个`)
+          else toast.success(`知识库已创建，已上传 ${ok} 个文件`)
+        }
+        await loadKb()
+        if (created?.id) await loadDocs(created.id)
       }
-      setKbFormOpen(false)
-      setKbEditing(null)
-      await loadKb()
     } catch (err) {
       toast.error(`保存失败：${err.message || err}`)
     } finally {
@@ -1496,20 +1551,13 @@ function KnowledgeBase() {
           retrieval_weight: data.retrieval_weight,
         })
       } else if (data.sourceType === 'upload') {
-        // 文件上传：后端 upload 端点暂不支持 body 元数据，上传后用返回的 doc.id 更新元数据
-        const uploadedDoc = await kbApi.uploadDocument(selectedId, data.file)
-        // 上传时标题由文件名解析，若有自定义标题或元数据则更新（内容不变不会触发重新分段）
-        if (uploadedDoc?.id && (data.title || data.description || data.category || data.tags)) {
-          await kbApi.updateDocument(selectedId, uploadedDoc.id, {
-            title: data.title || uploadedDoc.title,
-            content: uploadedDoc.content,
-            description: data.description,
-            category: data.category,
-            tags: data.tags,
-            effective_from: data.effective_from,
-            effective_to: data.effective_to,
-            retrieval_weight: data.retrieval_weight,
-          })
+        const files = data.files || (data.file ? [data.file] : [])
+        if (files.length === 1) {
+          await kbApi.uploadDocument(selectedId, files[0])
+        } else {
+          const res = await kbApi.uploadDocuments(selectedId, files)
+          const failed = res?.errors?.length || 0
+          if (failed) toast.warning(`部分文件失败：${failed} 个`)
         }
       } else if (data.sourceType === 'web') {
         await kbApi.fetchUrlDocument(selectedId, {
@@ -1600,6 +1648,57 @@ function KnowledgeBase() {
     }
   }
 
+  const handleToggleDocEnabled = async (doc) => {
+    if (!selectedId) return
+    const next = !(doc.enabled !== false)
+    try {
+      await kbApi.setDocumentEnabled(selectedId, doc.id, next)
+      setDocs((prev) => prev.map((d) => (d.id === doc.id ? { ...d, enabled: next } : d)))
+    } catch (err) {
+      toast.error(err.message || '更新失败')
+    }
+  }
+
+  const handleBatchDocs = async (action) => {
+    if (!selectedId || selectedDocIds.length === 0) return
+    if (action === 'delete') {
+      const _ok = await confirm({ message: `确定删除选中的 ${selectedDocIds.length} 篇文档吗？`, variant: 'danger', confirmText: '确定删除' })
+      if (!_ok) return
+    }
+    try {
+      await kbApi.batchDocuments(selectedId, action, selectedDocIds)
+      setSelectedDocIds([])
+      await loadDocs(selectedId)
+      toast.success('已完成批量操作')
+    } catch (err) {
+      toast.error(err.message || '批量操作失败')
+    }
+  }
+
+  const handleReplacePick = (docId) => {
+    setReplaceTargetId(docId)
+    replaceInputRef.current?.click()
+  }
+
+  const handleReplaceFileChange = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !selectedId || !replaceTargetId) return
+    try {
+      await kbApi.replaceDocumentFile(selectedId, replaceTargetId, file)
+      toast.success('已替换原文件，正在重新解析')
+      await loadDocs(selectedId)
+    } catch (err) {
+      toast.error(err.message || '替换失败')
+    } finally {
+      setReplaceTargetId(null)
+    }
+  }
+
+  const toggleDocSelect = (docId) => {
+    setSelectedDocIds((prev) => (prev.includes(docId) ? prev.filter((id) => id !== docId) : [...prev, docId]))
+  }
+
   const handleSearch = async () => {
     if (!selectedId) return
     if (!query.trim()) {
@@ -1637,6 +1736,16 @@ function KnowledgeBase() {
   }
 
   const selectedKb = kbList.find((k) => k.id === selectedId)
+  const canEditKb = canEditResource(selectedKb)
+  const filteredDocs = useMemo(() => {
+    const kw = docSearch.trim().toLowerCase()
+    if (!kw) return docs
+    return docs.filter((d) =>
+      (d.title || '').toLowerCase().includes(kw) ||
+      (d.file_name || '').toLowerCase().includes(kw) ||
+      (d.category || '').toLowerCase().includes(kw)
+    )
+  }, [docs, docSearch])
 
   // 列表搜索 + 排序
   const filteredKbList = useMemo(() => {
@@ -1994,11 +2103,13 @@ function KnowledgeBase() {
               {/* 滚动区：新增文档按钮 + 文档列表 + 搜索 */}
               <div className="flex-1 overflow-y-auto p-4">
                 {/* 新增文档按钮 */}
-                <div className="mb-4">
+                <div className="mb-4 flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => setDocAddOpen(true)}
-                    className="btn-primary btn-sm w-full"
+                    disabled={!canEditKb}
+                    title={!canEditKb ? '无编辑权限，无法新增文档' : '向当前知识库追加文件或文本'}
+                    className="btn-primary btn-sm flex-1"
                   >
                     + 新增知识文档
                   </button>
@@ -2006,31 +2117,70 @@ function KnowledgeBase() {
 
                 {/* 文档列表 */}
                 <div className="mb-4">
-                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    文档列表
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      文档列表
+                    </div>
+                    <span className="text-[11px] text-muted-foreground/60">
+                      {docs.filter((d) => d.enabled !== false).length}/{docs.length} 参与检索
+                    </span>
                   </div>
+                  {docs.length > 0 && (
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <input
+                        className={`${inputBaseCls} min-w-[160px] flex-1 text-xs`}
+                        placeholder="搜索文件名 / 标题…"
+                        value={docSearch}
+                        onChange={(e) => setDocSearch(e.target.value)}
+                      />
+                      {canEditKb && selectedDocIds.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1">
+                          <span className="text-[11px] text-muted-foreground">已选 {selectedDocIds.length}</span>
+                          <button type="button" className="btn-secondary btn-sm" onClick={() => handleBatchDocs('enable')}>启用检索</button>
+                          <button type="button" className="btn-secondary btn-sm" onClick={() => handleBatchDocs('disable')}>停用检索</button>
+                          <button type="button" className="btn-secondary btn-sm" onClick={() => handleBatchDocs('reparse')}>重建索引</button>
+                          <button type="button" className="btn-secondary btn-sm text-destructive" onClick={() => handleBatchDocs('delete')}>删除</button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {loadingDocs ? (
                     <div className="p-4 text-center text-xs text-muted-foreground/70">加载中...</div>
                   ) : docs.length === 0 ? (
                     <div className="flex flex-col items-center gap-3 py-8 text-center">
                       <FileText className="h-10 w-10 text-muted-foreground/30" />
-                      <div className="text-xs text-muted-foreground/60">暂无文档，点击上方按钮添加</div>
+                      <div className="text-xs text-muted-foreground/60">暂无文档，点击上方按钮随时追加文件</div>
                     </div>
+                  ) : filteredDocs.length === 0 ? (
+                    <div className="py-6 text-center text-xs text-muted-foreground/60">没有匹配的文档</div>
                   ) : (
                     <div className="flex flex-col gap-2">
-                      {docs.map((doc) => {
-                        const isUpload = doc.source_type === 'upload'
+                      {filteredDocs.map((doc) => {
+                        const isUpload = doc.source_type === 'upload' || doc.has_original_file
                         const badge = isUpload ? fileBadge(doc.file_type) : null
-                        const statusInfo = DOC_STATUS_MAP[doc.status] || DOC_STATUS_MAP.available
+                        const isEnabled = doc.enabled !== false
+                        const statusInfo = !isEnabled
+                          ? DOC_STATUS_MAP.disabled
+                          : (DOC_STATUS_MAP[doc.status] || DOC_STATUS_MAP.available)
+                        const charCount = doc.char_count ?? (doc.content || '').length
+                        const checked = selectedDocIds.includes(doc.id)
                         return (
                           <div
                             key={doc.id}
-                            className="rounded-md border border-border bg-card/40 p-4"
+                            className={`rounded-md border bg-card/40 p-4 ${isEnabled ? 'border-border' : 'border-border/60 opacity-70'}`}
                           >
                             <div className="flex items-start justify-between">
                               <div className="min-w-0 flex-1">
                                 <div className="flex min-w-0 items-center gap-2">
-                                  {isUpload && badge && (
+                                  {canEditKb && (
+                                    <input
+                                      type="checkbox"
+                                      className="h-3.5 w-3.5 accent-primary"
+                                      checked={checked}
+                                      onChange={() => toggleDocSelect(doc.id)}
+                                    />
+                                  )}
+                                  {badge && (
                                     <span
                                       className="shrink-0 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary"
                                       title={`文件类型：${badge.label}`}
@@ -2048,7 +2198,7 @@ function KnowledgeBase() {
                                     {statusInfo.icon} {statusInfo.label}
                                   </span>
                                 </div>
-                                {isUpload && doc.file_name && (
+                                {doc.file_name && (
                                   <div className="mt-0.5 flex items-center gap-1 truncate text-[11px] text-muted-foreground">
                                     <Paperclip className="h-3.5 w-3.5 shrink-0" />
                                     <span className="truncate">{doc.file_name}</span>
@@ -2062,7 +2212,7 @@ function KnowledgeBase() {
                                   <span className="text-muted-foreground/40">|</span>
                                   <span className="text-primary">{doc.segment_count ?? 0} 段</span>
                                   <span className="text-muted-foreground/40">/</span>
-                                  <span>{(doc.content || '').length.toLocaleString()} 字符</span>
+                                  <span>{Number(charCount).toLocaleString()} 字符</span>
                                   {doc.file_size != null && (
                                     <>
                                       <span className="text-muted-foreground/40">/</span>
@@ -2090,7 +2240,44 @@ function KnowledgeBase() {
                                   </div>
                                 )}
                               </div>
-                              <div className="flex shrink-0 gap-1.5">
+                              <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                                {canEditKb && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleDocEnabled(doc)}
+                                    title={isEnabled ? '停用后不参与智能体检索（Dify 文档开关）' : '启用检索'}
+                                    className="rounded border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:border-primary hover:text-primary"
+                                  >
+                                    {isEnabled ? '停用' : '启用'}
+                                  </button>
+                                )}
+                                {canEditKb && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleReplacePick(doc.id)}
+                                    title="用新文件覆盖这份文档并重新解析"
+                                    className="rounded border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:border-primary hover:text-primary"
+                                  >
+                                    替换文件
+                                  </button>
+                                )}
+                                {doc.has_original_file && (
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      try {
+                                        await kbApi.downloadDocumentFile(selectedId, doc.id, doc.file_name)
+                                      } catch (err) {
+                                        toast.error(err.message || '下载失败')
+                                      }
+                                    }}
+                                    title="下载当时上传的原始文件"
+                                    className="inline-flex items-center gap-1 rounded border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:border-primary hover:text-primary"
+                                  >
+                                    <Download className="h-3 w-3" />
+                                    原文件
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() => handleViewSegments(doc)}
@@ -2101,9 +2288,14 @@ function KnowledgeBase() {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    setDocEditing(doc)
-                                    setDocEditOpen(true)
+                                  onClick={async () => {
+                                    try {
+                                      const full = await kbApi.getDocument(selectedId, doc.id)
+                                      setDocEditing(full)
+                                      setDocEditOpen(true)
+                                    } catch (err) {
+                                      toast.error(err.message || '加载文档失败')
+                                    }
                                   }}
                                   className="rounded border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:border-primary hover:text-primary"
                                 >
@@ -2118,9 +2310,9 @@ function KnowledgeBase() {
                                 </button>
                               </div>
                             </div>
-                            {doc.content && (
-                              <pre className="mt-2 max-h-32 w-full overflow-auto whitespace-pre-wrap break-words rounded bg-background p-2 font-mono text-[11px] text-muted-foreground ring-1 ring-border">
-                                {doc.content}
+                            {doc.content_preview && (
+                              <pre className="mt-2 max-h-20 w-full overflow-auto whitespace-pre-wrap break-words rounded bg-background p-2 font-mono text-[11px] text-muted-foreground ring-1 ring-border">
+                                {doc.content_preview}
                               </pre>
                             )}
                           </div>
@@ -2142,7 +2334,7 @@ function KnowledgeBase() {
                           : 'border-transparent text-muted-foreground hover:text-foreground'
                       }`}
                     >
-                      <Search className="h-3.5 w-3.5" /> 语义检索
+                      <Search className="h-3.5 w-3.5" /> 命中测试
                     </button>
                     <button
                       type="button"
@@ -2161,7 +2353,7 @@ function KnowledgeBase() {
                     <>
                       <div className="mb-1.5 flex items-start gap-1 text-[10px] text-muted-foreground/60">
                         <Lightbulb className="mt-0.5 h-3 w-3 shrink-0" />
-                        <span>用自然语言提问，返回最相关的文档分段。适合语义理解和问答场景。</span>
+                        <span>用真实问法做命中测试（Dify Hit Testing）：看会召回哪一段、分数如何构成。</span>
                       </div>
                       <div className="flex gap-2">
                         <input
@@ -2179,14 +2371,14 @@ function KnowledgeBase() {
                           disabled={searching}
                           className="btn-primary btn-sm shrink-0"
                         >
-                          {searching ? '搜索中…' : '搜索'}
+                          {searching ? '测试中…' : '测试'}
                         </button>
                       </div>
                       {searchResults.length > 0 && (
                         <div className="mt-3 flex flex-col gap-2">
                           <div className="flex items-start gap-1 text-[10px] text-muted-foreground/60">
                             <Target className="h-3 w-3 shrink-0 mt-0.5" />
-                            <span>命中 {searchResults.length} 段，分数 = 综合相似度（BM25 + 向量语义融合）</span>
+                            <span>命中 {searchResults.length} 段；已排除停用/过期文档，分数含检索权重</span>
                           </div>
                           {searchResults.map((r, idx) => (
                             <div
@@ -2204,12 +2396,23 @@ function KnowledgeBase() {
                                   <div className="min-w-0 truncate text-sm font-medium text-foreground">
                                     {r.title || `文档 #${r.doc_id}`}
                                   </div>
+                                  {r.file_name && (
+                                    <span className="hidden max-w-[140px] truncate text-[10px] text-muted-foreground sm:inline">
+                                      {r.file_name}
+                                    </span>
+                                  )}
                                 </div>
                                 <span className="shrink-0 rounded bg-success/20 px-2 py-0.5 text-[10px] font-medium text-success">
                                   {(r.score ?? 0).toFixed(4)}
                                 </span>
                               </div>
                               {/* 分数明细 */}
+                              <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-secondary">
+                                <div
+                                  className="h-full rounded-full bg-primary"
+                                  style={{ width: `${Math.min(100, Math.round((r.score || 0) * 100))}%` }}
+                                />
+                              </div>
                               <div className="mt-1.5 flex flex-wrap gap-1.5">
                                 <span className="rounded bg-warning/15 px-1.5 py-0.5 text-[9px] text-warning" title="BM25 关键词匹配分数（归一化）">
                                   BM25: {(r.bm25_score ?? 0).toFixed(4)}
@@ -2217,6 +2420,11 @@ function KnowledgeBase() {
                                 <span className="rounded bg-info/15 px-1.5 py-0.5 text-[9px] text-info" title="向量语义余弦相似度（归一化）">
                                   向量: {(r.vector_score ?? 0).toFixed(4)}
                                 </span>
+                                {r.retrieval_weight != null && (
+                                  <span className="rounded bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">
+                                    权重 {r.retrieval_weight}
+                                  </span>
+                                )}
                               </div>
                               {r.content && (
                                 <pre className="mt-1.5 max-h-28 w-full overflow-auto whitespace-pre-wrap break-words rounded bg-card p-2 font-mono text-[11px] text-muted-foreground ring-1 ring-border">
@@ -2288,6 +2496,13 @@ function KnowledgeBase() {
           )}
         </main>
       </div>
+
+      <input
+        ref={replaceInputRef}
+        type="file"
+        className="hidden"
+        onChange={handleReplaceFileChange}
+      />
 
       {/* 知识库编辑/新建弹窗 */}
       <KBFormModal

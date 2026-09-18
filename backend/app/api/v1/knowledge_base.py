@@ -4,6 +4,7 @@ import os
 import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from typing import Any
@@ -15,7 +16,7 @@ from app.database import get_db
 from app.dependencies import check_resource_ownership, compute_can_edit_ids, get_current_user, require_role, resource_can_edit
 from app.models.knowledge_base import KnowledgeBase, KnowledgeDocument, KnowledgeSegment
 from app.models.user import User
-from app.schemas.common import to_dict, to_dict_list
+from app.schemas.common import to_dict
 
 logger = logging.getLogger(__name__)
 
@@ -80,10 +81,17 @@ class DocBase(BaseModel):
 
 
 class SearchRequest(BaseModel):
-    """检索请求体。"""
-
     query: str = Field(..., description="查询字符串")
     top_k: int = Field(5, description="返回文档数量")
+
+
+class DocEnabledBody(BaseModel):
+    enabled: bool = True
+
+
+class BatchDocsBody(BaseModel):
+    action: str = Field(..., description="enable / disable / delete / reparse")
+    ids: list[int] = Field(default_factory=list)
 
 
 def _kb_to_dict(kb: KnowledgeBase) -> dict:
@@ -91,6 +99,109 @@ def _kb_to_dict(kb: KnowledgeBase) -> dict:
     data = to_dict(kb)
     data["doc_count"] = len(kb.documents) if kb.documents is not None else 0
     return data
+
+
+def _doc_public_dict(doc: KnowledgeDocument, *, include_content: bool = False) -> dict:
+    data = to_dict(doc, exclude={"file_path"})
+    content = data.get("content") or ""
+    if not include_content:
+        data.pop("content", None)
+        data["content_preview"] = content[:240]
+        data["char_count"] = len(content)
+    else:
+        data["char_count"] = len(content)
+        data["content_preview"] = content[:240]
+    data["has_original_file"] = bool(doc.file_path)
+    return data
+
+
+async def _save_upload_as_document(
+    kb_id: int,
+    original_filename: str,
+    file_bytes: bytes,
+    db: Session,
+) -> KnowledgeDocument:
+    title, file_type = parse_filename(original_filename)
+    if not title:
+        title = original_filename
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    saved_filename = f"{uuid.uuid4().hex}_{original_filename}"
+    saved_path = os.path.join(UPLOAD_DIR, saved_filename)
+    file_size = len(file_bytes)
+    with open(saved_path, "wb") as f:
+        f.write(file_bytes)
+    logger.info("文件已保存: path=%s, size=%s bytes", saved_path, file_size)
+    content = await parse_file_content(saved_path, file_type)
+    logger.info("文件解析完成: type=%s, content_len=%s", file_type, len(content or ""))
+    doc = KnowledgeDocument(
+        kb_id=kb_id,
+        title=title,
+        content=content,
+        source_type="upload",
+        file_name=original_filename,
+        file_type=file_type,
+        file_size=file_size,
+        file_path=saved_filename,
+        status="parsing",
+        progress=0,
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+    logger.info("上传文档已入库: id=%s, title=%s, content_len=%s, 启动后台分段", doc.id, doc.title, len(doc.content or ""))
+    import asyncio
+    from app.core.kb_service import ingest_document_bg
+
+    asyncio.create_task(ingest_document_bg(doc.id, kb_id))
+    return doc
+
+
+def _unlink_upload(file_path: str | None) -> None:
+    if not file_path:
+        return
+    abs_path = os.path.join(UPLOAD_DIR, file_path)
+    try:
+        if os.path.isfile(abs_path):
+            os.remove(abs_path)
+    except OSError as exc:
+        logger.warning("删除知识库附件失败: path=%s, err=%s", abs_path, exc)
+
+
+async def _overwrite_document_file(
+    doc: KnowledgeDocument,
+    original_filename: str,
+    file_bytes: bytes,
+    db: Session,
+    kb_id: int,
+) -> KnowledgeDocument:
+    title, file_type = parse_filename(original_filename)
+    if not title:
+        title = original_filename
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    saved_filename = f"{uuid.uuid4().hex}_{original_filename}"
+    saved_path = os.path.join(UPLOAD_DIR, saved_filename)
+    with open(saved_path, "wb") as f:
+        f.write(file_bytes)
+    content = await parse_file_content(saved_path, file_type)
+    old_path = doc.file_path
+    doc.title = title
+    doc.content = content
+    doc.source_type = "upload"
+    doc.file_name = original_filename
+    doc.file_type = file_type
+    doc.file_size = len(file_bytes)
+    doc.file_path = saved_filename
+    doc.status = "parsing"
+    doc.progress = 0
+    doc.error_message = None
+    db.commit()
+    db.refresh(doc)
+    _unlink_upload(old_path)
+    import asyncio
+    from app.core.kb_service import ingest_document_bg
+
+    asyncio.create_task(ingest_document_bg(doc.id, kb_id))
+    return doc
 
 
 @router.get("")
@@ -276,14 +387,62 @@ def list_documents(
     kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
     if kb is None:
         raise HTTPException(status_code=404, detail="KnowledgeBase not found")
-    check_resource_ownership(current_user, db, "knowledge_base", kb_id, kb)
     docs = (
         db.query(KnowledgeDocument)
         .filter(KnowledgeDocument.kb_id == kb_id)
         .order_by(KnowledgeDocument.created_at.desc())
         .all()
     )
-    return to_dict_list(docs)
+    return [_doc_public_dict(d, include_content=False) for d in docs]
+
+
+@router.get("/{kb_id}/documents/{doc_id}")
+def get_document(
+    kb_id: int,
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    doc = (
+        db.query(KnowledgeDocument)
+        .filter(KnowledgeDocument.id == doc_id, KnowledgeDocument.kb_id == kb_id)
+        .first()
+    )
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
+    if kb is None:
+        raise HTTPException(status_code=404, detail="KnowledgeBase not found")
+    return _doc_public_dict(doc, include_content=True)
+
+
+@router.get("/{kb_id}/documents/{doc_id}/file")
+def download_document_file(
+    kb_id: int,
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    doc = (
+        db.query(KnowledgeDocument)
+        .filter(KnowledgeDocument.id == doc_id, KnowledgeDocument.kb_id == kb_id)
+        .first()
+    )
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
+    if kb is None:
+        raise HTTPException(status_code=404, detail="KnowledgeBase not found")
+    if not doc.file_path:
+        raise HTTPException(status_code=404, detail="该文档没有保存原始文件")
+    abs_path = os.path.join(UPLOAD_DIR, doc.file_path)
+    if not os.path.isfile(abs_path):
+        raise HTTPException(status_code=404, detail="原始文件已不在服务器上")
+    return FileResponse(
+        abs_path,
+        filename=doc.file_name or os.path.basename(doc.file_path),
+        content_disposition_type="attachment",
+    )
 
 
 @router.post("/{kb_id}/documents", status_code=201)
@@ -397,47 +556,142 @@ async def upload_document(
     check_resource_ownership(current_user, db, "knowledge_base", kb_id, kb)
 
     original_filename = file.filename or "untitled"
-    title, file_type = parse_filename(original_filename)
-    if not title:
-        title = original_filename
-
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
-    saved_filename = f"{uuid.uuid4().hex}_{original_filename}"
-    saved_path = os.path.join(UPLOAD_DIR, saved_filename)
-
-    # 读取并保存文件，记录字节数
     file_bytes = await file.read()
-    file_size = len(file_bytes)
-    with open(saved_path, "wb") as f:
-        f.write(file_bytes)
-    logger.info("文件已保存: path=%s, size=%s bytes", saved_path, file_size)
+    doc = await _save_upload_as_document(kb_id, original_filename, file_bytes, db)
+    return _doc_public_dict(doc, include_content=False)
 
-    # 解析文本内容
-    content = await parse_file_content(saved_path, file_type)
-    logger.info("文件解析完成: type=%s, content_len=%s", file_type, len(content or ""))
 
-    doc = KnowledgeDocument(
-        kb_id=kb_id,
-        title=title,
-        content=content,
-        source_type="upload",
-        file_name=original_filename,
-        file_type=file_type,
-        file_size=file_size,
-        file_path=saved_filename,
-        status="parsing",
-        progress=0,
+@router.post("/{kb_id}/documents/upload-batch", status_code=201)
+async def upload_documents_batch(
+    kb_id: int,
+    files: list[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    logger.info("批量上传知识库文档: kb_id=%s, count=%s", kb_id, len(files or []))
+    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
+    if kb is None:
+        raise HTTPException(status_code=404, detail="KnowledgeBase not found")
+    check_resource_ownership(current_user, db, "knowledge_base", kb_id, kb)
+    if not files:
+        raise HTTPException(status_code=400, detail="请选择要上传的文件")
+    saved = []
+    errors = []
+    for file in files:
+        original_filename = file.filename or "untitled"
+        try:
+            file_bytes = await file.read()
+            doc = await _save_upload_as_document(kb_id, original_filename, file_bytes, db)
+            saved.append(_doc_public_dict(doc, include_content=False))
+        except Exception as exc:
+            logger.warning("批量上传单文件失败: filename=%s, err=%s", original_filename, exc)
+            errors.append({"file_name": original_filename, "error": str(exc)})
+    return {"ok": True, "documents": saved, "errors": errors}
+
+
+@router.post("/{kb_id}/documents/{doc_id}/replace", status_code=200)
+async def replace_document_file(
+    kb_id: int,
+    doc_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
+    if kb is None:
+        raise HTTPException(status_code=404, detail="KnowledgeBase not found")
+    check_resource_ownership(current_user, db, "knowledge_base", kb_id, kb)
+    doc = (
+        db.query(KnowledgeDocument)
+        .filter(KnowledgeDocument.id == doc_id, KnowledgeDocument.kb_id == kb_id)
+        .first()
     )
-    db.add(doc)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    original_filename = file.filename or "untitled"
+    file_bytes = await file.read()
+    doc = await _overwrite_document_file(doc, original_filename, file_bytes, db, kb_id)
+    return _doc_public_dict(doc, include_content=False)
+
+
+@router.patch("/{kb_id}/documents/{doc_id}/enabled")
+def set_document_enabled(
+    kb_id: int,
+    doc_id: int,
+    body: DocEnabledBody,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
+    if kb is None:
+        raise HTTPException(status_code=404, detail="KnowledgeBase not found")
+    check_resource_ownership(current_user, db, "knowledge_base", kb_id, kb)
+    doc = (
+        db.query(KnowledgeDocument)
+        .filter(KnowledgeDocument.id == doc_id, KnowledgeDocument.kb_id == kb_id)
+        .first()
+    )
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    doc.enabled = bool(body.enabled)
     db.commit()
     db.refresh(doc)
-    logger.info("上传文档已入库: id=%s, title=%s, content_len=%s, 启动后台分段", doc.id, doc.title, len(doc.content or ""))
-    # 异步分段 + 向量化（不阻塞响应，前端轮询 progress 字段获取进度）
-    import asyncio
-    from app.core.kb_service import ingest_document_bg
+    return _doc_public_dict(doc, include_content=False)
 
-    asyncio.create_task(ingest_document_bg(doc.id, kb_id))
-    return to_dict(doc)
+
+@router.post("/{kb_id}/documents/batch")
+async def batch_documents(
+    kb_id: int,
+    body: BatchDocsBody,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
+    if kb is None:
+        raise HTTPException(status_code=404, detail="KnowledgeBase not found")
+    check_resource_ownership(current_user, db, "knowledge_base", kb_id, kb)
+    action = (body.action or "").strip().lower()
+    ids = [i for i in (body.ids or []) if i]
+    if action not in ("enable", "disable", "delete", "reparse"):
+        raise HTTPException(status_code=400, detail="不支持的批量操作")
+    if not ids:
+        raise HTTPException(status_code=400, detail="请选择文档")
+    docs = (
+        db.query(KnowledgeDocument)
+        .filter(KnowledgeDocument.kb_id == kb_id, KnowledgeDocument.id.in_(ids))
+        .all()
+    )
+    if action in ("enable", "disable"):
+        flag = action == "enable"
+        for doc in docs:
+            doc.enabled = flag
+        db.commit()
+        return {"ok": True, "updated": len(docs), "action": action}
+    if action == "reparse":
+        import asyncio
+        from app.core.kb_service import reingest_document_bg
+
+        for doc in docs:
+            doc.status = "parsing"
+            doc.progress = 0
+            doc.error_message = None
+        db.commit()
+        for doc in docs:
+            asyncio.create_task(reingest_document_bg(doc.id, kb_id))
+        return {"ok": True, "updated": len(docs), "action": action}
+    deleted = 0
+    for doc in docs:
+        file_path = doc.file_path
+        db.query(KnowledgeSegment).filter(KnowledgeSegment.doc_id == doc.id).delete(
+            synchronize_session=False
+        )
+        db.query(KnowledgeDocument).filter(KnowledgeDocument.id == doc.id).delete(
+            synchronize_session=False
+        )
+        _unlink_upload(file_path)
+        deleted += 1
+    db.commit()
+    return {"ok": True, "updated": deleted, "action": action}
 
 
 class FetchUrlRequest(BaseModel):
@@ -584,7 +838,8 @@ def get_document_segments(
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
     kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
-    check_resource_ownership(current_user, db, "knowledge_base", kb_id, kb)
+    if kb is None:
+        raise HTTPException(status_code=404, detail="KnowledgeBase not found")
     segments = list_segments(db, doc_id)
     total_tokens = sum(s.get("token_count", 0) for s in segments)
     emb_count = sum(1 for s in segments if s.get("has_embedding"))
@@ -695,8 +950,6 @@ async def search_knowledge_base(
     kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
     if kb is None:
         raise HTTPException(status_code=404, detail="KnowledgeBase not found")
-    check_resource_ownership(current_user, db, "knowledge_base", kb_id, kb)
-    # 优先使用请求参数，回退到知识库配置
     top_k = body.top_k if body.top_k and body.top_k > 0 else (kb.retrieval_top_k or 5)
     results = await search_kb(kb_id, body.query, top_k)
     # 按分数阈值过滤（score 为 0~1 的浮点数，阈值存储为 0~100 的整数）

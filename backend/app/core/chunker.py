@@ -218,6 +218,27 @@ def chunk_auto(text: str, size: int, overlap: int) -> list[str]:
     return [s for s in segments if s]
 
 
+def chunk_heading(text: str, size: int, overlap: int) -> list[str]:
+    blocks = re.split(r"(?m)(?=^#{1,6}\s+)", text)
+    segments: list[str] = []
+    buf = ""
+    for block in blocks:
+        block = block.strip()
+        if not block:
+            continue
+        if not buf:
+            buf = block
+            continue
+        if len(buf) + 2 + len(block) <= size:
+            buf = buf + "\n\n" + block
+        else:
+            segments.extend(_cap_segment(buf, size, overlap))
+            buf = block
+    if buf:
+        segments.extend(_cap_segment(buf, size, overlap))
+    return [s for s in segments if s]
+
+
 def chunk_text(text: str, kb_config: Any) -> list[str]:
     """按知识库配置切分文本为分段列表。
 
@@ -257,8 +278,18 @@ def chunk_text(text: str, kb_config: Any) -> list[str]:
         segments = chunk_qa(text, size, overlap)
     elif mode == "line":
         segments = chunk_line(text, size, overlap)
+    elif mode in ("heading", "markdown"):
+        segments = chunk_heading(text, size, overlap)
+        if len(segments) <= 1:
+            segments = chunk_auto(text, size, overlap)
     else:
-        segments = chunk_auto(text, size, overlap)
+        heading_hits = len(re.findall(r"(?m)^#{1,6}\s+", text))
+        if heading_hits >= 2:
+            segments = chunk_heading(text, size, overlap)
+            if len(segments) <= 1:
+                segments = chunk_auto(text, size, overlap)
+        else:
+            segments = chunk_auto(text, size, overlap)
 
     logger.info("分段完成: mode=%s, size=%s, overlap=%s, 段数=%d", mode, size, overlap, len(segments))
     return segments
