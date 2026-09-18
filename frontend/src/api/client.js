@@ -265,6 +265,11 @@ export const agents = {
   monitor: (id) => request(`/agents/${id}/monitor`),
   // 工具搜索状态（tool_search 渐进式披露）：返回分类详情 + 装配预览
   toolSearchStatus: (id) => request(`/agents/${id}/tool-search-status`),
+  templates: () => request('/agents/templates'),
+  exportDsl: (id) => request(`/agents/${id}/dsl`),
+  createFromDsl: (dsl) => request('/agents/from-dsl', { method: 'POST', body: { dsl } }),
+  publishTemplate: (id, body = {}) =>
+    request(`/agents/${id}/publish-template`, { method: 'POST', body }),
 }
 
 // ============ 知识库 ============
@@ -414,6 +419,12 @@ export const workflows = {
     request(`/workflows/${workflowId}/versions/${versionId}/rollback`, { method: 'POST' }),
   // 收藏切换
   toggleFavorite: (id) => request(`/workflows/${id}/favorite`, { method: 'PATCH' }),
+  generateDraft: (description) =>
+    request('/workflows/drafts/generate', { method: 'POST', body: { description } }),
+  listDrafts: () => request('/workflows/drafts'),
+  getDraft: (id) => request(`/workflows/drafts/${id}`),
+  updateDraft: (id, body) => request(`/workflows/drafts/${id}`, { method: 'PUT', body }),
+  publishDraft: (id) => request(`/workflows/drafts/${id}/publish`, { method: 'POST' }),
   // 状态变更（draft / published / disabled）
   updateStatus: (id, status) =>
     request(`/workflows/${id}/status`, { method: 'PATCH', body: { status } }),
@@ -440,15 +451,22 @@ export const resourceShares = {
   // 查看资源的共享授权列表（仅 owner/admin）
   list: (resourceType, resourceId) =>
     request(`/resource-shares/${resourceType}/${resourceId}`),
-  // 添加共享授权（body: { user_id, permission }，permission: view/edit，仅 owner/admin）
   add: (resourceType, resourceId, userId, permission = 'edit') =>
     request(`/resource-shares/${resourceType}/${resourceId}`, {
       method: 'POST',
       body: { user_id: userId, permission },
     }),
-  // 撤销共享授权（仅 owner/admin）
+  addRole: (resourceType, resourceId, roleId, permission = 'edit') =>
+    request(`/resource-shares/${resourceType}/${resourceId}`, {
+      method: 'POST',
+      body: { role_id: roleId, permission },
+    }),
   revoke: (resourceType, resourceId, userId) =>
     request(`/resource-shares/${resourceType}/${resourceId}/${userId}`, {
+      method: 'DELETE',
+    }),
+  revokeRole: (resourceType, resourceId, roleId) =>
+    request(`/resource-shares/${resourceType}/${resourceId}/role/${roleId}`, {
       method: 'DELETE',
     }),
 }
