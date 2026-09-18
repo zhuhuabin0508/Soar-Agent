@@ -22,6 +22,7 @@ import { Modal } from './Dialog'
 import { inputCls } from './property/FormControls'
 import { resourceShares } from '../api/client'
 import { usersApi } from '../api/users'
+import { rolesApi } from '../api/roles'
 import { toast } from '../store/toastStore'
 import { confirm } from './ConfirmDialog'
 
@@ -88,11 +89,13 @@ export default function ShareDialog({
 }) {
   const [shares, setShares] = useState([])
   const [users, setUsers] = useState([])
+  const [roles, setRoles] = useState([])
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  // 批量授权：用 Set 存放已选中的用户 ID（数字），支持一次给多人授权
   const [selectedUserIds, setSelectedUserIds] = useState(new Set())
   const [selectedPermission, setSelectedPermission] = useState('view')
+  const [selectedRoleId, setSelectedRoleId] = useState('')
+  const [selectedRolePermission, setSelectedRolePermission] = useState('view')
 
   // 切换某个用户的选中状态
   const toggleUser = (uid) => {
@@ -118,12 +121,14 @@ export default function ShareDialog({
     if (!open || !resourceType || !resourceId) return
     setLoading(true)
     try {
-      const [shareList, userList] = await Promise.all([
+      const [shareList, userList, roleList] = await Promise.all([
         resourceShares.list(resourceType, resourceId),
-        usersApi.list().catch(() => []), // 无 user:view 权限时降级为空列表
+        usersApi.list().catch(() => []),
+        rolesApi.list().catch(() => []),
       ])
       setShares(shareList || [])
       setUsers(userList || [])
+      setRoles(roleList || [])
     } catch (err) {
       toast.error(err.message || '加载共享列表失败')
     } finally {
@@ -135,6 +140,8 @@ export default function ShareDialog({
     if (open) {
       setSelectedUserIds(new Set())
       setSelectedPermission('view')
+      setSelectedRoleId('')
+      setSelectedRolePermission('view')
       loadData()
     }
   }, [open, loadData])
@@ -204,8 +211,53 @@ export default function ShareDialog({
     }
   }
 
-  // 已被共享的用户 ID 集合（用于下拉过滤已授权用户）
-  const sharedUserIds = new Set(shares.map((s) => s.shared_with))
+  const handleAddRole = async () => {
+    if (!selectedRoleId) {
+      toast.warning('请选择要授权的角色')
+      return
+    }
+    setSubmitting(true)
+    try {
+      await resourceShares.addRole(resourceType, resourceId, Number(selectedRoleId), selectedRolePermission)
+      toast.success(`已为角色添加${selectedRolePermission === 'edit' ? '编辑' : '查看'}授权`)
+      setSelectedRoleId('')
+      setSelectedRolePermission('view')
+      await loadData()
+    } catch (err) {
+      toast.error(err.message || '角色授权失败')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleRevokeRole = async (roleId, roleName) => {
+    const ok = await confirm({
+      title: '撤销角色共享',
+      message: `确定撤销角色「${roleName}」对此资源的授权吗？`,
+      variant: 'danger',
+    })
+    if (!ok) return
+    try {
+      await resourceShares.revokeRole(resourceType, resourceId, roleId)
+      toast.success('已撤销角色共享授权')
+      await loadData()
+    } catch (err) {
+      toast.error(err.message || '撤销角色共享失败')
+    }
+  }
+
+  const handleUpdateRolePermission = async (roleId, roleName, permission) => {
+    try {
+      await resourceShares.addRole(resourceType, resourceId, Number(roleId), permission)
+      toast.success(`已将角色「${roleName}」的权限更新为${permission === 'edit' ? '编辑' : '查看'}`)
+      await loadData()
+    } catch (err) {
+      toast.error(err.message || '更新角色授权失败')
+    }
+  }
+
+  const sharedUserIds = new Set(shares.filter((s) => s.shared_with).map((s) => s.shared_with))
+  const sharedRoleIds = new Set(shares.filter((s) => s.shared_with_role).map((s) => s.shared_with_role))
   // 可选用户：启用且未被共享且非自己（owner 已有权限）
   const currentUserId = (() => {
     try {
@@ -218,6 +270,7 @@ export default function ShareDialog({
   const availableUsers = users.filter(
     (u) => u.is_active && !sharedUserIds.has(u.id) && u.id !== currentUserId
   )
+  const availableRoles = roles.filter((r) => !sharedRoleIds.has(r.id))
 
   // 用户 ID → 用户对象映射（用于展示共享列表中的用户名）
   const userMap = new Map(users.map((u) => [u.id, u]))
@@ -441,12 +494,50 @@ export default function ShareDialog({
         </div>
       </div>
 
+      <div className="mt-3 rounded-md border border-border bg-background p-3">
+        <div className="mb-2.5 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 text-xs font-medium text-card-foreground">
+            <Users className="h-3.5 w-3.5 text-primary" />
+            按角色授权
+          </div>
+          <PermissionPicker
+            value={selectedRolePermission}
+            onChange={setSelectedRolePermission}
+            disabled={submitting}
+          />
+        </div>
+        <div className="flex gap-2">
+          <select
+            className={`${inputCls} flex-1 text-xs`}
+            value={selectedRoleId}
+            onChange={(e) => setSelectedRoleId(e.target.value)}
+            disabled={submitting}
+          >
+            <option value="">选择角色…</option>
+            {availableRoles.map((r) => (
+              <option key={r.id} value={r.id}>{r.name}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={handleAddRole}
+            disabled={submitting || !selectedRoleId}
+            className="btn-primary btn-sm shrink-0"
+          >
+            授权角色
+          </button>
+        </div>
+        <p className="mt-2 text-[11px] text-muted-foreground/80">
+          该角色下所有用户将获得对应权限（查看或编辑）。
+        </p>
+      </div>
+
       {/* 已授权列表：所有者 + 已授权用户 + 权限分布 */}
       <div className="mt-3">
         <div className="mb-2 flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-xs font-medium text-card-foreground">
             <Users className="h-3.5 w-3.5 text-muted-foreground" />
-            已授权用户
+            已授权用户 / 角色
             <span className="inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-secondary px-1.5 text-[10px] font-medium text-muted-foreground">
               {shares.length}
             </span>
@@ -500,15 +591,18 @@ export default function ShareDialog({
         ) : shares.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-md border border-dashed border-border py-6 text-center text-xs text-muted-foreground">
             <Users className="mb-1.5 h-5 w-5 opacity-50" />
-            暂无被授权用户
+            暂无被授权用户或角色
             <span className="mt-0.5 text-[11px] text-muted-foreground/60">
-              在上方选择用户并授权后，他们将出现在这里
+              在上方选择用户或角色并授权后，将出现在这里
             </span>
           </div>
         ) : (
           <ul className="flex flex-col gap-1.5">
             {shares.map((s) => {
-              const username = resolveUsername(s.shared_with)
+              const isRoleShare = Boolean(s.shared_with_role)
+              const displayName = isRoleShare
+                ? `角色：${s.role_name || `#${s.shared_with_role}`}`
+                : resolveUsername(s.shared_with)
               const isEdit = s.permission === 'edit'
               const grantor = resolveGrantor(s.granted_by)
               return (
@@ -518,29 +612,38 @@ export default function ShareDialog({
                 >
                   <div className="flex min-w-0 items-center gap-2.5">
                     <Avatar
-                      name={username}
+                      name={displayName}
                       color={isEdit ? 'bg-primary' : 'bg-blue-500'}
                     />
                     <div className="flex min-w-0 flex-col gap-0.5">
                       <span className="truncate text-sm text-card-foreground">
-                        {username}
+                        {displayName}
                       </span>
                       <span className="truncate text-[11px] text-muted-foreground">
-                        {/* 授权人 + 时间：让管理员审计追溯更方便 */}
                         {grantor ? `由 ${grantor} 授权` : '由所有者授权'}
                         {s.created_at ? ` · ${new Date(s.created_at).toLocaleString('zh-CN')}` : ''}
                       </span>
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    {/* 权限可切换：已授权查看的用户可直接升级为编辑（或反向降级） */}
                     <PermissionPicker
                       value={s.permission || 'view'}
-                      onChange={(v) => { if (v !== s.permission) handleUpdatePermission(s.shared_with, username, v) }}
+                      onChange={(v) => {
+                        if (v === s.permission) return
+                        if (isRoleShare) {
+                          handleUpdateRolePermission(s.shared_with_role, s.role_name || displayName, v)
+                        } else {
+                          handleUpdatePermission(s.shared_with, displayName, v)
+                        }
+                      }}
                     />
                     <button
                       type="button"
-                      onClick={() => handleRevoke(s.shared_with, username)}
+                      onClick={() => (
+                        isRoleShare
+                          ? handleRevokeRole(s.shared_with_role, s.role_name || displayName)
+                          : handleRevoke(s.shared_with, displayName)
+                      )}
                       className="btn-danger btn-sm inline-flex items-center gap-1"
                       title="撤销共享"
                     >

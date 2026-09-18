@@ -381,7 +381,10 @@ def run_lightweight_migrations(engine) -> None:
         ensure_columns(
             engine,
             "resource_shares",
-            {"permission": "VARCHAR(16) NOT NULL DEFAULT 'edit'"},
+            {
+                "permission": "VARCHAR(16) NOT NULL DEFAULT 'edit'",
+                "shared_with_role": "INTEGER",
+            },
         )
         # executions 表新增 agent_id 列（智能体测试执行记录关联）
         ensure_columns(
