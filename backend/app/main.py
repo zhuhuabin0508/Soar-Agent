@@ -61,6 +61,12 @@ def _init_db() -> None:
     except Exception as exc:  # noqa: BLE001
         logger.warning("迁移后 Hermes 工具同步失败（忽略）: %s", exc)
 
+    try:
+        from app.core.kb_seed import ensure_preset_knowledge_bases
+        ensure_preset_knowledge_bases()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("内置知识库种子失败（忽略）: %s", exc)
+
     db = SessionLocal()
     try:
         from app.models.tool import Tool

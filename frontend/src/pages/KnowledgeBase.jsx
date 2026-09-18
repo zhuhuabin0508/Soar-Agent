@@ -1750,7 +1750,17 @@ function KnowledgeBase() {
             {loadingKb ? (
               <div className="p-4 text-center text-xs text-muted-foreground/70">加载中...</div>
             ) : kbList.length === 0 ? (
-              <div className="p-4 text-center text-xs text-muted-foreground/60">暂无知识库</div>
+              <div className="rounded-md border border-dashed border-primary/30 bg-primary/5 p-4 text-left">
+                <p className="text-xs font-medium text-foreground">开始创建第一个知识库</p>
+                <ol className="mt-2 list-decimal space-y-1 pl-4 text-[11px] leading-relaxed text-muted-foreground/80">
+                  <li>点击右上角「新建知识库」或上传文档</li>
+                  <li>等待自动分段与向量化完成</li>
+                  <li>在智能体编辑页「能力配置 → 知识库」中勾选启用</li>
+                </ol>
+                <p className="mt-2 text-[10px] text-muted-foreground/60">
+                  系统已预置「安全响应规范」「常用研判口径」等内置库，重启后端后会自动出现。
+                </p>
+              </div>
             ) : filteredKbList.length === 0 ? (
               <div className="p-4 text-center text-xs text-muted-foreground/50">未匹配到知识库</div>
             ) : (
