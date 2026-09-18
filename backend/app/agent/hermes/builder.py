@@ -44,6 +44,7 @@ _AGENT_DEFAULTS: dict = {
     "enabled_kbs": [],
     "enabled_asset_types": [],
     "enabled_skills": [],
+    "enabled_workflows": [],
     "max_iterations": 5,
     "suggested_questions": [],
     "context_turns": 10,
@@ -133,6 +134,7 @@ def _list_agents(db) -> list[dict]:
             "engine": a.engine,
             "enabled_tools": list(a.enabled_tools or []),
             "enabled_skills": list(a.enabled_skills or []),
+            "enabled_workflows": list(a.enabled_workflows or []),
         }
         for a in rows
     ]

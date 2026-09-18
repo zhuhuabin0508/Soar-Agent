@@ -141,11 +141,13 @@ class HermesAgentExecutor:
         # 构建类框架工具（智能体创建助手专用）仅对显式启用的智能体可见，
         # 避免这些创建能力暴露给所有 hermes 智能体
         from app.agent.hermes.builder import BUILDER_TOOL_NAMES
+        from app.agent.workflow_as_tool import GLOBAL_WORKFLOW_TOOL_NAMES
 
         enabled_tool_names = set(agent.enabled_tools or [])
         framework_tools = [
             t for t in framework_tools
-            if t.name not in BUILDER_TOOL_NAMES or t.name in enabled_tool_names
+            if (t.name not in BUILDER_TOOL_NAMES or t.name in enabled_tool_names)
+            and (t.name not in GLOBAL_WORKFLOW_TOOL_NAMES or t.name in enabled_tool_names)
         ]
         extra_tool_defs = [
             {

@@ -326,7 +326,7 @@ async def _run_langgraph_agent(db, agent, user_message: str, nid: str, log) -> d
     from app.api.v1.agents import _create_llm
     from langchain_core.messages import HumanMessage, SystemMessage
 
-    has_tools = bool(agent.enabled_tools) or bool(agent.enabled_kbs)
+    has_tools = bool(agent.enabled_tools) or bool(agent.enabled_kbs) or bool(getattr(agent, "enabled_workflows", None))
 
     # ===== 无工具：纯 LLM 对话 =====
     if not has_tools:
@@ -364,6 +364,8 @@ async def _run_langgraph_agent(db, agent, user_message: str, nid: str, log) -> d
             alert_data=alert_data,
             enabled_tools=agent.enabled_tools or [],
             enabled_kbs=agent.enabled_kbs or [],
+            enabled_workflows=agent.enabled_workflows or [],
+            agent_id=agent.id,
             model_config_id=agent.model_config_id,
             system_prompt=assemble_system_prompt(db, agent, allow_none=True),
             temperature=agent.temperature,

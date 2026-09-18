@@ -30,6 +30,7 @@ class Agent(Base):
     enabled_asset_types = Column(JSON, nullable=True, default=list)
     # 启用的技能 id 列表（注入到 system prompt，见 app/agent/prompt_assembler.py）
     enabled_skills = Column(JSON, nullable=True, default=list)
+    enabled_workflows = Column(JSON, nullable=True, default=list)
     max_iterations = Column(Integer, nullable=False, default=5)
     # 创建者用户ID（资源级 owner 权限控制），null 表示历史数据/系统创建
     created_by = Column(Integer, nullable=True)
@@ -61,6 +62,7 @@ class Agent(Base):
     # ===== 引擎选择 =====
     # 执行引擎：langgraph（默认，零侵入）| hermes（Hermes 风格 ReAct + 分段并行 + 记忆 + 委派）
     engine = Column(String(16), nullable=False, default="langgraph")
+    publish_status = Column(String(16), nullable=False, default="published")
 
     def __repr__(self) -> str:
         return f"<Agent id={self.id} name={self.name!r} engine={self.engine!r}>"

@@ -408,7 +408,7 @@ async def test_skill(
 
     user_text = body.message or ""
     alert_data = {"input": user_text}
-    has_tools = bool(agent.enabled_tools) or bool(agent.enabled_kbs) or bool(agent.enabled_asset_types)
+    has_tools = bool(agent.enabled_tools) or bool(agent.enabled_kbs) or bool(agent.enabled_asset_types) or bool(getattr(agent, "enabled_workflows", None))
 
     # 纯对话路径
     if not has_tools:
@@ -444,6 +444,8 @@ async def test_skill(
             enabled_tools=agent.enabled_tools or [],
             enabled_kbs=agent.enabled_kbs or [],
             enabled_asset_types=agent.enabled_asset_types or [],
+            enabled_workflows=agent.enabled_workflows or [],
+            agent_id=agent.id,
             model_config_id=agent.model_config_id,
             system_prompt=final_prompt,
             temperature=agent.temperature,

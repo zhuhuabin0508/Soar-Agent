@@ -179,6 +179,7 @@ class HermesToolEngine:
         self._register_kb_tools()
         # 3. 资产检索工具（勾选资产类型 或 工具列表启用 search_assets）
         self._register_asset_tools()
+        self._register_workflow_tools()
         # 注意：内置安全工具（check_whitelist 等）已迁移为 DB code 类型工具，
         # 由 _register_db_tools 统一加载，不再需要 _register_builtin_tools 兜底。
         logger.info(
@@ -369,8 +370,7 @@ class HermesToolEngine:
                 except Exception:
                     parameters = {"type": "object", "properties": {}}
             else:
-                # 无 schema 的工具（如内置工具）用宽松参数
-                parameters = {"type": "object", "properties": {}, "additionalProperties": True}
+                parameters = entry.parameters or {"type": "object", "properties": {}, "additionalProperties": True}
 
             tools.append({
                 "type": "function",
@@ -992,53 +992,46 @@ class HermesToolEngine:
 
         return _coroutine
 
+    def _register_workflow_tools(self) -> None:
+        from app.agent.workflow_as_tool import infer_parameters, make_tool_name
+        from app.models.workflow import Workflow
+
+        for raw_id in getattr(self.agent, "enabled_workflows", None) or []:
+            try:
+                wf_id = int(raw_id)
+            except (TypeError, ValueError):
+                continue
+            wf = (
+                self.db.query(Workflow)
+                .filter(Workflow.id == wf_id, Workflow.enabled.is_(True))
+                .first()
+            )
+            if wf is None:
+                continue
+            desc = (wf.description or "").strip() or f"运行已发布工作流：{wf.name}"
+            self.register_workflow_as_tool(
+                wf.id,
+                make_tool_name(wf.id, wf.name),
+                desc,
+                parameters=infer_parameters(wf.graph_config),
+            )
+
     def register_workflow_as_tool(
         self,
         workflow_id: int,
         tool_name: str,
         description: str,
+        parameters: Optional[dict] = None,
     ) -> None:
-        """把一个 Soar Workflow 包装成可调用工具。
-
-        供 LLM 触发工作流（与 SkillEngine 桥接互补）。
-        """
-        from app.models.workflow import Workflow
-        from app.models.execution import Execution
+        from app.agent.workflow_as_tool import invoke_workflow_as_tool
 
         async def _coroutine(**kwargs):
-            from app.core.workflow_runner import run_workflow
-            from app.core.security import decrypt_env_value
-            from app.database import SessionLocal
-
-            wf = self.db.query(Workflow).filter(Workflow.id == workflow_id).first()
-            if wf is None:
-                return {"error": f"Workflow {workflow_id} not found"}
-
-            execution = Execution(
+            return await invoke_workflow_as_tool(
+                db=self.db,
                 workflow_id=workflow_id,
-                trigger_type="agent_tool",
-                status="running",
-                agent_id=self.agent.id,
-            )
-            self.db.add(execution)
-            self.db.commit()
-            self.db.refresh(execution)
-
-            result = await run_workflow(
-                graph_config=wf.graph_config,
+                agent_id=getattr(self.agent, "id", None),
                 payload=kwargs,
-                execution_id=execution.id,
-                workflow_id=workflow_id,
-                env_vars={
-                    v["name"]: decrypt_env_value(v.get("value") or "")
-                    for v in (wf.env_vars or [])
-                    if isinstance(v, dict) and v.get("name")
-                },
             )
-            execution.status = result.get("status", "failed")
-            execution.result = result
-            self.db.commit()
-            return result
 
         self._registry[tool_name] = ToolEntry(
             name=tool_name,
@@ -1046,6 +1039,7 @@ class HermesToolEngine:
             args_schema=None,
             coroutine=_coroutine,
             source="workflow",
-            parallel_safe=False,  # 工作流触发是写操作
+            parallel_safe=False,
             untrusted=False,
+            parameters=parameters,
         )

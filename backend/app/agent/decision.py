@@ -919,6 +919,8 @@ async def run_agent_decision(
     enabled_tools: Optional[list[str]] = None,
     enabled_kbs: Optional[list[int]] = None,
     enabled_asset_types: Optional[list[str]] = None,
+    enabled_workflows: Optional[list[int]] = None,
+    agent_id: Optional[int] = None,
     model_config_id: Optional[int] = None,
     system_prompt: Optional[str] = None,
     temperature: Optional[float] = None,
@@ -982,6 +984,11 @@ async def run_agent_decision(
             if asset_tool is not None:
                 tools.append(asset_tool)
                 logs.append(_new_log("info", f"已追加资产检索工具(types={enabled_asset_types or 'all'})"))
+        from app.agent.workflow_as_tool import build_langchain_workflow_tools
+        wf_tools = build_langchain_workflow_tools(db, enabled_workflows or [], agent_id=agent_id)
+        if wf_tools:
+            tools.extend(wf_tools)
+            logs.append(_new_log("info", f"已追加 {len(wf_tools)} 个工作流工具"))
     finally:
         db.close()
 
@@ -1032,6 +1039,8 @@ async def run_agent_decision_stream(
     enabled_tools: Optional[list[str]] = None,
     enabled_kbs: Optional[list[int]] = None,
     enabled_asset_types: Optional[list[str]] = None,
+    enabled_workflows: Optional[list[int]] = None,
+    agent_id: Optional[int] = None,
     model_config_id: Optional[int] = None,
     system_prompt: Optional[str] = None,
     temperature: Optional[float] = None,
@@ -1080,6 +1089,11 @@ async def run_agent_decision_stream(
             if asset_tool is not None:
                 tools.append(asset_tool)
                 logs.append(_new_log("info", f"已追加资产检索工具(types={enabled_asset_types or 'all'})"))
+        from app.agent.workflow_as_tool import build_langchain_workflow_tools
+        wf_tools = build_langchain_workflow_tools(db, enabled_workflows or [], agent_id=agent_id)
+        if wf_tools:
+            tools.extend(wf_tools)
+            logs.append(_new_log("info", f"已追加 {len(wf_tools)} 个工作流工具"))
     finally:
         db.close()
 
