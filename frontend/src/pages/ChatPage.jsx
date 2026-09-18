@@ -159,16 +159,16 @@ export default function ChatPage() {
     ;(async () => {
       setLoadingAgents(true)
       try {
-        const list = await agentsApi.list()
+        const list = await agentsApi.list({ usable: true })
         if (!alive) return
         const arr = Array.isArray(list) ? list : []
         setAgentList(arr)
-        // 首次加载：选中第一个或恢复上次选中
-        if (!selectedAgentId && arr.length > 0) {
-          const restored = localStorage.getItem(LS_SELECTED)
-          const exists = restored && arr.find((a) => String(a.id) === String(restored))
-          const firstId = exists ? String(exists.id) : String(arr[0].id)
-          setSelectedAgentId(firstId)
+        const restored = localStorage.getItem(LS_SELECTED)
+        const exists = restored && arr.find((a) => String(a.id) === String(restored))
+        if (arr.length > 0) {
+          setSelectedAgentId(exists ? String(exists.id) : String(arr[0].id))
+        } else {
+          setSelectedAgentId('')
         }
       } catch {
         // ignore
@@ -455,7 +455,10 @@ export default function ChatPage() {
             sessionIds[selectedAgentId] || 'default',
             overridePayload,
           )
-        : await agentsApi.testStream(selectedAgentId, messageText, controller.signal, overridePayload)
+        : await agentsApi.testStream(selectedAgentId, messageText, controller.signal, {
+            ...overridePayload,
+            channel: 'conversation',
+          })
 
       if (!resp.ok) {
         const errText = await resp.text().catch(() => '')
@@ -1100,7 +1103,7 @@ function ChatSidebar({
 
         {!loading && filteredAgents.length === 0 && (
           <div className="py-8 text-center text-xs text-muted-foreground/60">
-            {searchQuery ? '未找到匹配的智能体' : '暂无智能体'}
+            {searchQuery ? '未找到匹配的智能体' : '暂无已发布的智能体'}
           </div>
         )}
 
@@ -1132,7 +1135,7 @@ function ChatSidebar({
       {/* 底部入口 */}
       <div className="shrink-0 border-t border-border p-2">
         <a
-          href="/agents"
+          href="/studio"
           className="flex items-center gap-2 rounded-md px-3 py-2 text-xs text-muted-foreground/70 transition-colors hover:bg-muted hover:text-muted-foreground"
         >
           <Settings className="h-4 w-4" />

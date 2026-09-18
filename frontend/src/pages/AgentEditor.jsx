@@ -8,7 +8,7 @@ import {
   X, AlertTriangle, Loader2,
   ChevronDown, ChevronRight, Play,
   Copy, Download, History, AlertCircle, Zap, Timer, Code,
-  Database,
+  Database, FolderKanban,
 } from 'lucide-react'
 import {
   agents as agentsApi,
@@ -16,6 +16,8 @@ import {
   tools as toolsApi,
   knowledgeBases as kbApi,
   skills as skillsApi,
+  workflows as workflowsApi,
+  isAgentPublished,
 } from '../api/client'
 import { assetsApi } from '../api/assets'
 import {
@@ -135,16 +137,19 @@ function AgentEditor() {
     enabled_kbs: [],
     enabled_asset_types: [],
     enabled_skills: [],
+    enabled_workflows: [],
     max_iterations: 5,
     enable_memory: false,
     tone_style: 'professional',
     variables: {},
     tool_configs: {},
+    publish_status: 'draft',
   })
   const [llmOptions, setLlmOptions] = useState([])
   const [toolOptions, setToolOptions] = useState([])
   const [kbOptions, setKbOptions] = useState([])
   const [skillOptions, setSkillOptions] = useState([])
+  const [workflowOptions, setWorkflowOptions] = useState([])
   const [assetTypeOptions, setAssetTypeOptions] = useState([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -163,6 +168,10 @@ function AgentEditor() {
   const [abilityTab, setAbilityTab] = useState('tools')
   // 能力配置全局搜索
   const [abilitySearch, setAbilitySearch] = useState('')
+  const [skillDraftName, setSkillDraftName] = useState('')
+  const [skillDraftContent, setSkillDraftContent] = useState('')
+  const [skillDraftSaving, setSkillDraftSaving] = useState(false)
+  const skillDraftFileRef = useRef(null)
   // 工具分组：只看已选（简单模式默认只看已选/推荐）
   const [onlySelectedTools, setOnlySelectedTools] = useState(false)
   const [browseAllTools, setBrowseAllTools] = useState(false)
@@ -279,7 +288,8 @@ function AgentEditor() {
     const hasTools = form.enabled_tools.length > 0
     const hasKbs = form.enabled_kbs.length > 0
     const hasAssets = form.enabled_asset_types.length > 0
-    s.tools = (hasTools || hasKbs || hasAssets) ? 'ok' : 'empty'
+    const hasWorkflows = form.enabled_workflows.length > 0
+    s.tools = (hasTools || hasKbs || hasAssets || hasWorkflows) ? 'ok' : 'empty'
     // 技能注入
     s.skills = form.enabled_skills.length > 0 ? 'ok' : 'empty'
     // 记忆与高级
@@ -296,13 +306,14 @@ function AgentEditor() {
     const kbs = form.enabled_kbs.length
     const tools = form.enabled_tools.length
     const skills = form.enabled_skills.length
+    const workflows = form.enabled_workflows.length
     const assets = form.enabled_asset_types.length
     const canDebug = !!form.name.trim() && !!form.model_config_id
     const issues = []
     if (!form.name.trim()) issues.push('名称未填')
     if (!form.model_config_id) issues.push('模型未选')
-    if (tools + kbs + assets + skills === 0) issues.push('未挂载任何能力')
-    return { kbs, tools, skills, assets, canDebug, issues }
+    if (tools + kbs + assets + skills + workflows === 0) issues.push('未挂载任何能力')
+    return { kbs, tools, skills, assets, workflows, canDebug, issues }
   }, [form])
 
   // JSON 语法高亮（简易版：key/string/number/boolean/null 着色）
@@ -336,9 +347,10 @@ function AgentEditor() {
       tools: toolOptions.filter((t) => t.label.toLowerCase().includes(kw) || (t.value || '').toLowerCase().includes(kw) || (t.description || '').toLowerCase().includes(kw)),
       kbs: kbOptions.filter((k) => k.label.toLowerCase().includes(kw) || (k.description || '').toLowerCase().includes(kw)),
       skills: skillOptions.filter((s) => s.label.toLowerCase().includes(kw) || (s.description || '').toLowerCase().includes(kw)),
+      workflows: workflowOptions.filter((w) => w.label.toLowerCase().includes(kw) || (w.description || '').toLowerCase().includes(kw)),
       assets: assetTypeOptions.filter((a) => a.label.toLowerCase().includes(kw)),
     }
-  }, [abilitySearch, toolOptions, kbOptions, skillOptions, assetTypeOptions])
+  }, [abilitySearch, toolOptions, kbOptions, skillOptions, workflowOptions, assetTypeOptions])
 
   // 工具搜索 + 已选过滤后的分组列表
   const filteredGroupedTools = useMemo(() => {
@@ -442,11 +454,12 @@ function AgentEditor() {
     ;(async () => {
       setLoading(true)
       try {
-        const [llms, tls, kbs, sks, tpls] = await Promise.all([
+        const [llms, tls, kbs, sks, wfs, tpls] = await Promise.all([
           llmApi.list(),
           toolsApi.list(),
           kbApi.list(),
           skillsApi.list({ enabled: true }),
+          workflowsApi.list(),
           assetsApi.listTemplates(),
         ])
         if (!alive) return
@@ -477,6 +490,17 @@ function AgentEditor() {
             description: s.description || '',
           }))
         )
+        setWorkflowOptions(
+          (Array.isArray(wfs) ? wfs : [])
+            .filter((w) => w.enabled !== false)
+            .map((w) => ({
+              value: String(w.id),
+              label: w.name || `工作流 ${w.id}`,
+              description: w.description || '',
+              status: w.status || 'published',
+              category: w.category || '',
+            }))
+        )
         setAssetTypeOptions(
           (Array.isArray(tpls) ? tpls : []).map((t) => ({ value: t.code, label: t.name }))
         )
@@ -495,6 +519,7 @@ function AgentEditor() {
               enabled_kbs: (dsl.enabled_kbs || prev.enabled_kbs).map(String),
               enabled_asset_types: dsl.enabled_asset_types ?? prev.enabled_asset_types,
               enabled_skills: (dsl.enabled_skills || prev.enabled_skills).map(String),
+              enabled_workflows: (dsl.enabled_workflows || prev.enabled_workflows).map(String),
               max_iterations: dsl.max_iterations ?? prev.max_iterations,
               avatar: dsl.avatar ?? prev.avatar,
               greeting: dsl.greeting ?? prev.greeting,
@@ -567,12 +592,14 @@ function AgentEditor() {
               enabled_kbs: (agent.enabled_kbs || []).map(String),
               enabled_asset_types: agent.enabled_asset_types || [],
               enabled_skills: (agent.enabled_skills || []).map(String),
+              enabled_workflows: (agent.enabled_workflows || []).map(String),
               max_iterations: agent.max_iterations ?? 5,
               enable_memory: agent.enable_memory ?? false,
               tone_style: agent.tone_style || 'professional',
               variables: agent.variables || {},
               tool_configs: agent.tool_configs || {},
               engine: agent.engine || 'langgraph',
+              publish_status: agent.publish_status || (isAgentPublished(agent) ? 'published' : 'draft'),
             })
             // 记录资源级权限标志（用于禁用保存按钮）
             setAgentMeta({
@@ -629,6 +656,7 @@ function AgentEditor() {
       enabled_kbs: (dsl.enabled_kbs || prev.enabled_kbs).map(String),
       enabled_asset_types: dsl.enabled_asset_types ?? prev.enabled_asset_types,
       enabled_skills: (dsl.enabled_skills || prev.enabled_skills).map(String),
+      enabled_workflows: (dsl.enabled_workflows || prev.enabled_workflows).map(String),
       max_iterations: dsl.max_iterations ?? prev.max_iterations,
       avatar: dsl.avatar ?? prev.avatar,
       greeting: dsl.greeting ?? prev.greeting,
@@ -686,6 +714,7 @@ function AgentEditor() {
         enabled_kbs: form.enabled_kbs.map((v) => Number(v)),
         enabled_asset_types: form.enabled_asset_types,
         enabled_skills: form.enabled_skills.map((v) => Number(v)),
+        enabled_workflows: form.enabled_workflows.map((v) => Number(v)),
         max_iterations: Number(form.max_iterations),
         enable_memory: form.enable_memory,
         tone_style: form.tone_style,
@@ -701,7 +730,7 @@ function AgentEditor() {
       }
       setDirty(false)
       bypassGuard()
-      if (!silent) navigate('/agents')
+      if (!silent) navigate('/studio')
       return result
     } catch (err) {
       if (!silent) toast.error(`保存失败：${err.message || err}`)
@@ -740,8 +769,8 @@ function AgentEditor() {
     const isHermes = form.engine === 'hermes'
     try {
       const resp = isHermes
-        ? await agentsApi.chatStream(agentId, testInput || '你好')
-        : await agentsApi.testStream(agentId, testInput || '你好')
+        ? await agentsApi.chatStream(agentId, testInput || '你好', undefined, undefined, { channel: 'test' })
+        : await agentsApi.testStream(agentId, testInput || '你好', undefined, { channel: 'test' })
       if (!resp.ok) {
         const errText = await resp.text()
         throw new Error(errText || `HTTP ${resp.status}`)
@@ -1024,8 +1053,8 @@ function AgentEditor() {
     <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
       <header className="flex shrink-0 items-center justify-between border-b border-border bg-card/60 px-6 py-4">
         <div className="flex items-center gap-4">
-          <button type="button" onClick={() => navigate('/agents')} className="btn-secondary btn-sm">
-            ← 返回列表
+          <button type="button" onClick={() => navigate('/studio')} className="btn-secondary btn-sm">
+            ← 返回工作室
           </button>
           <h1 className="text-xl font-semibold">{isEdit ? '编辑智能体' : '新建智能体'}</h1>
         </div>
@@ -1057,14 +1086,40 @@ function AgentEditor() {
               发布为模板
             </button>
           )}
+          {isEdit && canEdit && !isAgentPublished(form) && (
+            <button
+              type="button"
+              onClick={async () => {
+                const saved = await handleSave(true)
+                const aid = saved?.id || id
+                if (!aid) return
+                try {
+                  const res = await agentsApi.publish(aid)
+                  setForm((prev) => ({
+                    ...prev,
+                    name: res.name || prev.name,
+                    description: res.description || prev.description,
+                    publish_status: 'published',
+                    variables: res.variables || prev.variables,
+                  }))
+                  toast.success('已发布，可在对话中使用')
+                } catch (err) {
+                  toast.error(err.message || '发布失败')
+                }
+              }}
+              className="btn-primary btn-sm"
+            >
+              发布
+            </button>
+          )}
           <button
             type="button"
             onClick={() => handleSave(false)}
             disabled={saving || !canEdit}
             title={!canEdit ? '无编辑权限（仅 owner 或被授权用户可编辑）' : undefined}
-            className="btn-primary"
+            className={isAgentPublished(form) ? 'btn-primary' : 'btn-secondary'}
           >
-            {saving ? '保存中…' : '保存'}
+            {saving ? '保存中…' : '保存草稿'}
           </button>
         </div>
       </header>
@@ -1092,6 +1147,10 @@ function AgentEditor() {
               <span className="text-muted-foreground/30">·</span>
               <span className="flex items-center gap-1 text-muted-foreground">
                 <Wrench className="h-3.5 w-3.5" /> 工具 <span className="font-semibold text-foreground">{configSummary.tools}</span>
+              </span>
+              <span className="text-muted-foreground/30">·</span>
+              <span className="flex items-center gap-1 text-muted-foreground">
+                <FolderKanban className="h-3.5 w-3.5" /> 工作流 <span className="font-semibold text-foreground">{configSummary.workflows}</span>
               </span>
               <span className="text-muted-foreground/30">·</span>
               <span className="flex items-center gap-1 text-muted-foreground">
@@ -1326,7 +1385,7 @@ function AgentEditor() {
               title="能力配置"
               icon={<Wrench className="h-4 w-4" />}
               defaultOpen={false}
-              hint="统一管理智能体可调用的知识库、工具、技能和资产"
+              hint="挂载工具、工作流、技能、知识库与资产。工作流勾选后会作为独立工具供智能体调用。"
               status={sectionStatus.tools}
               open={sectionOpen('能力配置')}
               onToggle={toggleCard('能力配置')}
@@ -1347,7 +1406,7 @@ function AgentEditor() {
               }
             >
               {/* 已选能力 chips（顶部展示，可一键移除） */}
-              {(form.enabled_tools.length > 0 || form.enabled_kbs.length > 0 || form.enabled_skills.length > 0 || form.enabled_asset_types.length > 0) && (
+              {(form.enabled_tools.length > 0 || form.enabled_kbs.length > 0 || form.enabled_skills.length > 0 || form.enabled_workflows.length > 0 || form.enabled_asset_types.length > 0) && (
                 <div className="mb-3 rounded-md border border-border bg-muted/40 p-2">
                   <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">已选能力</div>
                   <div className="flex flex-wrap gap-1.5">
@@ -1388,6 +1447,18 @@ function AgentEditor() {
                         </span>
                       )
                     })}
+                    {form.enabled_workflows.map((wv) => {
+                      const w = workflowOptions.find((x) => x.value === wv)
+                      return (
+                        <span key={`w-${wv}`} className="inline-flex items-center gap-1 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[11px] text-cyan-700 dark:text-cyan-400">
+                          <FolderKanban className="h-2.5 w-2.5" />
+                          {w?.label || `工作流#${wv}`}
+                          <button type="button" onClick={() => setField('enabled_workflows')(form.enabled_workflows.filter((x) => x !== wv))} className="ml-0.5 hover:text-foreground">
+                            <X className="h-2.5 w-2.5" />
+                          </button>
+                        </span>
+                      )
+                    })}
                     {form.enabled_asset_types.map((av) => (
                       <span key={`a-${av}`} className="inline-flex items-center gap-1 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[11px] text-indigo-600 dark:text-indigo-400">
                         <Package className="h-2.5 w-2.5" />
@@ -1407,7 +1478,7 @@ function AgentEditor() {
                 <input
                   value={abilitySearch}
                   onChange={(e) => setAbilitySearch(e.target.value)}
-                  placeholder="搜索知识库、工具、技能、资产…"
+                  placeholder="搜索工具、工作流、技能、知识库、资产…"
                   className="h-8 w-full rounded-md border border-border bg-secondary pl-8 pr-2 text-xs text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
                 />
                 {abilitySearch && (
@@ -1420,7 +1491,7 @@ function AgentEditor() {
               {/* 搜索结果模式：跨类型展示 */}
               {abilitySearchResults ? (
                 <div className="flex flex-col gap-3">
-                  {abilitySearchResults.tools.length === 0 && abilitySearchResults.kbs.length === 0 && abilitySearchResults.skills.length === 0 && abilitySearchResults.assets.length === 0 ? (
+                  {abilitySearchResults.tools.length === 0 && abilitySearchResults.kbs.length === 0 && abilitySearchResults.skills.length === 0 && abilitySearchResults.workflows.length === 0 && abilitySearchResults.assets.length === 0 ? (
                     <p className="py-4 text-center text-[11px] text-muted-foreground/60">未找到匹配项</p>
                   ) : (
                     <>
@@ -1442,6 +1513,12 @@ function AgentEditor() {
                           <CheckboxGroup value={form.enabled_skills} onChange={setField('enabled_skills')} options={abilitySearchResults.skills} columns={2} />
                         </div>
                       )}
+                      {abilitySearchResults.workflows.length > 0 && (
+                        <div>
+                          <div className="mb-1.5 text-[11px] font-semibold text-cyan-600 dark:text-cyan-400">工作流 ({abilitySearchResults.workflows.length})</div>
+                          <CheckboxGroup value={form.enabled_workflows} onChange={setField('enabled_workflows')} options={abilitySearchResults.workflows} columns={2} />
+                        </div>
+                      )}
                       {abilitySearchResults.assets.length > 0 && (
                         <div>
                           <div className="mb-1.5 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400">资产 ({abilitySearchResults.assets.length})</div>
@@ -1457,8 +1534,9 @@ function AgentEditor() {
                   <div className="mb-3 flex items-center gap-1 border-b border-border pb-2">
                     {[
                       { v: 'tools', label: '工具', icon: Wrench, count: form.enabled_tools.length, total: toolOptions.length },
-                      { v: 'knowledge', label: '知识库', icon: Database, count: form.enabled_kbs.length, total: kbOptions.length },
+                      { v: 'workflows', label: '工作流', icon: FolderKanban, count: form.enabled_workflows.length, total: workflowOptions.length },
                       { v: 'skills', label: '技能', icon: Zap, count: form.enabled_skills.length, total: skillOptions.length },
+                      { v: 'knowledge', label: '知识库', icon: Database, count: form.enabled_kbs.length, total: kbOptions.length },
                       { v: 'assets', label: '资产', icon: Package, count: form.enabled_asset_types.length, total: assetTypeOptions.length },
                     ].map((t) => {
                       const Icon = t.icon
@@ -1789,6 +1867,62 @@ function AgentEditor() {
                     </div>
                   )}
 
+                  {abilityTab === 'workflows' && (
+                    <div>
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-[11px] text-muted-foreground/70">
+                          勾选后，该工作流会作为独立工具挂到智能体上，模型按需调用
+                        </span>
+                        <span className="text-[10px] text-muted-foreground/60">
+                          已选 {form.enabled_workflows.length} / {workflowOptions.length}
+                        </span>
+                      </div>
+                      {workflowOptions.length === 0 ? (
+                        <p className="py-4 text-center text-[11px] text-muted-foreground/60">暂无可用工作流，请先到「工作流」页面创建并启用</p>
+                      ) : (
+                        <div className="grid grid-cols-1 gap-1.5">
+                          {workflowOptions.map((wf) => {
+                            const enabled = form.enabled_workflows.includes(wf.value)
+                            return (
+                              <label
+                                key={wf.value}
+                                className={`flex cursor-pointer items-start gap-2 rounded-md border p-2 transition ${
+                                  enabled ? 'border-cyan-500/30 bg-cyan-500/5' : 'border-border bg-muted/40 hover:border-cyan-500/30'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={enabled}
+                                  onChange={(e) => {
+                                    const next = e.target.checked
+                                      ? [...form.enabled_workflows, wf.value]
+                                      : form.enabled_workflows.filter((w) => w !== wf.value)
+                                    setField('enabled_workflows')(next)
+                                  }}
+                                  className="mt-0.5"
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                                    <FolderKanban className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan-400" />
+                                    {wf.label}
+                                    {wf.status && wf.status !== 'published' && (
+                                      <span className="rounded bg-secondary px-1 text-[10px] text-muted-foreground">{wf.status}</span>
+                                    )}
+                                  </div>
+                                  {wf.description ? (
+                                    <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">{wf.description}</p>
+                                  ) : (
+                                    <p className="mt-0.5 text-[11px] text-muted-foreground/60">运行此工作流并返回结果</p>
+                                  )}
+                                </div>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* ===== 知识库 Tab ===== */}
                   {abilityTab === 'knowledge' && (
                     <div>
@@ -1877,15 +2011,108 @@ function AgentEditor() {
                     <div>
                       <div className="mb-2 flex items-center justify-between">
                         <span className="text-[11px] text-muted-foreground/70">
-                          选中的技能正文会拼接到 system prompt 末尾，持续塑造 AI 行为
+                          选中的技能正文会拼接到 system prompt 末尾。Skill 只收说明文字，脚本请到工具库添加。
                           <InfoTip text={<>技能正文支持 <code className="rounded bg-secondary px-1 text-primary">{'{{key}}'}</code> 引用变量</>} />
                         </span>
                         <span className="text-[10px] text-muted-foreground/60">
                           已选 {form.enabled_skills.length} / {skillOptions.length}
                         </span>
                       </div>
+                      <div className="mb-3 rounded-md border border-border bg-card/40 p-2.5">
+                        <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-[11px] font-medium text-foreground">导入文本新建技能</span>
+                          <div className="flex items-center gap-2 text-[11px]">
+                            <button type="button" className="text-primary hover:underline" onClick={() => navigate('/skills')}>
+                              技能库
+                            </button>
+                            <button type="button" className="text-primary hover:underline" onClick={() => navigate('/tools')}>
+                              前往工具
+                            </button>
+                          </div>
+                        </div>
+                        <input
+                          className={`${inputCls} mb-1.5`}
+                          placeholder="技能名称"
+                          value={skillDraftName}
+                          onChange={(e) => setSkillDraftName(e.target.value)}
+                        />
+                        <textarea
+                          className={`${textareaCls} mb-1.5 min-h-[88px]`}
+                          placeholder="粘贴 SOP / 角色设定等纯文本"
+                          value={skillDraftContent}
+                          onChange={(e) => setSkillDraftContent(e.target.value)}
+                        />
+                        <input
+                          ref={skillDraftFileRef}
+                          type="file"
+                          accept=".md,.txt,.json,.markdown"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0]
+                            e.target.value = ''
+                            if (!file) return
+                            const ext = (file.name.split('.').pop() || '').toLowerCase()
+                            if (['py', 'js', 'zip', 'skill', 'sh'].includes(ext)) {
+                              toast.warning('脚本请到「工具」添加，Skill 只保存说明文字')
+                              return
+                            }
+                            const text = await file.text()
+                            if (!skillDraftName) setSkillDraftName(file.name.replace(/\.[^.]+$/, ''))
+                            setSkillDraftContent(text)
+                          }}
+                        />
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            className="text-[11px] text-primary hover:underline"
+                            onClick={() => skillDraftFileRef.current?.click()}
+                          >
+                            从文件导入正文
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-primary btn-sm ml-auto"
+                            disabled={skillDraftSaving}
+                            onClick={async () => {
+                              if (!skillDraftContent.trim()) {
+                                toast.warning('请填写技能正文')
+                                return
+                              }
+                              setSkillDraftSaving(true)
+                              try {
+                                const created = await skillsApi.create({
+                                  name: (skillDraftName || '未命名技能').trim(),
+                                  description: '',
+                                  content: skillDraftContent.trim(),
+                                  enabled: true,
+                                })
+                                const opt = {
+                                  value: String(created.id),
+                                  label: created.name,
+                                  description: created.description || '',
+                                }
+                                setSkillOptions((prev) => [opt, ...prev.filter((s) => s.value !== opt.value)])
+                                setField('enabled_skills')(
+                                  form.enabled_skills.includes(opt.value)
+                                    ? form.enabled_skills
+                                    : [...form.enabled_skills, opt.value]
+                                )
+                                setSkillDraftName('')
+                                setSkillDraftContent('')
+                                toast.success(`已新增技能「${created.name}」并挂到当前智能体`)
+                              } catch (err) {
+                                toast.error(err.message || '新增技能失败')
+                              } finally {
+                                setSkillDraftSaving(false)
+                              }
+                            }}
+                          >
+                            {skillDraftSaving ? '创建中…' : '创建并勾选'}
+                          </button>
+                        </div>
+                      </div>
                       {skillOptions.length === 0 ? (
-                        <p className="py-4 text-center text-[11px] text-muted-foreground/60">暂无可用技能，请先到「技能」页面创建并启用</p>
+                        <p className="py-4 text-center text-[11px] text-muted-foreground/60">暂无可用技能，可在上方导入文本，或到「技能」页面创建</p>
                       ) : (
                         <div className="grid grid-cols-1 gap-1.5">
                           {skillOptions.map((sk) => {

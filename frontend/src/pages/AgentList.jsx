@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { BookOpen, Trash2, Share2, Pencil, Eye, Shield, ShieldBan, Package, Sparkles } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { agents as agentsApi } from '../api/client'
+import { agents as agentsApi, isAgentPublished } from '../api/client'
 import { Modal } from '../components/Dialog'
 import { inputCls } from '../components/property/FormControls'
 import { toast } from '../store/toastStore'
@@ -161,7 +161,14 @@ function AgentList() {
   // 表格列定义
   const columns = [
     { key: 'id', header: 'ID', width: '70px', render: (r) => <span className="font-mono text-primary">#{r.id}</span> },
-    { key: 'name', header: '名称', render: (r) => <span className="truncate text-foreground">{r.name || '-'}</span> },
+    { key: 'name', header: '名称', render: (r) => (
+      <span className="inline-flex min-w-0 items-center gap-1.5">
+        <span className="truncate text-foreground">{r.name || '-'}</span>
+        {!isAgentPublished(r) && (
+          <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-600">草稿</span>
+        )}
+      </span>
+    ) },
     {
       key: 'description', header: '描述',
       render: (r) => <span className="truncate text-muted-foreground" title={r.description || ''}>{r.description || '-'}</span>,
@@ -185,6 +192,23 @@ function AgentList() {
             {canShare && (
               <button type="button" onClick={() => { setShareResource(r); setShareOpen(true) }} className="btn-secondary btn-sm inline-flex items-center gap-1" title="共享给其他用户">
                 <Share2 className="h-3.5 w-3.5" />共享
+              </button>
+            )}
+            {canEdit && !isAgentPublished(r) && (
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await agentsApi.publish(r.id)
+                    toast.success('已发布')
+                    await load()
+                  } catch (err) {
+                    toast.error(err.message || '发布失败')
+                  }
+                }}
+                className="btn-primary btn-sm"
+              >
+                发布
               </button>
             )}
             {canEdit && (

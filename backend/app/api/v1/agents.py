@@ -154,6 +154,7 @@ class AgentBase(BaseModel):
     enabled_asset_types: list[str] | None = Field(None, description="启用的资产类型 code 列表")
     # 启用的技能 id 列表（纯文本指令，注入 system prompt，见 prompt_assembler.py）
     enabled_skills: list[int] | None = Field(None, description="启用的技能 id 列表（注入 system prompt）")
+    enabled_workflows: list[int] | None = Field(None, description="作为工具绑定的工作流 id 列表")
     max_iterations: int = Field(5, description="最大迭代轮数")
     # 基础信息与形象
     avatar: str | None = Field(None, description="头像 URL")
@@ -168,9 +169,69 @@ class AgentBase(BaseModel):
     tool_configs: dict | None = Field(None, description="工具配置（key=工具名, value={timeout, retry, require_confirm}）")
     # 执行引擎：langgraph（默认）| hermes（Hermes 风格 ReAct + 分段并行 + 记忆 + 委派）
     engine: str = Field("langgraph", description="执行引擎：langgraph（默认）| hermes")
+    publish_status: str | None = Field(None, description="draft / published，创建默认草稿，更新未传则保持原值")
 
 
 AGENT_DSL_VERSION = "soar/agent-dsl/1"
+
+
+def _resolve_publish_status(agent: Agent) -> str:
+    col = getattr(agent, "publish_status", None)
+    if col in ("draft", "published"):
+        vars_ = agent.variables or {}
+        if vars_.get("_publish_status") == "draft":
+            return "draft"
+        name = agent.name or ""
+        desc = agent.description or ""
+        if name.startswith("（草稿）") or str(desc).startswith("[草稿]"):
+            return "draft"
+        return col
+    vars_ = agent.variables or {}
+    if vars_.get("_publish_status") == "draft":
+        return "draft"
+    name = agent.name or ""
+    desc = agent.description or ""
+    if name.startswith("（草稿）") or str(desc).startswith("[草稿]"):
+        return "draft"
+    return "published"
+
+
+def _incoming_publish_status(body: AgentBase, *, default: str) -> str:
+    raw = body.publish_status
+    if raw in ("draft", "published"):
+        return raw
+    vars_ = body.variables or {}
+    if vars_.get("_publish_status") in ("draft", "published"):
+        return vars_["_publish_status"]
+    name = body.name or ""
+    desc = body.description or ""
+    if name.startswith("（草稿）") or str(desc).startswith("[草稿]"):
+        return "draft"
+    return default
+
+
+def _agent_item(agent: Agent, can_edit: bool) -> dict:
+    data = to_dict(agent)
+    data["publish_status"] = _resolve_publish_status(agent)
+    data["can_edit"] = can_edit
+    return data
+
+
+def _strip_draft_marks(agent: Agent) -> None:
+    name = agent.name or ""
+    if name.startswith("（草稿）"):
+        agent.name = name[4:].strip() or name
+    desc = agent.description or ""
+    if str(desc).startswith("[草稿]"):
+        agent.description = str(desc)[4:].lstrip()
+    vars_ = dict(agent.variables or {})
+    vars_["_publish_status"] = "published"
+    agent.variables = vars_
+
+
+def _require_published(agent: Agent) -> None:
+    if _resolve_publish_status(agent) != "published":
+        raise HTTPException(status_code=400, detail="该智能体尚未发布，无法在对话中使用")
 
 
 def _agent_to_dsl(agent: Agent) -> dict[str, Any]:
@@ -190,6 +251,7 @@ def _agent_to_dsl(agent: Agent) -> dict[str, Any]:
         "enabled_kbs": agent.enabled_kbs or [],
         "enabled_asset_types": agent.enabled_asset_types or [],
         "enabled_skills": agent.enabled_skills or [],
+        "enabled_workflows": agent.enabled_workflows or [],
         "max_iterations": agent.max_iterations,
         "avatar": agent.avatar,
         "greeting": agent.greeting,
@@ -234,6 +296,7 @@ def _dsl_to_agent_base(dsl: dict[str, Any]) -> AgentBase:
         enabled_kbs=dsl.get("enabled_kbs") or [],
         enabled_asset_types=dsl.get("enabled_asset_types") or [],
         enabled_skills=dsl.get("enabled_skills") or [],
+        enabled_workflows=dsl.get("enabled_workflows") or [],
         max_iterations=int(dsl.get("max_iterations", 5)),
         avatar=dsl.get("avatar"),
         greeting=dsl.get("greeting"),
@@ -288,6 +351,7 @@ class AgentTestRequest(BaseModel):
     session_id: str = Field("default", description="会话 ID（多轮对话上下文持久化键）")
     # 会话级参数覆盖：None 时走 Agent 配置（向后兼容）；非 None 时按字段独立覆盖
     override: Optional[ChatOverride] = Field(None, description="会话级参数覆盖（仅本次请求生效）")
+    channel: str | None = Field(None, description="conversation 表示正式对话，草稿不可用；test 为编辑器调试")
 
 
 class ResumeRequest(BaseModel):
@@ -298,24 +362,21 @@ class ResumeRequest(BaseModel):
 
 @router.get("")
 def list_agents(
+    usable: bool = Query(False, description="仅返回已发布、可在对话中使用的智能体"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[dict]:
-    """列出所有智能体。
-
-    每项附带 ``can_edit`` 标志（admin/owner/被授权用户为 True）。
-    """
-    logger.info("查询智能体列表")
+    logger.info("查询智能体列表 usable=%s", usable)
     agents = db.query(Agent).order_by(Agent.created_at.desc()).all()
-    # 防御性清理：剔除已不存在的知识库引用（如手动删除 KB 后的残留）
     for agent in agents:
         _sanitize_enabled_kbs(db, agent)
-    result = to_dict_list(agents)
-    # 资源级 owner 控制：批量查共享授权集合，admin 在调用处直接判 True
+    if usable:
+        agents = [a for a in agents if _resolve_publish_status(a) == "published"]
     shared_ids = compute_can_edit_ids(db, current_user, "agent", [a.id for a in agents])
-    for item, agent in zip(result, agents):
-        item["can_edit"] = resource_can_edit(current_user, db, agent, shared_ids)
-    return result
+    return [
+        _agent_item(agent, resource_can_edit(current_user, db, agent, shared_ids))
+        for agent in agents
+    ]
 
 
 @router.get("/templates")
@@ -329,6 +390,8 @@ def list_public_agent_templates(
     for agent in rows:
         vars_ = agent.variables or {}
         if not vars_.get("is_public_template"):
+            continue
+        if _resolve_publish_status(agent) != "published":
             continue
         item = to_dict(agent)
         item["template_scenario"] = vars_.get("template_scenario") or ""
@@ -359,6 +422,7 @@ def create_agent_from_dsl(
         enabled_kbs=base.enabled_kbs or [],
         enabled_asset_types=base.enabled_asset_types or [],
         enabled_skills=base.enabled_skills or [],
+        enabled_workflows=base.enabled_workflows or [],
         max_iterations=base.max_iterations,
         avatar=base.avatar,
         greeting=base.greeting,
@@ -369,6 +433,7 @@ def create_agent_from_dsl(
         variables=base.variables or {},
         tool_configs=base.tool_configs or {},
         engine=base.engine or "hermes",
+        publish_status="published",
         created_by=current_user.id,
     )
     db.add(agent)
@@ -398,6 +463,7 @@ def get_agent(
     data = to_dict(agent)
     shared_ids = compute_can_edit_ids(db, current_user, "agent", [agent.id])
     data["can_edit"] = resource_can_edit(current_user, db, agent, shared_ids)
+    data["publish_status"] = _resolve_publish_status(agent)
     return data
 
 
@@ -420,6 +486,7 @@ def create_agent(
         enabled_kbs=body.enabled_kbs or [],
         enabled_asset_types=body.enabled_asset_types or [],
         enabled_skills=body.enabled_skills or [],
+        enabled_workflows=body.enabled_workflows or [],
         max_iterations=body.max_iterations,
         avatar=body.avatar,
         greeting=body.greeting,
@@ -430,6 +497,7 @@ def create_agent(
         variables=body.variables or {},
         tool_configs=body.tool_configs or {},
         engine=body.engine or "langgraph",
+        publish_status=_incoming_publish_status(body, default="draft"),
         created_by=current_user.id,
     )
     db.add(agent)
@@ -463,6 +531,7 @@ def update_agent(
     agent.enabled_kbs = body.enabled_kbs or []
     agent.enabled_asset_types = body.enabled_asset_types or []
     agent.enabled_skills = body.enabled_skills or []
+    agent.enabled_workflows = body.enabled_workflows or []
     agent.max_iterations = body.max_iterations
     agent.avatar = body.avatar
     agent.greeting = body.greeting
@@ -475,6 +544,9 @@ def update_agent(
     # engine：前端 body 未传 engine 时保留原值（避免误覆盖为 langgraph）
     if body.engine:
         agent.engine = body.engine
+    incoming = _incoming_publish_status(body, default="")
+    if incoming in ("draft", "published"):
+        agent.publish_status = incoming
     db.commit()
     db.refresh(agent)
     logger.info("智能体已更新: id=%s, engine=%s", agent.id, agent.engine)
@@ -492,6 +564,24 @@ def export_agent_dsl(
     if agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
     return _agent_to_dsl(agent)
+
+
+@router.post("/{agent_id}/publish")
+def publish_agent(
+    agent_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    check_resource_ownership(current_user, db, "agent", agent_id, agent)
+    agent.publish_status = "published"
+    _strip_draft_marks(agent)
+    db.commit()
+    db.refresh(agent)
+    shared_ids = compute_can_edit_ids(db, current_user, "agent", [agent.id])
+    return _agent_item(agent, resource_can_edit(current_user, db, agent, shared_ids))
 
 
 @router.post("/{agent_id}/publish-template")
@@ -589,7 +679,7 @@ async def test_agent(
         alert_data = {"input": user_input}
         user_text = user_input
 
-    has_tools = bool(agent.enabled_tools) or bool(agent.enabled_kbs) or bool(agent.enabled_asset_types)
+    has_tools = bool(agent.enabled_tools) or bool(agent.enabled_kbs) or bool(agent.enabled_asset_types) or bool(agent.enabled_workflows)
 
     # ===== 无工具：纯 LLM 对话路径 =====
     if not has_tools:
@@ -643,6 +733,8 @@ async def test_agent(
         enabled_tools=agent.enabled_tools or [],
         enabled_kbs=agent.enabled_kbs or [],
         enabled_asset_types=agent.enabled_asset_types or [],
+        enabled_workflows=agent.enabled_workflows or [],
+        agent_id=agent.id,
         model_config_id=agent.model_config_id,
         # 组装 system prompt：基础提示词 + 启用技能正文。
         # allow_none=True：无 base 且无技能时返回 None，由 decision.py 走默认安全专家提示词
@@ -699,9 +791,11 @@ async def test_agent_stream(
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
+    if (body.channel or "") == "conversation":
+        _require_published(agent)
 
     user_input = body.input or ""
-    has_tools = bool(agent.enabled_tools) or bool(agent.enabled_kbs) or bool(agent.enabled_asset_types)
+    has_tools = bool(agent.enabled_tools) or bool(agent.enabled_kbs) or bool(agent.enabled_asset_types) or bool(agent.enabled_workflows)
 
     async def sse_stream():
         # ===== 无工具：纯对话流式 =====
@@ -789,6 +883,8 @@ async def test_agent_stream(
                 enabled_tools=agent.enabled_tools or [],
                 enabled_kbs=agent.enabled_kbs or [],
                 enabled_asset_types=agent.enabled_asset_types or [],
+                enabled_workflows=agent.enabled_workflows or [],
+                agent_id=agent.id,
                 model_config_id=(ov.model_config_id if ov and ov.model_config_id is not None else agent.model_config_id),
                 system_prompt=(
                     ov.system_prompt if ov and ov.system_prompt is not None
@@ -910,6 +1006,8 @@ async def chat_agent(
             status_code=400,
             detail="此端点仅支持 engine=hermes 的智能体，请用 /test/stream",
         )
+    if (body.channel or "conversation") != "test":
+        _require_published(agent)
 
     from app.agent.hermes import HermesAgentExecutor, sse_stream
 
