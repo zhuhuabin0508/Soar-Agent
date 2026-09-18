@@ -12,6 +12,7 @@ import WorkflowList from './pages/WorkflowList'
 import WorkflowMonitor from './pages/WorkflowMonitor'
 import AgentList from './pages/AgentList'
 import AgentEditor from './pages/AgentEditor'
+import AgentQuickCreate from './pages/AgentQuickCreate'
 import ToolList from './pages/ToolList'
 import ToolEditor from './pages/ToolEditor'
 import KnowledgeBase from './pages/KnowledgeBase'
@@ -87,6 +88,7 @@ const router = createBrowserRouter([
           { path: '/workflows', element: <WorkflowList /> },
           { path: '/workflows/:id/monitor', element: <WorkflowMonitor /> },
           { path: '/agents', element: <AgentList /> },
+          { path: '/agents/quick', element: <AgentQuickCreate /> },
           { path: '/agents/new', element: <AgentEditor /> },
           { path: '/agents/:id/edit', element: <AgentEditor /> },
           { path: '/agents/:id/monitor', element: <AgentMonitor /> },
