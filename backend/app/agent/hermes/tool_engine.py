@@ -222,7 +222,12 @@ class HermesToolEngine:
 
             args_model = _build_args_model(tool.name, tool.parameters_schema)
             tool_type = (getattr(tool, "tool_type", "code") or "code").lower()
-            source = "db_http" if tool_type == "http" else "db_code"
+            if getattr(tool, "is_preset", False):
+                source = "builtin"
+            elif tool_type == "http":
+                source = "db_http"
+            else:
+                source = "db_code"
 
             # 判断并行安全性：HTTP 工具默认 barrier，code 工具按名称判断
             parallel_safe = self._is_parallel_safe(name)

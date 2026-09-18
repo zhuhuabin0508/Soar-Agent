@@ -2292,6 +2292,13 @@ def ensure_seed_data() -> None:
     # 5. 预设资产类型模板（幂等：按 code 查询，不存在才插入）
     ensure_preset_asset_templates()
 
+    # 6. 内置知识库（幂等：按名称查重）
+    try:
+        from app.core.kb_seed import ensure_preset_knowledge_bases
+        ensure_preset_knowledge_bases()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("内置知识库种子失败（忽略）: %s", exc)
+
 
 # ============================================================================
 # 智能体创建助手：内置技能 + 智能体种子
