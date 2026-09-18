@@ -13,6 +13,7 @@ import { useWorkflowStore } from '../store/workflowStore'
 import { useUnsavedChanges } from '../hooks/useUnsavedChanges'
 import { useAutoSave } from '../hooks/useAutoSave'
 import { workflows as workflowsApi } from '../api/client'
+import { loadStashedWorkflowTemplate } from '../constants/workflowTemplates'
 
 // 工作流编排页：原三栏布局（顶部工具栏 + 左节点库 + 中画布 + 右属性面板）+ 底部日志抽屉
 // 支持 URL ?id=xxx 加载已存在的工作流
@@ -51,7 +52,20 @@ function WorkflowEditor() {
   useEffect(() => {
     let alive = true
     if (!idParam) {
-      // 进入空白编辑器：清空 store
+      const tpl = loadStashedWorkflowTemplate()
+      if (tpl && alive) {
+        loadWorkflow({ id: null, name: tpl.template.name, graph_config: tpl.template.graph_config })
+        return () => { alive = false }
+      }
+      try {
+        const aiRaw = sessionStorage.getItem('soar:workflow:ai-draft')
+        if (aiRaw && alive) {
+          sessionStorage.removeItem('soar:workflow:ai-draft')
+          const draft = JSON.parse(aiRaw)
+          loadWorkflow({ id: null, name: draft.name, graph_config: draft.graph_config })
+          return () => { alive = false }
+        }
+      } catch { /* ignore */ }
       clearAll()
       return () => {
         alive = false
