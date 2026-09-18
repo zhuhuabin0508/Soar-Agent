@@ -538,7 +538,7 @@ function OperationsDashboard({ onRefresh, refreshing, autoRefresh, onToggleAutoR
           emptyAction={
             <button
               type="button"
-              onClick={() => navigate('/workflows')}
+              onClick={() => navigate('/studio?tab=workflow')}
               className="btn-primary btn-sm"
             >
               去创建工作流

@@ -8,11 +8,10 @@ import { useHotkeys } from './hooks/useHotkeys'
 import Login from './pages/Login'
 import { useAuthStore } from './store/authStore'
 import WorkflowEditor from './pages/WorkflowEditor'
-import WorkflowList from './pages/WorkflowList'
 import WorkflowMonitor from './pages/WorkflowMonitor'
-import AgentList from './pages/AgentList'
+import Studio from './pages/Studio'
+import AgentWorkspace from './pages/AgentWorkspace'
 import AgentEditor from './pages/AgentEditor'
-import AgentQuickCreate from './pages/AgentQuickCreate'
 import ToolList from './pages/ToolList'
 import ToolEditor from './pages/ToolEditor'
 import KnowledgeBase from './pages/KnowledgeBase'
@@ -84,13 +83,15 @@ const router = createBrowserRouter([
         children: [
           { path: '/', element: <Navigate to="/dashboard" replace /> },
           { path: '/chat', element: <ChatPage /> },
+          { path: '/studio', element: <Studio /> },
           { path: '/editor', element: <WorkflowEditor /> },
-          { path: '/workflows', element: <WorkflowList /> },
+          { path: '/workflows', element: <Navigate to="/studio?tab=workflow" replace /> },
           { path: '/workflows/:id/monitor', element: <WorkflowMonitor /> },
-          { path: '/agents', element: <AgentList /> },
-          { path: '/agents/quick', element: <AgentQuickCreate /> },
-          { path: '/agents/new', element: <AgentEditor /> },
-          { path: '/agents/:id/edit', element: <AgentEditor /> },
+          { path: '/agents', element: <Navigate to="/studio?tab=agent" replace /> },
+          { path: '/agents/quick', element: <Navigate to="/agents/new" replace /> },
+          { path: '/agents/new', element: <AgentWorkspace /> },
+          { path: '/agents/:id/edit', element: <AgentWorkspace /> },
+          { path: '/agents/:id/advanced', element: <AgentEditor /> },
           { path: '/agents/:id/monitor', element: <AgentMonitor /> },
           { path: '/agent-tutorial', element: <AgentTutorial /> },
           { path: '/tools', element: <ToolList /> },

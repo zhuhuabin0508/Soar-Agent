@@ -154,7 +154,7 @@ function AgentTutorial() {
           ))}
         </nav>
         <button
-          onClick={() => navigate('/agents')}
+          onClick={() => navigate('/studio')}
           className="mt-4 w-full rounded-md border border-border px-3 py-2 text-sm text-muted-foreground transition hover:bg-secondary hover:text-foreground"
         >
           ← 返回智能体列表
@@ -696,7 +696,7 @@ function AgentTutorial() {
           {/* 底部 */}
           <div className="mt-12 flex items-center justify-between border-t border-border pt-6">
             <button
-              onClick={() => navigate('/agents')}
+              onClick={() => navigate('/studio')}
               className="rounded-md border border-border px-4 py-2 text-sm text-muted-foreground transition hover:bg-secondary hover:text-foreground"
             >
               ← 返回智能体列表

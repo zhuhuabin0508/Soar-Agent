@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
-  LayoutDashboard, Workflow as WorkflowIcon, MessageSquare, Bot, FolderKanban,
-  List as ListIcon, Wrench, Target, BookOpen, BrainCircuit, Shield,
+  LayoutDashboard, Workflow as WorkflowIcon, MessageSquare, Bot,
+  List as ListIcon, Wrench, BookOpen, BrainCircuit, Shield,
   ScrollText, ClipboardList, Bell, Users, ShieldCheck,
   Settings, HeartPulse, DatabaseBackup, LogOut, ChevronLeft, ChevronRight,
   ChevronsRight, UserRound, PieChart, Boxes, Info, Bug, MessageSquareWarning, Inbox, PackageCheck,
@@ -30,27 +30,20 @@ const NAV_GROUPS = [
       { to: '/dashboard', icon: LayoutDashboard, label: '运营大屏', perm: ['dashboard', 'view'] },
       { to: '/approvals', icon: WorkflowIcon, label: '工作台', perm: ['approval', 'view'] },
       { to: '/chat', icon: MessageSquare, label: '对话', perm: ['chat', 'view'] },
+      { to: '/ban-workflow/rules', icon: Filter, label: '触发规则', perm: ['ban_workflow', 'view'] },
     ],
   },
   {
-    title: '智能体编排',
+    title: '工作室',
     items: [
-      { subsection: '执行', to: '/agents', icon: Bot, label: '智能体', perm: ['agent', 'view'] },
       {
-        subsection: '执行',
-        to: '/workflows',
-        icon: FolderKanban,
-        label: '工作流',
-        perm: ['workflow_list', 'view'],
-        children: [
-          { to: '/workflows', icon: ListIcon, label: '工作流列表', end: true, perm: ['workflow_list', 'view'] },
-          { to: '/editor', icon: Wrench, label: '工作流编排', end: true, perm: ['workflow_editor', 'view'] },
-          { to: '/ban-workflow/rules', icon: Filter, label: '触发规则', end: true, perm: ['ban_workflow', 'view'] },
-        ],
+        to: '/studio',
+        icon: Bot,
+        label: '应用',
+        matchPrefix: ['/studio', '/agents', '/workflows', '/editor', '/skills'],
       },
-      { subsection: '能力', to: '/tools', icon: Wrench, label: '工具', perm: ['tool', 'view'] },
-      { subsection: '内容', to: '/skills', icon: Target, label: '技能', perm: ['skill', 'view'] },
-      { subsection: '内容', to: '/knowledge-base', icon: BookOpen, label: '知识库', perm: ['knowledge_base', 'view'] },
+      { to: '/tools', icon: Wrench, label: '工具', perm: ['tool', 'view'] },
+      { to: '/knowledge-base', icon: BookOpen, label: '知识库', perm: ['knowledge_base', 'view'] },
     ],
   },
   {
@@ -139,13 +132,14 @@ const BREADCRUMB_MAP = {
   '/dashboard': ['运营中心', '运营大屏'],
   '/approvals': ['运营中心', '工作台'],
   '/chat': ['运营中心', '对话'],
-  '/agents': ['智能体编排', '智能体'],
-  '/workflows': ['智能体编排', '工作流', '工作流列表'],
-  '/workflows/:id/monitor': ['智能体编排', '工作流', '监控'],
-  '/editor': ['智能体编排', '工作流', '工作流编排'],
-  '/skills': ['智能体编排', '技能'],
-  '/tools': ['智能体编排', '工具'],
-  '/knowledge-base': ['智能体编排', '知识库'],
+  '/studio': ['工作室', '应用'],
+  '/agents': ['工作室', '应用'],
+  '/workflows': ['工作室', '应用'],
+  '/workflows/:id/monitor': ['工作室', '工作流监控'],
+  '/editor': ['工作室', '工作流编排'],
+  '/skills': ['工作室', '技能库'],
+  '/tools': ['工作室', '工具'],
+  '/knowledge-base': ['工作室', '知识库'],
   '/llm-configs': ['连接配置', '模型设置'],
   '/devices': ['连接配置', '设备对接', '设备列表'],
   '/executions': ['运行监控', '日志中心'],
@@ -165,7 +159,7 @@ const BREADCRUMB_MAP = {
   '/strategies/:id/edit': ['连接配置', '设备对接', '解析策略', '编辑'],
   '/alerts': ['连接配置', '设备对接', '告警列表'],
   '/ingest-monitor': ['连接配置', '设备对接', '入库监控'],
-  '/ban-workflow/rules': ['智能体编排', '工作流', '触发规则'],
+  '/ban-workflow/rules': ['运营中心', '触发规则'],
   '/notifications': ['运行监控', '通知中心'],
   '/agent-tutorial': ['智能体', '使用教程'],
   '/users': ['系统管理', '用户管理'],
@@ -316,12 +310,13 @@ function getBreadcrumbs(pathname) {
   // 精确匹配
   if (BREADCRUMB_MAP[pathname]) return BREADCRUMB_MAP[pathname]
   // 模糊匹配动态路由
-  if (pathname.startsWith('/agents/') && pathname.endsWith('/edit')) return ['智能体', '编辑']
-  if (pathname.startsWith('/agents/') && pathname.endsWith('/monitor')) return ['智能体', '监控']
-  if (pathname.startsWith('/workflows/') && pathname.endsWith('/monitor')) return ['智能体编排', '工作流', '监控']
-  if (pathname.startsWith('/tools/') && pathname.endsWith('/edit')) return ['工具', '编辑']
-  if (pathname.startsWith('/tools/new')) return ['工具', '新建']
-  if (pathname.startsWith('/agents/new')) return ['智能体', '新建']
+  if (pathname.startsWith('/agents/') && pathname.endsWith('/edit')) return ['工作室', '编辑智能体']
+  if (pathname.startsWith('/agents/') && pathname.endsWith('/monitor')) return ['工作室', '智能体监控']
+  if (pathname.startsWith('/workflows/') && pathname.endsWith('/monitor')) return ['工作室', '工作流监控']
+  if (pathname.startsWith('/tools/') && pathname.endsWith('/edit')) return ['工作室', '编辑工具']
+  if (pathname.startsWith('/tools/new')) return ['工作室', '新建工具']
+  if (pathname.startsWith('/agents/new') || pathname.startsWith('/agents/quick')) return ['工作室', '新建智能体']
+  if (pathname.startsWith('/agents/') && pathname.endsWith('/advanced')) return ['工作室', '高级编辑']
   return []
 }
 
@@ -516,6 +511,7 @@ function AppShell() {
             const groupHasActive = group.items.some((it) =>
               location.pathname === it.to ||
               location.pathname.startsWith(it.to + '/') ||
+              (it.matchPrefix || []).some((p) => location.pathname === p || location.pathname.startsWith(p + '/')) ||
               (it.children || []).some((c) => location.pathname === c.to)
             )
             return (
@@ -535,6 +531,9 @@ function AppShell() {
                   // 父项高亮：自身激活或任一子项激活
                   const childActive = (item.children || []).some(
                     (c) => location.pathname === c.to
+                  )
+                  const prefixActive = (item.matchPrefix || []).some(
+                    (p) => location.pathname === p || location.pathname.startsWith(p + '/')
                   )
                   const ItemIcon = item.icon
                   const showSubsection = !collapsed && item.subsection && (
@@ -558,7 +557,7 @@ function AppShell() {
                                 ? 'justify-center px-2 py-2.5'
                                 : 'gap-3 px-3 py-2.5'
                             } ${
-                              isActive || childActive
+                              isActive || childActive || prefixActive
                                 ? 'bg-primary/10 text-primary ring-1 ring-primary/30'
                                 : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground'
                             }`

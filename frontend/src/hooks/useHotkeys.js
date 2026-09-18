@@ -76,11 +76,11 @@ export function useHotkeys() {
           lastGRef.current = 0
         } else if (e.key === 'a' && !isTyping()) {
           e.preventDefault()
-          navigate('/agents')
+          navigate('/studio')
           lastGRef.current = 0
         } else if (e.key === 'w' && !isTyping()) {
           e.preventDefault()
-          navigate('/workflows')
+          navigate('/studio?tab=workflow')
           lastGRef.current = 0
         } else if (e.key === 't' && !isTyping()) {
           e.preventDefault()

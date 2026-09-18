@@ -183,7 +183,7 @@ function AgentMonitor() {
         <div className="flex items-center gap-4">
           <button
             type="button"
-            onClick={() => navigate('/agents')}
+            onClick={() => navigate('/studio')}
             className="text-sm text-muted-foreground hover:text-foreground"
           >
             ← 返回

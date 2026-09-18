@@ -5,6 +5,7 @@ import {
   FileUp, FileText, CheckCircle2, AlertTriangle, X, Loader2,
   ChevronDown, FileDown, Share2,
 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { skills as skillsApi } from '../api/client'
 import { hasPermission, canEditResource, canManageShare } from '../utils/permissions'
 import { TutorialButton, TutorialDrawer } from '../components/TutorialDrawer'
@@ -88,6 +89,7 @@ const QUICK_FILTERS = [
 
 // 技能列表页
 function SkillList() {
+  const navigate = useNavigate()
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -392,7 +394,10 @@ function SkillList() {
     <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
       <header className="flex items-center justify-between border-b border-border bg-card/60 px-6 py-4">
         <div className="flex items-center gap-4">
-          <h1 className="text-xl font-semibold text-foreground">技能</h1>
+          <button type="button" onClick={() => navigate('/studio')} className="btn-secondary btn-sm">
+            ← 返回工作室
+          </button>
+          <h1 className="text-xl font-semibold text-foreground">技能库</h1>
           <span className="text-xs text-muted-foreground/70">共 {filteredRows.length} 个</span>
           <span className="hidden text-xs text-muted-foreground/60 sm:inline">纯文本指令，注入智能体 system prompt</span>
         </div>

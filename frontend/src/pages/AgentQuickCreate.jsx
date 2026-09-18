@@ -294,7 +294,7 @@ function AgentQuickCreate() {
         }))
       } catch { /* ignore */ }
       toast.success('已暂存草稿，可稍后在智能体列表继续编辑')
-      navigate('/agents')
+      navigate('/studio')
     } catch (err) {
       toast.error(err.message || '暂存失败')
     } finally {
@@ -310,7 +310,7 @@ function AgentQuickCreate() {
     <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
       <header className="flex shrink-0 items-center justify-between border-b border-border bg-card/60 px-6 py-4">
         <div className="flex items-center gap-3">
-          <button type="button" onClick={() => navigate('/agents')} className="btn-secondary btn-sm">
+          <button type="button" onClick={() => navigate('/studio')} className="btn-secondary btn-sm">
             <ArrowLeft className="h-4 w-4" />
           </button>
           <div>
