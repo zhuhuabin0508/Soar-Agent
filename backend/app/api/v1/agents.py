@@ -170,6 +170,96 @@ class AgentBase(BaseModel):
     engine: str = Field("langgraph", description="执行引擎：langgraph（默认）| hermes")
 
 
+AGENT_DSL_VERSION = "soar/agent-dsl/1"
+
+
+def _agent_to_dsl(agent: Agent) -> dict[str, Any]:
+    """将 Agent ORM 转为可版本化的 DSL 文档（JSON/YAML 通用结构）。"""
+    variables = dict(agent.variables or {})
+    for k in ("_publish_status",):
+        variables.pop(k, None)
+    return {
+        "api_version": AGENT_DSL_VERSION,
+        "name": agent.name,
+        "description": agent.description or "",
+        "model_config_id": agent.model_config_id,
+        "system_prompt": agent.system_prompt or "",
+        "temperature": agent.temperature,
+        "max_tokens": agent.max_tokens,
+        "enabled_tools": agent.enabled_tools or [],
+        "enabled_kbs": agent.enabled_kbs or [],
+        "enabled_asset_types": agent.enabled_asset_types or [],
+        "enabled_skills": agent.enabled_skills or [],
+        "max_iterations": agent.max_iterations,
+        "avatar": agent.avatar,
+        "greeting": agent.greeting,
+        "suggested_questions": agent.suggested_questions or [],
+        "context_turns": agent.context_turns,
+        "enable_memory": agent.enable_memory,
+        "tone_style": agent.tone_style,
+        "variables": variables,
+        "tool_configs": agent.tool_configs or {},
+        "engine": agent.engine or "langgraph",
+        "template_meta": {
+            "is_public_template": bool((agent.variables or {}).get("is_public_template")),
+            "scenario": (agent.variables or {}).get("template_scenario") or "",
+            "tags": (agent.variables or {}).get("template_tags") or [],
+        },
+    }
+
+
+def _dsl_to_agent_base(dsl: dict[str, Any]) -> AgentBase:
+    """DSL 文档 → AgentBase（创建/更新用）。"""
+    if not isinstance(dsl, dict):
+        raise HTTPException(status_code=400, detail="dsl 必须为对象")
+    ver = dsl.get("api_version")
+    if ver and ver != AGENT_DSL_VERSION:
+        logger.warning("DSL 版本不匹配: %s (期望 %s)", ver, AGENT_DSL_VERSION)
+    variables = dict(dsl.get("variables") or {})
+    meta = dsl.get("template_meta") or {}
+    if meta.get("is_public_template"):
+        variables["is_public_template"] = True
+    if meta.get("scenario"):
+        variables["template_scenario"] = meta["scenario"]
+    if meta.get("tags"):
+        variables["template_tags"] = meta["tags"]
+    return AgentBase(
+        name=dsl.get("name") or "未命名智能体",
+        description=dsl.get("description") or "",
+        model_config_id=dsl.get("model_config_id"),
+        system_prompt=dsl.get("system_prompt"),
+        temperature=float(dsl.get("temperature", 0.7)),
+        max_tokens=int(dsl.get("max_tokens", 1024)),
+        enabled_tools=dsl.get("enabled_tools") or [],
+        enabled_kbs=dsl.get("enabled_kbs") or [],
+        enabled_asset_types=dsl.get("enabled_asset_types") or [],
+        enabled_skills=dsl.get("enabled_skills") or [],
+        max_iterations=int(dsl.get("max_iterations", 5)),
+        avatar=dsl.get("avatar"),
+        greeting=dsl.get("greeting"),
+        suggested_questions=dsl.get("suggested_questions") or [],
+        context_turns=int(dsl.get("context_turns", 10)),
+        enable_memory=bool(dsl.get("enable_memory", False)),
+        tone_style=dsl.get("tone_style") or "professional",
+        variables=variables,
+        tool_configs=dsl.get("tool_configs") or {},
+        engine=dsl.get("engine") or "hermes",
+    )
+
+
+class AgentFromDslRequest(BaseModel):
+    """从 DSL 创建智能体。"""
+
+    dsl: dict[str, Any] = Field(..., description="智能体 DSL 文档（api_version: soar/agent-dsl/1）")
+
+
+class PublishTemplateRequest(BaseModel):
+    """发布为团队模板（写入 variables 标记，供模板市场展示）。"""
+
+    scenario: str = Field("", description="适用场景说明")
+    tags: list[str] = Field(default_factory=list, description="场景标签")
+
+
 class ChatOverride(BaseModel):
     """会话级参数覆盖（仅本次请求生效，不修改 Agent 配置）。
 
@@ -226,6 +316,65 @@ def list_agents(
     for item, agent in zip(result, agents):
         item["can_edit"] = resource_can_edit(current_user, db, agent, shared_ids)
     return result
+
+
+@router.get("/templates")
+def list_public_agent_templates(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[dict]:
+    """列出已发布为团队模板的智能体（variables.is_public_template=true）。"""
+    rows = db.query(Agent).order_by(Agent.updated_at.desc()).all()
+    out = []
+    for agent in rows:
+        vars_ = agent.variables or {}
+        if not vars_.get("is_public_template"):
+            continue
+        item = to_dict(agent)
+        item["template_scenario"] = vars_.get("template_scenario") or ""
+        item["template_tags"] = vars_.get("template_tags") or []
+        shared_ids = compute_can_edit_ids(db, current_user, "agent", [agent.id])
+        item["can_edit"] = resource_can_edit(current_user, db, agent, shared_ids)
+        out.append(item)
+    return out
+
+
+@router.post("/from-dsl", status_code=201)
+def create_agent_from_dsl(
+    body: AgentFromDslRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """从 DSL 文档创建智能体（开发者入口）。"""
+    base = _dsl_to_agent_base(body.dsl)
+    logger.info("从 DSL 创建智能体: name=%s", base.name)
+    agent = Agent(
+        name=base.name,
+        description=base.description,
+        model_config_id=base.model_config_id,
+        system_prompt=base.system_prompt,
+        temperature=base.temperature,
+        max_tokens=base.max_tokens,
+        enabled_tools=base.enabled_tools or [],
+        enabled_kbs=base.enabled_kbs or [],
+        enabled_asset_types=base.enabled_asset_types or [],
+        enabled_skills=base.enabled_skills or [],
+        max_iterations=base.max_iterations,
+        avatar=base.avatar,
+        greeting=base.greeting,
+        suggested_questions=base.suggested_questions or [],
+        context_turns=base.context_turns,
+        enable_memory=base.enable_memory,
+        tone_style=base.tone_style,
+        variables=base.variables or {},
+        tool_configs=base.tool_configs or {},
+        engine=base.engine or "hermes",
+        created_by=current_user.id,
+    )
+    db.add(agent)
+    db.commit()
+    db.refresh(agent)
+    return to_dict(agent)
 
 
 @router.get("/{agent_id}")
@@ -329,6 +478,42 @@ def update_agent(
     db.commit()
     db.refresh(agent)
     logger.info("智能体已更新: id=%s, engine=%s", agent.id, agent.engine)
+    return to_dict(agent)
+
+
+@router.get("/{agent_id}/dsl")
+def export_agent_dsl(
+    agent_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """导出智能体 DSL（JSON 结构，可存为文件或版本管理）。"""
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return _agent_to_dsl(agent)
+
+
+@router.post("/{agent_id}/publish-template")
+def publish_agent_as_template(
+    agent_id: int,
+    body: PublishTemplateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """将智能体发布为团队模板（模板市场数据源）。"""
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    check_resource_ownership(current_user, db, "agent", agent_id, agent)
+    vars_ = dict(agent.variables or {})
+    vars_["is_public_template"] = True
+    vars_["template_scenario"] = body.scenario or agent.description or ""
+    vars_["template_tags"] = body.tags or []
+    agent.variables = vars_
+    db.commit()
+    db.refresh(agent)
+    logger.info("智能体已发布为模板: id=%s", agent_id)
     return to_dict(agent)
 
 
