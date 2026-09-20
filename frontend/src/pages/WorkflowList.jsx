@@ -22,11 +22,7 @@ import { inputCls } from '../components/property/FormControls'
 import { hasPermission, canEditResource, canManageShare } from '../utils/permissions'
 import ShareDialog from '../components/ShareDialog'
 import BatchShareDialog from '../components/BatchShareDialog'
-import {
-  WORKFLOW_TEMPLATES,
-  stashWorkflowTemplate,
-  WORKFLOW_TEMPLATE_STORAGE_KEY,
-} from '../constants/workflowTemplates'
+import { WORKFLOW_TEMPLATES } from '../constants/workflowTemplates'
 
 // 格式化时间
 function fmtTime(t) {
@@ -1172,11 +1168,9 @@ function WorkflowList() {
             onClick={async () => {
               setGeneratingDraft(true)
               try {
-                const draft = await workflowsApi.generateDraft(aiPrompt.trim())
                 setCreateOpen(false)
                 setAiPrompt('')
-                navigate(`/editor?id=${draft.id}`)
-                toast.success('已生成工作流草稿，请在画布中审阅后发布')
+                navigate(`/workflows/new?mode=describe&q=${encodeURIComponent(aiPrompt.trim())}`)
               } catch (err) {
                 toast.error(err.message || '生成草稿失败')
               } finally {
@@ -1197,9 +1191,8 @@ function WorkflowList() {
               key={tpl.key}
               type="button"
               onClick={() => {
-                stashWorkflowTemplate(tpl.key)
                 setCreateOpen(false)
-                navigate('/editor')
+                navigate(`/workflows/new?template=${tpl.key}`)
               }}
               className="flex flex-col gap-1.5 rounded-lg border border-border bg-card/40 p-3 text-left transition hover:border-primary/50 hover:bg-primary/5"
             >
@@ -1219,12 +1212,12 @@ function WorkflowList() {
           type="button"
           onClick={() => {
             setCreateOpen(false)
-            navigate('/editor')
+            navigate('/workflows/new')
           }}
           className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-border py-3 text-sm text-muted-foreground transition hover:border-primary/50 hover:text-foreground"
         >
           <Pencil className="h-4 w-4" />
-          从零开始（高级画布）
+          打开快速创建向导
         </button>
       </Modal>
 

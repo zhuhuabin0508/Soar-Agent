@@ -41,7 +41,6 @@ function Studio() {
   const [loading, setLoading] = useState(true)
   const [q, setQ] = useState('')
   const [menuId, setMenuId] = useState(null)
-  const [creating, setCreating] = useState(false)
   const canCreateAgent = hasPermission('agent', 'edit')
   const canCreateWorkflow = hasPermission('workflow_list', 'edit') || hasPermission('workflow_editor', 'edit')
 
@@ -134,22 +133,8 @@ function Studio() {
 
   const createAgent = () => navigate('/agents/new')
 
-  const createWorkflow = async () => {
-    if (creating) return
-    setCreating(true)
-    try {
-      const wf = await workflowsApi.create({
-        name: '未命名工作流',
-        graph_config: { nodes: [], edges: [] },
-        trigger_type: 'manual',
-        status: 'draft',
-      })
-      navigate(`/editor?id=${wf.id}`)
-    } catch (err) {
-      toast.error(err.message || '创建失败')
-    } finally {
-      setCreating(false)
-    }
+  const createWorkflow = () => {
+    navigate('/workflows/new')
   }
 
   return (
@@ -194,11 +179,10 @@ function Studio() {
                     <button
                       type="button"
                       onClick={createWorkflow}
-                      disabled={creating}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-secondary disabled:opacity-50"
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-secondary"
                     >
                       <FolderKanban className="h-4 w-4 text-cyan-500" />
-                      {creating ? '创建中…' : '工作流'}
+                      工作流
                     </button>
                   )}
                 </div>

@@ -8,6 +8,7 @@ import { useHotkeys } from './hooks/useHotkeys'
 import Login from './pages/Login'
 import { useAuthStore } from './store/authStore'
 import WorkflowEditor from './pages/WorkflowEditor'
+import WorkflowQuickCreate from './pages/WorkflowQuickCreate'
 import WorkflowMonitor from './pages/WorkflowMonitor'
 import Studio from './pages/Studio'
 import AgentWorkspace from './pages/AgentWorkspace'
@@ -85,6 +86,7 @@ const router = createBrowserRouter([
           { path: '/chat', element: <ChatPage /> },
           { path: '/studio', element: <Studio /> },
           { path: '/editor', element: <WorkflowEditor /> },
+          { path: '/workflows/new', element: <WorkflowQuickCreate /> },
           { path: '/workflows', element: <Navigate to="/studio?tab=workflow" replace /> },
           { path: '/workflows/:id/monitor', element: <WorkflowMonitor /> },
           { path: '/agents', element: <Navigate to="/studio?tab=agent" replace /> },
