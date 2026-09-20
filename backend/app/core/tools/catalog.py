@@ -16,7 +16,10 @@ from app.core.tools.types import (
 
 
 class ToolCatalog:
-    """平台工具统一目录：内置 / 框架 / 安全 / 用户自建 的唯一注册表。"""
+    """平台工具统一目录：内置 / 框架 / 安全 / 用户自建 的唯一注册表。
+
+    MCP 接入暂不实施，对外集成走 REST/Webhook + HTTP 工具；见 docs/soar-agent-v2-master-plan.md §九。
+    """
 
     @staticmethod
     def _with_source(defn: dict[str, Any], source: ToolSource) -> dict[str, Any]:

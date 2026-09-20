@@ -122,6 +122,15 @@
 
 ---
 
+## 九、远期备忘（暂不实施）
+
+| 项 | 决策 | 说明 |
+|----|------|------|
+| **MCP 扩展** | **先放着，等有需求再做** | 内网 SOAR 场景优先用开放 API（REST / Webhook）+ HTTP 工具对接外部系统；MCP 仅在需对接大量第三方 MCP Server 或采购系统只提供 MCP 时再评估。引擎注释与 `ToolEntry.source` 可扩展 `mcp`，`ToolCatalog` 可预留 `tool_source=mcp`，本期不实现。 |
+| **工具批量导入/导出** | 先预留 | 对齐 Skill 的 import/export；现有「新建 + OpenAPI 导入」已够用。 |
+
+---
+
 ## 附：现状关键文件速查
 - 模板：`frontend/src/constants/agentTemplates.js`、`stashAgentTemplate`
 - 列表/入口：`frontend/src/pages/AgentList.jsx`、`WorkflowList.jsx`
