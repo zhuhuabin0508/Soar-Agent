@@ -486,6 +486,8 @@ def run_lightweight_migrations(engine) -> None:
                 "is_preset": "BOOLEAN NOT NULL DEFAULT FALSE",
                 # 多标签：JSON 数组，如 ["安全运营", "网络资产"]，支持自定义
                 "tags": "JSON",
+                # 工具来源：builtin | framework | security | custom
+                "tool_source": "VARCHAR(32)",
             },
         )
         # llm_configs 表新增 model_type 列（chat / embedding），区分对话模型与向量化模型

@@ -20,6 +20,8 @@ from typing import Any
 from app.core.tool_runner import clear_tool_cache, run_tool
 from app.core.tool_schema_infer import infer_tool_io
 from app.core.tool_templates import TOOL_TEMPLATES
+from app.core.tools.catalog import ToolCatalog
+from app.core.tools.types import TOOL_SOURCE_CUSTOM
 from app.database import get_db
 from app.dependencies import check_resource_ownership, compute_can_edit_ids, get_current_user, require_permission, require_role, resource_can_edit
 from app.models.tool import Tool
@@ -122,6 +124,31 @@ def list_tool_templates() -> list[dict]:
     return [dict(tpl) for tpl in TOOL_TEMPLATES]
 
 
+@router.get("/catalog", dependencies=[Depends(require_permission("tool", "view"))])
+def list_tool_catalog() -> dict:
+    """返回平台工具统一目录（预置定义，不含用户自建实例）。"""
+    preset = ToolCatalog.preset_definitions()
+    by_source: dict[str, int] = {}
+    for row in preset:
+        src = row.get("tool_source") or "unknown"
+        by_source[src] = by_source.get(src, 0) + 1
+    return {
+        "total": len(preset),
+        "by_source": by_source,
+        "tools": [
+            {
+                "name": t["name"],
+                "description": t.get("description", ""),
+                "tool_type": t.get("tool_type", "code"),
+                "tool_source": t.get("tool_source"),
+                "category": t.get("category"),
+                "tags": t.get("tags"),
+            }
+            for t in preset
+        ],
+    }
+
+
 @router.post("", status_code=201, dependencies=[Depends(require_permission("tool", "edit"))])
 def create_tool(
     body: ToolBase,
@@ -130,9 +157,16 @@ def create_tool(
 ) -> dict:
     """创建工具。"""
     logger.info("创建工具: name=%s, type=%s", body.name, body.tool_type)
+    if ToolCatalog.preset_name_index().get(body.name):
+        raise HTTPException(
+            status_code=400,
+            detail=f"工具名 '{body.name}' 与平台预置工具冲突，请更换名称",
+        )
     existing = db.query(Tool).filter(Tool.name == body.name).first()
     if existing is not None:
         raise HTTPException(status_code=400, detail=f"Tool name '{body.name}' already exists")
+    if (body.tool_type or "code") == "framework":
+        raise HTTPException(status_code=400, detail="framework 类型工具由平台预置，不支持手动创建")
     tool = Tool(
         name=body.name,
         description=body.description,
@@ -143,6 +177,7 @@ def create_tool(
         category=body.category,
         http_config=body.http_config,
         tags=body.tags,
+        tool_source=TOOL_SOURCE_CUSTOM,
         created_by=current_user.id,
     )
     db.add(tool)
@@ -168,9 +203,17 @@ def update_tool(
     check_resource_ownership(current_user, db, "tool", tool_id, tool)
     # 名称唯一性校验（排除自身）
     if body.name != tool.name:
+        if ToolCatalog.preset_name_index().get(body.name):
+            raise HTTPException(
+                status_code=400,
+                detail=f"工具名 '{body.name}' 与平台预置工具冲突，请更换名称",
+            )
         conflict = db.query(Tool).filter(Tool.name == body.name).first()
         if conflict is not None:
             raise HTTPException(status_code=400, detail=f"Tool name '{body.name}' already exists")
+    if getattr(tool, "is_preset", False) and (body.tool_type or "code") == "framework":
+        if (tool.tool_type or "code") != (body.tool_type or "code"):
+            raise HTTPException(status_code=400, detail="预置 framework 工具类型不可修改")
     tool.name = body.name
     tool.description = body.description
     tool.parameters_schema = body.parameters_schema

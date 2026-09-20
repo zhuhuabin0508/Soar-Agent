@@ -20,6 +20,8 @@ import logging
 
 from app.core.permissions import DEFAULT_ROLES, has_permission, migrate_permissions
 from app.core.tool_runner import CodeValidationError, validate_tool_code
+from app.core.tools.catalog import ToolCatalog
+from app.core.tools.types import TOOL_SOURCE_CUSTOM
 from app.models.role import Role
 
 logger = logging.getLogger(__name__)
@@ -185,6 +187,8 @@ def _create_tool(db, user, params: dict) -> dict:
         raise ValueError("name（工具名）为必填项，建议小写英文下划线命名")
     if not code:
         raise ValueError("code（工具代码）为必填项，须定义 async def run(**kwargs)")
+    if ToolCatalog.preset_name_index().get(name):
+        raise ValueError(f"工具名「{name}」与平台预置工具冲突，请更换名称")
     existing = db.query(Tool).filter(Tool.name == name).first()
     if existing:
         raise ValueError(f"工具「{name}」已存在（id={existing.id}），请改用其他名称")
@@ -207,6 +211,7 @@ def _create_tool(db, user, params: dict) -> dict:
         tool_type="code",
         category=params.get("category"),
         tags=[str(x) for x in (params.get("tags") or [])],
+        tool_source=TOOL_SOURCE_CUSTOM,
         created_by=user.id,
     )
     db.add(tool)

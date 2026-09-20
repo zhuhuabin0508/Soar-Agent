@@ -50,6 +50,8 @@ class Tool(Base):
     # 是否为系统内置工具（种子数据）：内置工具不可硬删除，只能禁用，
     # 防止容器重启后种子逻辑重新插入已被用户删除的工具。
     is_preset = Column(Boolean, default=False, nullable=False, server_default="false")
+    # 工具来源：builtin | framework | security | custom
+    tool_source = Column(String(32), nullable=True)
 
     def __repr__(self) -> str:
         return f"<Tool id={self.id} name={self.name!r} type={self.tool_type!r} enabled={self.enabled}>"

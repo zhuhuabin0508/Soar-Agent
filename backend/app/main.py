@@ -1,7 +1,7 @@
 """FastAPI 应用入口。
 
 创建 ``SOAR Platform API`` 应用，配置 CORS、挂载 ``/api/v1`` 路由，
-并在启动时建表、运行轻量迁移与种子内置工具模板。
+并在启动时建表、运行轻量迁移与同步工具目录。
 
 安全说明（P0-1/P0-2 升级）：
 - CORS 不再使用 ``allow_origins=["*"]``，改为从 ``settings.CORS_ORIGINS`` 读取白名单。
@@ -33,14 +33,13 @@ logger = logging.getLogger(__name__)
 
 
 def _init_db() -> None:
-    """建表、运行轻量迁移并种子内置工具模板与默认 admin 用户（幂等）。
+    """建表、运行轻量迁移、同步工具目录与种子默认 admin 用户（幂等）。
 
     使用 ``Base.metadata.create_all`` 自动建表；
     随后运行 ``run_lightweight_migrations`` 补齐新增列（如 webhook_secret）；
-    最后种子默认工具模板与 admin 用户。
+    预置工具由 ``ensure_preset_tools`` 统一同步，不再单独种子 TOOL_TEMPLATES。
     """
     from app.core.security import run_lightweight_migrations
-    from app.core.tool_templates import TOOL_TEMPLATES
     from app.database import Base, SessionLocal, engine
     import app.models  # noqa: F401  触发 ORM 注册到 Base.metadata
 
@@ -56,8 +55,17 @@ def _init_db() -> None:
     # entrypoint.sh 中的 ensure_seed_data() 在迁移前运行，此时 is_preset 列可能尚不存在，
     # 导致标记失败。此处补调一次，幂等无副作用。
     try:
-        from app.core.seed import ensure_hermes_tools
-        ensure_hermes_tools()
+        from app.core.tools.seed_service import ensure_preset_tools, backfill_tool_sources
+        from app.database import SessionLocal
+
+        ensure_preset_tools()
+        db = SessionLocal()
+        try:
+            updated = backfill_tool_sources(db)
+            if updated:
+                db.commit()
+        finally:
+            db.close()
     except Exception as exc:  # noqa: BLE001
         logger.warning("迁移后 Hermes 工具同步失败（忽略）: %s", exc)
 
@@ -69,29 +77,6 @@ def _init_db() -> None:
 
     db = SessionLocal()
     try:
-        from app.models.tool import Tool
-
-        # 按 name 补齐缺失的内置工具模板（空表全量种子，已有表补齐新增模板）
-        existing_names = {t.name for t in db.query(Tool).all()}
-        new_added = 0
-        for tpl in TOOL_TEMPLATES:
-            if tpl["name"] in existing_names:
-                continue
-            tool = Tool(
-                name=tpl["name"],
-                description=tpl.get("description", ""),
-                parameters_schema=tpl.get("parameters_schema"),
-                code=tpl.get("code", ""),
-                enabled=True,
-            )
-            db.add(tool)
-            new_added += 1
-        if new_added > 0:
-            db.commit()
-            logger.info("已补齐 %d 个内置工具模板（共 %d 个模板）", new_added, len(TOOL_TEMPLATES))
-        else:
-            logger.info("内置工具模板已齐全（%d 个），无需补齐", len(TOOL_TEMPLATES))
-
         # 种子默认 admin 用户（仅当 users 表为空时）
         _seed_admin_user(db)
 
