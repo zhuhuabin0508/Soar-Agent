@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { Puzzle, Braces, Settings, TrendingUp, Package } from 'lucide-react'
 import Toolbar from '../components/Toolbar'
@@ -31,6 +31,8 @@ function WorkflowEditor() {
   const selectedNodeId = useWorkflowStore((s) => s.selectedNodeId)
   const removeNode = useWorkflowStore((s) => s.removeNode)
 
+  const editorRef = useRef(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   // 左侧面板 Tab：节点库 / 全局变量
@@ -139,43 +141,59 @@ function WorkflowEditor() {
     return () => window.removeEventListener('keydown', handler)
   }, [selectedNodeId, removeNode])
 
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen?.()
+      return
+    }
+    editorRef.current?.requestFullscreen?.().catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    const onChange = () => {
+      setIsFullscreen(document.fullscreenElement === editorRef.current)
+    }
+    document.addEventListener('fullscreenchange', onChange)
+    return () => document.removeEventListener('fullscreenchange', onChange)
+  }, [])
+
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-card text-foreground">
-      {/* 顶部工具栏 */}
-      <Toolbar />
+    <div
+      ref={editorRef}
+      className="workflow-editor-root flex h-full min-h-[calc(100vh-var(--app-header-height))] w-full flex-col overflow-hidden bg-card text-foreground"
+    >
+      <Toolbar isFullscreen={isFullscreen} onToggleFullscreen={toggleFullscreen} />
 
       {/* 主体三栏：左节点库/变量面板 / 中画布 / 右属性面板 */}
-      <div className="flex min-h-0 flex-1">
-        <aside className="w-[260px] shrink-0 border-r border-border bg-card">
-          {/* Tab 切换栏 */}
-          <div className="flex shrink-0 border-b border-border">
+      <div className="workflow-editor-main flex min-h-0 flex-1">
+        <aside className="flex w-[220px] shrink-0 flex-col border-r border-border bg-card">
+          <div className="flex shrink-0 gap-1 p-2">
             <button
               type="button"
               onClick={() => setLeftTab('library')}
-              className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition ${
+              className={`flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium transition ${
                 leftTab === 'library'
-                  ? 'border-b-2 border-primary text-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'bg-secondary text-foreground'
+                  : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
               }`}
             >
-              <Puzzle className="h-4 w-4" />
+              <Puzzle className="h-3.5 w-3.5" />
               节点库
             </button>
             <button
               type="button"
               onClick={() => setLeftTab('variables')}
-              className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition ${
+              className={`flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium transition ${
                 leftTab === 'variables'
-                  ? 'border-b-2 border-primary text-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'bg-secondary text-foreground'
+                  : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
               }`}
             >
-              <Braces className="h-4 w-4" />
+              <Braces className="h-3.5 w-3.5" />
               变量
             </button>
           </div>
-          {/* Tab 内容 */}
-          <div className="overflow-y-auto" style={{ maxHeight: 'calc(100vh - 120px)' }}>
+          <div className="min-h-0 flex-1 overflow-y-auto">
             {leftTab === 'library' ? <NodeLibrary /> : <VariablePanel />}
           </div>
         </aside>
@@ -197,45 +215,44 @@ function WorkflowEditor() {
               </button>
             </div>
           )}
-          <FlowCanvas />
+          <FlowCanvas isFullscreen={isFullscreen} onToggleFullscreen={toggleFullscreen} />
         </main>
-        <aside className="flex w-[360px] shrink-0 flex-col border-l border-border bg-card">
-          {/* 右侧面板 Tab 切换栏 */}
-          <div className="flex shrink-0 border-b border-border">
+        <aside className="flex w-[300px] shrink-0 flex-col border-l border-border bg-card">
+          <div className="flex shrink-0 gap-1 p-2">
             <button
               type="button"
               onClick={() => setRightTab('property')}
-              className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition ${
+              className={`flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium transition ${
                 rightTab === 'property'
-                  ? 'border-b-2 border-primary text-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'bg-secondary text-foreground'
+                  : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
               }`}
             >
-              <Settings className="h-4 w-4" />
+              <Settings className="h-3.5 w-3.5" />
               属性
             </button>
             <button
               type="button"
               onClick={() => setRightTab('monitor')}
-              className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition ${
+              className={`flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium transition ${
                 rightTab === 'monitor'
-                  ? 'border-b-2 border-primary text-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'bg-secondary text-foreground'
+                  : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
               }`}
             >
-              <TrendingUp className="h-4 w-4" />
+              <TrendingUp className="h-3.5 w-3.5" />
               监测
             </button>
             <button
               type="button"
               onClick={() => setRightTab('versions')}
-              className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition ${
+              className={`flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium transition ${
                 rightTab === 'versions'
-                  ? 'border-b-2 border-primary text-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'bg-secondary text-foreground'
+                  : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
               }`}
             >
-              <Package className="h-4 w-4" />
+              <Package className="h-3.5 w-3.5" />
               版本
             </button>
           </div>

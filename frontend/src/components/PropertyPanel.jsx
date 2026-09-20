@@ -5,7 +5,7 @@ import {
   Webhook, Shuffle, Globe, Bot, MessageSquare, Ban, Shield, Megaphone,
   User, Code2, Repeat, RefreshCw, CircleStop,
   AlertTriangle,
-  Play, Copy, Check, Plus, Trash2, ChevronDown, Variable, Braces,
+  Play, Copy, Check, Plus, Trash2, ChevronDown, Variable, Braces, Settings,
 } from 'lucide-react'
 import { useWorkflowStore } from '../store/workflowStore'
 import { getNodeDefinition } from '../constants/nodeCatalog'
@@ -2370,19 +2370,12 @@ function PropertyPanel() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* 顶部标题 */}
-      <div className="shrink-0 border-b border-border px-3 py-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          节点配置
-        </h2>
-      </div>
-
-      {/* 内容区：填满面板横向宽度 */}
       <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-3">
         {!selectedNode ? (
-          <div className="flex h-full items-center justify-center">
-            <p className="text-center text-sm text-muted-foreground/70">
-              请选择一个节点进行配置
+          <div className="flex h-full min-h-[200px] flex-col items-center justify-center gap-2 px-4 text-center">
+            <Settings className="h-8 w-8 text-muted-foreground/30" />
+            <p className="text-xs text-muted-foreground/70">
+              点击画布上的节点查看配置
             </p>
           </div>
         ) : (

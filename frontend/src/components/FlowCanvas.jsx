@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import ReactFlow, {
   ReactFlowProvider,
   Background,
@@ -7,7 +8,7 @@ import ReactFlow, {
   useReactFlow,
 } from 'reactflow'
 import {
-  Columns3, Rows3, LayoutGrid, Undo2, Redo2, Maximize2, Maximize, Minimize2,
+  Maximize2, Maximize, Minimize2, GitBranch, Sparkles,
   Copy, Trash2, Pencil, Play, Loader2,
 } from 'lucide-react'
 import { useWorkflowStore } from '../store/workflowStore'
@@ -161,7 +162,8 @@ function ContextMenu({ menu, onClose, onCopy, onDelete, onEdit, onRun, running }
 }
 
 // 画布内部组件：需要位于 ReactFlowProvider 内部以使用 useReactFlow
-function FlowCanvasInner() {
+function FlowCanvasInner({ isFullscreen = false, onToggleFullscreen }) {
+  const navigate = useNavigate()
   const { screenToFlowPosition, fitView } = useReactFlow()
 
   const nodes = useWorkflowStore((s) => s.nodes)
@@ -182,15 +184,8 @@ function FlowCanvasInner() {
   // 撤销 / 重做 / 自动布局
   const undo = useWorkflowStore((s) => s.undo)
   const redo = useWorkflowStore((s) => s.redo)
-  const history = useWorkflowStore((s) => s.history)
-  const historyIndex = useWorkflowStore((s) => s.historyIndex)
-  const autoLayout = useWorkflowStore((s) => s.autoLayout)
-  const alignToGrid = useWorkflowStore((s) => s.alignToGrid)
   // 节点运行状态
   const setNodeRunStatus = useWorkflowStore((s) => s.setNodeRunStatus)
-
-  const canUndo = historyIndex > 0
-  const canRedo = historyIndex < history.length - 1
 
   // 双击改名弹窗状态
   const [renameTarget, setRenameTarget] = useState(null)
@@ -200,7 +195,6 @@ function FlowCanvasInner() {
   const [runTargetId, setRunTargetId] = useState(null)
   // 全屏状态
   const wrapRef = useRef(null)
-  const [isFullscreen, setIsFullscreen] = useState(false)
 
   // ============ 派生：节点附加状态 className / zIndex ============
   const displayNodes = useMemo(() => {
@@ -339,28 +333,11 @@ function FlowCanvasInner() {
     }
   }
 
-  // ============ 全屏切换 ============
-  const toggleFullscreen = useCallback(() => {
-    if (document.fullscreenElement) {
-      document.exitFullscreen?.()
-    } else if (wrapRef.current?.requestFullscreen) {
-      wrapRef.current.requestFullscreen().catch(() => {})
-    }
-  }, [])
-
-  // 监听全屏状态变化（含 Esc 退出），进入全屏后自适应视图
   useEffect(() => {
-    const onChange = () => {
-      const fs = !!document.fullscreenElement
-      setIsFullscreen(fs)
-      if (fs) {
-        // 进入全屏后稍候自适应，避免尺寸未就绪
-        setTimeout(() => fitView({ padding: 0.2, duration: 300 }), 120)
-      }
-    }
-    document.addEventListener('fullscreenchange', onChange)
-    return () => document.removeEventListener('fullscreenchange', onChange)
-  }, [fitView])
+    if (!isFullscreen) return
+    const timer = setTimeout(() => fitView({ padding: 0.2, duration: 300 }), 120)
+    return () => clearTimeout(timer)
+  }, [isFullscreen, fitView])
 
   // ============ 画布级快捷键：Ctrl+Z 撤销 / Ctrl+Y 重做 / Delete 删除选中 ============
   // 使用捕获阶段 + stopImmediatePropagation，确保优先于 WorkflowEditor 的单选删除监听
@@ -449,31 +426,35 @@ function FlowCanvasInner() {
         />
       </ReactFlow>
 
-      {/* 右上角浮动工具按钮组：布局 / 撤销重做 / 适配 / 全屏 */}
-      <div className="absolute right-3 top-3 z-20 flex items-center gap-0.5 rounded-md border border-border bg-card/95 p-1 shadow-lg backdrop-blur">
-        <ToolBtn title="横向布局" onClick={() => autoLayout('horizontal')}>
-          <Columns3 className="h-4 w-4" />
-        </ToolBtn>
-        <ToolBtn title="纵向布局" onClick={() => autoLayout('vertical')}>
-          <Rows3 className="h-4 w-4" />
-        </ToolBtn>
-        <ToolBtn title="对齐网格 (20px)" onClick={() => alignToGrid(20)}>
-          <LayoutGrid className="h-4 w-4" />
-        </ToolBtn>
-        <div className="mx-0.5 h-5 w-px bg-border" />
-        <ToolBtn title="撤销 (Ctrl+Z)" onClick={undo} disabled={!canUndo}>
-          <Undo2 className="h-4 w-4" />
-        </ToolBtn>
-        <ToolBtn title="重做 (Ctrl+Y)" onClick={redo} disabled={!canRedo}>
-          <Redo2 className="h-4 w-4" />
-        </ToolBtn>
-        <div className="mx-0.5 h-5 w-px bg-border" />
+      {nodes.length === 0 && (
+        <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center p-6">
+          <div className="max-w-xs rounded-lg border border-border/60 bg-card/90 px-5 py-4 text-center shadow-lg backdrop-blur-sm">
+            <GitBranch className="mx-auto mb-2 h-8 w-8 text-primary/50" />
+            <p className="text-sm font-medium text-foreground">开始编排工作流</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              从左侧节点库拖拽节点到画布，或连接各步骤构建流程
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate('/workflows/new')}
+              className="pointer-events-auto mt-3 inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary px-3 py-1.5 text-xs text-foreground transition hover:bg-accent"
+            >
+              <Sparkles className="h-3.5 w-3.5 text-primary" />
+              快速创建向导
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="absolute right-3 top-3 z-20 flex items-center gap-0.5 rounded-md border border-border bg-card/90 p-0.5 shadow-md backdrop-blur">
         <ToolBtn title="适配画布" onClick={() => fitView({ padding: 0.2, duration: 300 })}>
-          <Maximize2 className="h-4 w-4" />
+          <Maximize2 className="h-3.5 w-3.5" />
         </ToolBtn>
-        <ToolBtn title={isFullscreen ? '退出全屏' : '全屏编辑'} onClick={toggleFullscreen}>
-          {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
-        </ToolBtn>
+        {onToggleFullscreen && (
+          <ToolBtn title={isFullscreen ? '退出全屏' : '全屏编辑'} onClick={onToggleFullscreen}>
+            {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize className="h-3.5 w-3.5" />}
+          </ToolBtn>
+        )}
       </div>
 
       {/* 右键节点上下文菜单 */}
@@ -499,10 +480,10 @@ function FlowCanvasInner() {
 }
 
 // 用 ReactFlowProvider 包裹，以便内部使用 useReactFlow 获取 screenToFlowPosition
-function FlowCanvas() {
+function FlowCanvas({ isFullscreen, onToggleFullscreen }) {
   return (
     <ReactFlowProvider>
-      <FlowCanvasInner />
+      <FlowCanvasInner isFullscreen={isFullscreen} onToggleFullscreen={onToggleFullscreen} />
     </ReactFlowProvider>
   )
 }

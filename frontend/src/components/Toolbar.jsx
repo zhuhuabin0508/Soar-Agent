@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  Undo2, Redo2, Columns3, Rows3, LayoutGrid, Maximize, Minimize2, ChevronDown,
+  Undo2, Redo2, Columns3, Rows3, LayoutGrid, ChevronDown,
   CopyPlus, FileCode2, Download, Upload, ClipboardPaste, Rocket,
+  ArrowLeft, MoreHorizontal, Sparkles, Maximize, Minimize2,
 } from 'lucide-react'
 import { useWorkflowStore } from '../store/workflowStore'
 import { workflows as workflowsApi } from '../api/client'
@@ -61,7 +62,8 @@ function jsonToYaml(data, indent = 0) {
 }
 
 // 顶部工具栏：标题 + 工作流名称输入 + 保存/试运行/校验/清空/导入/导出 按钮
-function Toolbar() {
+function Toolbar({ isFullscreen = false, onToggleFullscreen }) {
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const serialize = useWorkflowStore((s) => s.serialize)
   const clearAll = useWorkflowStore((s) => s.clearAll)
@@ -106,8 +108,7 @@ function Toolbar() {
   const [exportOpen, setExportOpen] = useState(false)
   // 粘贴导入弹窗
   const [pasteOpen, setPasteOpen] = useState(false)
-  // 全屏状态
-  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
   // 工作流发布状态（draft / published / disabled），用于显示状态徽章
   const [workflowStatus, setWorkflowStatus] = useState(null)
   // 发布弹窗
@@ -117,21 +118,6 @@ function Toolbar() {
 
   // 隐藏的文件输入：用于导入 JSON 文件
   const fileInputRef = useRef(null)
-
-  // 全屏切换：将画布主区域 (<main>) 切换为全屏
-  const toggleFullscreen = () => {
-    const target = document.querySelector('main')
-    if (document.fullscreenElement) {
-      document.exitFullscreen?.()
-    } else if (target?.requestFullscreen) {
-      target.requestFullscreen().catch(() => {})
-    }
-  }
-  useEffect(() => {
-    const onChange = () => setIsFullscreen(!!document.fullscreenElement)
-    document.addEventListener('fullscreenchange', onChange)
-    return () => document.removeEventListener('fullscreenchange', onChange)
-  }, [])
 
   // 拉取工作流状态（draft / published / disabled），用于显示状态徽章
   useEffect(() => {
@@ -497,292 +483,271 @@ function Toolbar() {
     )
   }
 
+  const closeMore = () => setMoreOpen(false)
+
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-card px-4">
-      {/* 左侧标题 + 工作流名称输入 */}
-      <div className="flex min-w-0 flex-1 items-center gap-3">
-        <div className="min-w-0">
-          <h1 className="truncate text-base font-semibold leading-tight text-foreground">
-            SOAR 工作流编排
-          </h1>
-          <p className="truncate text-xs leading-tight text-muted-foreground">
-            安全编排自动化响应 · 可视化流程编排平台
-          </p>
-        </div>
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <label className="shrink-0 text-xs text-muted-foreground/70">名称</label>
-          <input
-            className={`${inputCls} max-w-[320px]`}
-            placeholder="未命名工作流"
-            value={workflowName}
-            onChange={(e) => setWorkflowName(e.target.value)}
-          />
-          {workflowId != null && (
-            <span className="shrink-0 rounded bg-secondary px-2 py-1 font-mono text-[11px] text-muted-foreground">
-              ID: {workflowId}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* 右侧操作按钮 */}
-      <div className="flex shrink-0 items-center gap-2">
-        {/* 视图工具组：撤销 / 重做 / 自动布局下拉 */}
-        <div className="flex items-center gap-0.5 rounded-md border border-border bg-secondary p-0.5">
-          <button
-            type="button"
-            onClick={undo}
-            disabled={!canUndo}
-            title="撤销 (Ctrl+Z)"
-            className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <Undo2 className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={redo}
-            disabled={!canRedo}
-            title="重做 (Ctrl+Y)"
-            className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <Redo2 className="h-4 w-4" />
-          </button>
-          {/* 自动布局下拉菜单 */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setLayoutOpen((o) => !o)}
-              title="自动布局"
-              className="flex h-7 items-center gap-1 rounded px-1.5 text-xs text-muted-foreground transition hover:bg-accent hover:text-foreground"
-            >
-              <LayoutGrid className="h-4 w-4" />
-              布局
-              <ChevronDown className="h-3 w-3" />
-            </button>
-            {layoutOpen && (
-              <>
-                <div
-                  className="fixed inset-0 z-30"
-                  onClick={() => setLayoutOpen(false)}
-                />
-                <div className="absolute right-0 top-full z-40 mt-1 min-w-[148px] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl">
-                  <button
-                    type="button"
-                    onClick={() => { autoLayout('horizontal'); setLayoutOpen(false) }}
-                    className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-xs text-foreground transition hover:bg-accent"
-                  >
-                    <Columns3 className="h-3.5 w-3.5 text-primary" /> 横向布局
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { autoLayout('vertical'); setLayoutOpen(false) }}
-                    className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-xs text-foreground transition hover:bg-accent"
-                  >
-                    <Rows3 className="h-3.5 w-3.5 text-primary" /> 纵向布局
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { alignToGrid(20); setLayoutOpen(false) }}
-                    className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-xs text-foreground transition hover:bg-accent"
-                  >
-                    <LayoutGrid className="h-3.5 w-3.5 text-primary" /> 对齐网格
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* 全屏切换 */}
+    <header className="relative flex h-12 shrink-0 items-center gap-3 border-b border-border bg-card px-3">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         <button
           type="button"
-          onClick={toggleFullscreen}
-          title={isFullscreen ? '退出全屏' : '全屏编辑'}
-          className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-secondary text-muted-foreground transition hover:bg-accent hover:text-foreground"
+          onClick={() => navigate('/studio')}
+          title="返回工作室"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
         >
-          {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+          <ArrowLeft className="h-4 w-4" />
         </button>
+        <input
+          className={`${inputCls} min-w-0 max-w-[280px] flex-1 text-sm`}
+          placeholder="未命名工作流"
+          value={workflowName}
+          onChange={(e) => setWorkflowName(e.target.value)}
+        />
+        {statusBadge}
+        {workflowId != null && (
+          <span className="hidden shrink-0 font-mono text-[10px] text-muted-foreground/60 sm:inline">
+            #{workflowId}
+          </span>
+        )}
+      </div>
 
-        {/* 运行中状态徽章 */}
+      <div className="flex shrink-0 items-center gap-0.5 rounded-md border border-border bg-secondary/60 p-0.5">
+        <button
+          type="button"
+          onClick={undo}
+          disabled={!canUndo}
+          title="撤销 (Ctrl+Z)"
+          className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <Undo2 className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={redo}
+          disabled={!canRedo}
+          title="重做 (Ctrl+Y)"
+          className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <Redo2 className="h-3.5 w-3.5" />
+        </button>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setLayoutOpen((o) => !o)}
+            title="自动布局"
+            className="flex h-7 items-center gap-0.5 rounded px-1.5 text-xs text-muted-foreground transition hover:bg-accent hover:text-foreground"
+          >
+            <LayoutGrid className="h-3.5 w-3.5" />
+            <ChevronDown className="h-3 w-3" />
+          </button>
+          {layoutOpen && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setLayoutOpen(false)} />
+              <div className="absolute right-0 top-full z-40 mt-1 min-w-[140px] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl">
+                <button
+                  type="button"
+                  onClick={() => { autoLayout('horizontal'); setLayoutOpen(false) }}
+                  className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-xs text-foreground transition hover:bg-accent"
+                >
+                  <Columns3 className="h-3.5 w-3.5 text-primary" /> 横向布局
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { autoLayout('vertical'); setLayoutOpen(false) }}
+                  className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-xs text-foreground transition hover:bg-accent"
+                >
+                  <Rows3 className="h-3.5 w-3.5 text-primary" /> 纵向布局
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { alignToGrid(20); setLayoutOpen(false) }}
+                  className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-xs text-foreground transition hover:bg-accent"
+                >
+                  <LayoutGrid className="h-3.5 w-3.5 text-primary" /> 对齐网格
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+        {onToggleFullscreen && (
+          <button
+            type="button"
+            onClick={onToggleFullscreen}
+            title={isFullscreen ? '退出全屏' : '全屏编辑'}
+            className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition hover:bg-accent hover:text-foreground"
+          >
+            {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize className="h-3.5 w-3.5" />}
+          </button>
+        )}
+      </div>
+
+      <div className="flex shrink-0 items-center gap-1.5">
         {runStatus === 'running' && (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-2.5 py-1 text-xs font-medium text-primary">
+          <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[11px] font-medium text-primary">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
             运行中
           </span>
         )}
 
-        <div className="h-6 w-px bg-border" />
-
-        {/* 模板选择下拉 */}
         <div className="relative">
           <button
             type="button"
-            onClick={() => setTemplateOpen((o) => !o)}
-            title="从内置模板创建工作流"
-            className="flex items-center gap-1 rounded-md border border-border bg-secondary px-3 py-1.5 text-sm text-muted-foreground transition hover:bg-accent hover:text-foreground"
+            onClick={() => setMoreOpen((o) => !o)}
+            title="更多操作"
+            className="flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground transition hover:bg-accent hover:text-foreground"
           >
-            <FileCode2 className="h-4 w-4" />
-            模板
-            <ChevronDown className="h-3 w-3" />
+            <MoreHorizontal className="h-4 w-4" />
           </button>
-          {templateOpen && (
+          {moreOpen && (
             <>
-              <div
-                className="fixed inset-0 z-30"
-                onClick={() => setTemplateOpen(false)}
-              />
-              <div className="absolute right-0 top-full z-40 mt-1 min-w-[260px] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl">
-                <div className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
-                  内置模板
-                </div>
-                {WORKFLOW_TEMPLATES.map((tpl) => (
-                  <button
-                    key={tpl.key}
-                    type="button"
-                    onClick={() => handleLoadTemplate(tpl)}
-                    className="flex w-full flex-col items-start gap-0.5 rounded px-2.5 py-1.5 text-left transition hover:bg-accent"
-                  >
-                    <span className="text-xs font-medium text-foreground">{tpl.name}</span>
-                    <span className="text-[10px] text-muted-foreground/70">{tpl.description}</span>
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* 导入下拉：文件导入 / 粘贴文本导入 */}
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setImportOpen((o) => !o)}
-            title="导入工作流"
-            className="flex items-center gap-1 rounded-md border border-border bg-secondary px-3 py-1.5 text-sm text-muted-foreground transition hover:bg-accent hover:text-foreground"
-          >
-            <Upload className="h-4 w-4" />
-            导入
-            <ChevronDown className="h-3 w-3" />
-          </button>
-          {importOpen && (
-            <>
-              <div
-                className="fixed inset-0 z-30"
-                onClick={() => setImportOpen(false)}
-              />
-              <div className="absolute right-0 top-full z-40 mt-1 min-w-[160px] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl">
+              <div className="fixed inset-0 z-30" onClick={closeMore} />
+              <div className="absolute right-0 top-full z-40 mt-1 w-52 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl">
                 <button
                   type="button"
-                  onClick={() => { setImportOpen(false); handleImportClick() }}
+                  onClick={() => { closeMore(); navigate('/workflows/new') }}
                   className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-xs text-foreground transition hover:bg-accent"
                 >
-                  <Upload className="h-3.5 w-3.5 text-primary" /> 从文件导入
+                  <Sparkles className="h-3.5 w-3.5 text-primary" /> 快速创建向导
+                </button>
+                <div className="my-1 h-px bg-border" />
+                <button
+                  type="button"
+                  onClick={() => { closeMore(); setTemplateOpen(true) }}
+                  className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-xs text-foreground transition hover:bg-accent"
+                >
+                  <FileCode2 className="h-3.5 w-3.5 text-primary" /> 加载模板
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setImportOpen(false); setPasteOpen(true) }}
+                  onClick={() => { closeMore(); setImportOpen(true) }}
                   className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-xs text-foreground transition hover:bg-accent"
                 >
-                  <ClipboardPaste className="h-3.5 w-3.5 text-primary" /> 粘贴文本导入
+                  <Upload className="h-3.5 w-3.5 text-primary" /> 导入
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { closeMore(); setExportOpen(true) }}
+                  className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-xs text-foreground transition hover:bg-accent"
+                >
+                  <Download className="h-3.5 w-3.5 text-primary" /> 导出
+                </button>
+                <div className="my-1 h-px bg-border" />
+                <button
+                  type="button"
+                  onClick={() => { closeMore(); handleCheck() }}
+                  disabled={validating}
+                  className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-xs text-foreground transition hover:bg-accent disabled:opacity-50"
+                >
+                  {validating ? '检查中…' : '检查工作流'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { closeMore(); handleSaveAsNew() }}
+                  disabled={saving}
+                  className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-xs text-foreground transition hover:bg-accent disabled:opacity-50"
+                >
+                  <CopyPlus className="h-3.5 w-3.5 text-primary" /> 另存为新工作流
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { closeMore(); handleClear() }}
+                  className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-xs text-destructive transition hover:bg-destructive/10"
+                >
+                  清空画布
                 </button>
               </div>
             </>
           )}
         </div>
 
-        {/* 导出下拉：JSON / YAML */}
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setExportOpen((o) => !o)}
-            title="导出工作流"
-            className="flex items-center gap-1 rounded-md border border-border bg-secondary px-3 py-1.5 text-sm text-muted-foreground transition hover:bg-accent hover:text-foreground"
-          >
-            <Download className="h-4 w-4" />
-            导出
-            <ChevronDown className="h-3 w-3" />
-          </button>
-          {exportOpen && (
-            <>
-              <div
-                className="fixed inset-0 z-30"
-                onClick={() => setExportOpen(false)}
-              />
-              <div className="absolute right-0 top-full z-40 mt-1 min-w-[140px] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl">
+        {templateOpen && (
+          <>
+            <div className="fixed inset-0 z-30" onClick={() => setTemplateOpen(false)} />
+            <div className="absolute right-3 top-12 z-40 w-64 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl">
+              <div className="px-2.5 py-1 text-[10px] font-medium text-muted-foreground">内置模板</div>
+              {WORKFLOW_TEMPLATES.map((tpl) => (
                 <button
+                  key={tpl.key}
                   type="button"
-                  onClick={() => handleExport('json')}
-                  className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-xs text-foreground transition hover:bg-accent"
+                  onClick={() => handleLoadTemplate(tpl)}
+                  className="flex w-full flex-col items-start gap-0.5 rounded px-2.5 py-1.5 text-left transition hover:bg-accent"
                 >
-                  <Download className="h-3.5 w-3.5 text-primary" /> JSON 格式
+                  <span className="text-xs font-medium text-foreground">{tpl.name}</span>
+                  <span className="text-[10px] text-muted-foreground/70">{tpl.description}</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => handleExport('yaml')}
-                  className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-xs text-foreground transition hover:bg-accent"
-                >
-                  <Download className="h-3.5 w-3.5 text-primary" /> YAML 格式
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={handleClear}
-          className="rounded-md border border-border bg-secondary px-3 py-1.5 text-sm text-muted-foreground transition hover:border-border hover:bg-secondary hover:text-foreground"
-        >
-          清空画布
-        </button>
-        <button
-          type="button"
-          onClick={handleCheck}
-          disabled={validating}
-          className="rounded-md border border-success-700 bg-success-900/30 px-3 py-1.5 text-sm text-success transition hover:bg-success-900/60 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {validating ? '检查中…' : '检查'}
-        </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {importOpen && (
+          <>
+            <div className="fixed inset-0 z-30" onClick={() => setImportOpen(false)} />
+            <div className="absolute right-3 top-12 z-40 w-44 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl">
+              <button
+                type="button"
+                onClick={() => { setImportOpen(false); handleImportClick() }}
+                className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-xs text-foreground transition hover:bg-accent"
+              >
+                <Upload className="h-3.5 w-3.5 text-primary" /> 从文件导入
+              </button>
+              <button
+                type="button"
+                onClick={() => { setImportOpen(false); setPasteOpen(true) }}
+                className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-xs text-foreground transition hover:bg-accent"
+              >
+                <ClipboardPaste className="h-3.5 w-3.5 text-primary" /> 粘贴文本导入
+              </button>
+            </div>
+          </>
+        )}
+
+        {exportOpen && (
+          <>
+            <div className="fixed inset-0 z-30" onClick={() => setExportOpen(false)} />
+            <div className="absolute right-3 top-12 z-40 w-40 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-xl">
+              <button
+                type="button"
+                onClick={() => handleExport('json')}
+                className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-xs text-foreground transition hover:bg-accent"
+              >
+                JSON 格式
+              </button>
+              <button
+                type="button"
+                onClick={() => handleExport('yaml')}
+                className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-xs text-foreground transition hover:bg-accent"
+              >
+                YAML 格式
+              </button>
+            </div>
+          </>
+        )}
+
         <button
           type="button"
           onClick={() => setTestOpen(true)}
           disabled={runStatus === 'running'}
           title="试运行工作流"
-          className="inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary/30 px-3 py-1.5 text-sm text-primary transition hover:bg-primary/60 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-8 items-center gap-1 rounded-md border border-border px-2.5 text-xs text-foreground transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <Rocket className="h-4 w-4" />
-          {runStatus === 'running' ? '运行中…' : '试运行'}
+          <Rocket className="h-3.5 w-3.5" />
+          {runStatus === 'running' ? '运行中' : '试运行'}
         </button>
-        {/* 另存为新工作流 */}
-        <button
-          type="button"
-          onClick={handleSaveAsNew}
-          disabled={saving}
-          title="将当前内容另存为一个新的工作流"
-          className="rounded-md border border-border bg-secondary px-3 py-1.5 text-sm text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <span className="inline-flex items-center gap-1">
-            <CopyPlus className="h-4 w-4" />
-            {saving ? '保存中…' : '另存为新工作流'}
-          </span>
-        </button>
-        {/* 工作流状态徽章：草稿/已发布/未发布更改/已停用 */}
-        {statusBadge}
-        {/* 发布按钮：保存当前画布 → 创建版本快照 → 置为已发布 */}
         <button
           type="button"
           onClick={() => setPublishOpen(true)}
           disabled={!workflowId || !canEdit}
-          title={!canEdit ? '无编辑权限（仅 owner 或被授权用户可编辑）' : '发布当前工作流为新版本'}
-          className="inline-flex items-center gap-1.5 rounded-md border border-success-700 bg-success-900/30 px-3 py-1.5 text-sm text-success transition hover:bg-success-900/60 disabled:cursor-not-allowed disabled:opacity-50"
+          title={!canEdit ? '无编辑权限' : '发布当前工作流为新版本'}
+          className="inline-flex h-8 items-center rounded-md border border-border px-2.5 text-xs text-foreground transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <Rocket className="h-4 w-4" />
           发布
         </button>
         <button
           type="button"
           onClick={handleSave}
           disabled={saving || !canEdit}
-          title={!canEdit ? '无编辑权限（仅 owner 或被授权用户可编辑）' : undefined}
-          className="rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          title={!canEdit ? '无编辑权限' : undefined}
+          className="btn-primary btn-sm"
         >
           {saving ? '保存中…' : '保存'}
         </button>
