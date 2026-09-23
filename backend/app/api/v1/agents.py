@@ -77,7 +77,7 @@ def _create_llm(agent, db, override: "Optional[ChatOverride]" = None):
             return None, f"创建 LLM 实例失败: {exc}"
 
     # 尝试环境变量（Anthropic）
-    from app.core.config import settings
+    from app.config import settings
     api_key = getattr(settings, "ANTHROPIC_API_KEY", "") or ""
     if not api_key:
         return None, "未配置 LLM API Key，请在「模型设置」中配置"
@@ -168,7 +168,7 @@ class AgentBase(BaseModel):
     variables: dict | None = Field(None, description="自定义变量")
     tool_configs: dict | None = Field(None, description="工具配置（key=工具名, value={timeout, retry, require_confirm}）")
     # 执行引擎：langgraph（默认）| hermes（Hermes 风格 ReAct + 分段并行 + 记忆 + 委派）
-    engine: str = Field("langgraph", description="执行引擎：langgraph（默认）| hermes")
+    engine: str = Field("hermes", description="执行引擎：hermes（默认）| langgraph（已废弃）")
     publish_status: str | None = Field(None, description="draft / published，创建默认草稿，更新未传则保持原值")
 
 
@@ -261,7 +261,7 @@ def _agent_to_dsl(agent: Agent) -> dict[str, Any]:
         "tone_style": agent.tone_style,
         "variables": variables,
         "tool_configs": agent.tool_configs or {},
-        "engine": agent.engine or "langgraph",
+        "engine": agent.engine or "hermes",
         "template_meta": {
             "is_public_template": bool((agent.variables or {}).get("is_public_template")),
             "scenario": (agent.variables or {}).get("template_scenario") or "",
@@ -496,7 +496,7 @@ def create_agent(
         tone_style=body.tone_style,
         variables=body.variables or {},
         tool_configs=body.tool_configs or {},
-        engine=body.engine or "langgraph",
+        engine=body.engine or "hermes",
         publish_status=_incoming_publish_status(body, default="draft"),
         created_by=current_user.id,
     )
@@ -681,31 +681,35 @@ async def test_agent(
 
     has_tools = bool(agent.enabled_tools) or bool(agent.enabled_kbs) or bool(agent.enabled_asset_types) or bool(agent.enabled_workflows)
 
-    # ===== 无工具：纯 LLM 对话路径 =====
-    if not has_tools:
-        llm, err = _create_llm(agent, db)
-        if llm is None:
-            raise HTTPException(status_code=400, detail=err)
+    from app.platform.agent_runtime import (
+        OUTPUT_MODE_CHAT,
+        OUTPUT_MODE_SOC_DECISION,
+        invoke_agent,
+        resolve_runtime_user,
+    )
 
-        from langchain_core.messages import HumanMessage, SystemMessage
-        # 组装 system prompt：基础提示词 + 启用技能正文（变量替换 + 分段注入）
-        system_prompt = assemble_system_prompt(
-            db, agent, fallback_prompt="你是一个智能助手，请根据用户输入给出有帮助的回答。"
+    output_mode = OUTPUT_MODE_SOC_DECISION if has_tools else OUTPUT_MODE_CHAT
+    try:
+        result = await invoke_agent(
+            db=db,
+            agent=agent,
+            input=alert_data if has_tools else user_text,
+            user=resolve_runtime_user(db),
+            channel="test",
+            output_mode=output_mode,
+            override=body.override,
+            session_id=body.session_id or "default",
         )
-        messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_text)]
-        try:
-            ai_msg = await llm.ainvoke(messages)
-            reply = ai_msg.content if hasattr(ai_msg, "content") else str(ai_msg)
-        except Exception as exc:
-            logger.exception("纯对话调用失败: %s", exc)
-            raise HTTPException(status_code=500, detail=f"LLM 调用失败: {exc}")
+    except Exception as exc:
+        logger.exception("智能体测试失败: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Agent 测试失败: {exc}") from exc
 
-        # 保存执行记录
+    if not has_tools:
         try:
             exec_record = Execution(
                 agent_id=agent.id,
                 status="success",
-                result={"reply": reply, "input": user_text, "mode": "chat"},
+                result={"reply": result.response, "input": user_text, "mode": "chat", "engine": "hermes"},
                 trigger_type="agent_test",
                 finished_at=beijing_now(),
             )
@@ -716,47 +720,27 @@ async def test_agent(
             db.rollback()
 
         return {
-            "reply": reply,
-            "messages": [
+            "reply": result.response,
+            "messages": result.messages or [
                 {"role": "user", "content": user_text},
-                {"role": "assistant", "content": reply},
+                {"role": "assistant", "content": result.response},
             ],
-            "logs": [{"level": "info", "message": "纯对话模式（无工具调用）"}],
+            "logs": [{"level": "info", "message": "Hermes 纯对话模式"}],
         }
 
-    # ===== 有工具：走 LangGraph Agent 决策路径 =====
-    from app.agent.decision import run_agent_decision
-
-    logger.info("调用 run_agent_decision, alert_data=%s", alert_data)
-    result = await run_agent_decision(
-        alert_data=alert_data,
-        enabled_tools=agent.enabled_tools or [],
-        enabled_kbs=agent.enabled_kbs or [],
-        enabled_asset_types=agent.enabled_asset_types or [],
-        enabled_workflows=agent.enabled_workflows or [],
-        agent_id=agent.id,
-        model_config_id=agent.model_config_id,
-        # 组装 system prompt：基础提示词 + 启用技能正文。
-        # allow_none=True：无 base 且无技能时返回 None，由 decision.py 走默认安全专家提示词
-        # + 决策 JSON 解析（保持旧逻辑）；有 base 或技能时返回非 None，跳过决策解析返回原始响应。
-        system_prompt=assemble_system_prompt(db, agent, allow_none=True),
-        temperature=agent.temperature,
-        max_tokens=agent.max_tokens,
-        max_iterations=agent.max_iterations,
-    )
-
-    # 创建执行记录
+    decision = result.decision or {}
     try:
         exec_record = Execution(
             agent_id=agent.id,
             status="success",
             result={
-                "decision": result.get("decision"),
-                "target_ip": result.get("target_ip"),
-                "reason": result.get("reason"),
-                "duration": result.get("duration"),
+                "decision": decision.get("decision"),
+                "target_ip": decision.get("target_ip"),
+                "reason": decision.get("reason"),
+                "duration": decision.get("duration"),
                 "input": alert_data,
-                "messages_count": len(result.get("messages", [])),
+                "messages_count": len(result.messages or []),
+                "engine": "hermes",
             },
             trigger_type="agent_test",
             finished_at=beijing_now(),
@@ -770,23 +754,23 @@ async def test_agent(
         db.rollback()
 
     return {
-        "decision": result.get("decision"),
-        "target_ip": result.get("target_ip"),
-        "reason": result.get("reason"),
-        "duration": result.get("duration"),
-        "messages": result.get("messages", []),
-        "logs": result.get("logs", []),
+        "decision": decision.get("decision"),
+        "target_ip": decision.get("target_ip"),
+        "reason": decision.get("reason"),
+        "duration": decision.get("duration"),
+        "messages": result.messages or [],
+        "logs": (result.raw or {}).get("logs") or [],
     }
 
 
 @router.post("/{agent_id}/test/stream")
 async def test_agent_stream(
-    agent_id: int, body: AgentTestRequest, db: Session = Depends(get_db)
+    agent_id: int,
+    body: AgentTestRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """流式测试智能体（SSE），逐 token 返回 LLM 输出。
-
-    无工具时走纯对话流式；有工具时走 Agent 决策（非流式，一次性返回）。
-    """
+    """流式测试智能体（SSE），经 invoke_agent_sse 统一走 Hermes。"""
     logger.info("流式测试智能体: id=%s", agent_id)
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if agent is None:
@@ -794,112 +778,82 @@ async def test_agent_stream(
     if (body.channel or "") == "conversation":
         _require_published(agent)
 
+    from app.platform.agent_runtime import invoke_agent_sse
+
     user_input = body.input or ""
-    has_tools = bool(agent.enabled_tools) or bool(agent.enabled_kbs) or bool(agent.enabled_asset_types) or bool(agent.enabled_workflows)
+    session_id = body.session_id or "default"
 
     async def sse_stream():
-        # ===== 无工具：纯对话流式 =====
-        if not has_tools:
-            llm, err = _create_llm(agent, db, override=body.override)
-            if llm is None:
-                yield f"data: {json.dumps({'type': 'error', 'message': err}, ensure_ascii=False)}\n\n"
-                return
+        from app.database import SessionLocal
 
-            from langchain_core.messages import HumanMessage, SystemMessage
-            # 组装 system prompt：override 优先，否则用 assemble_system_prompt（含技能注入）
-            if body.override and body.override.system_prompt is not None:
-                system_prompt = body.override.system_prompt
-            else:
-                system_prompt = assemble_system_prompt(
-                    db, agent, fallback_prompt="你是一个智能助手，请根据用户输入给出有帮助的回答。"
-                )
-            messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_input)]
+        exec_id: int | None = None
+        exec_status = "success"
+        final_reply = ""
+        error_msg = ""
 
-            yield f"data: {json.dumps({'type': 'start', 'mode': 'chat'}, ensure_ascii=False)}\n\n"
-            full_reply = ""
-            token_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
-            try:
-                async for chunk in llm.astream(messages):
-                    token = chunk.content if hasattr(chunk, "content") else str(chunk)
-                    if token:
-                        full_reply += token
-                        yield f"data: {json.dumps({'type': 'token', 'content': token}, ensure_ascii=False)}\n\n"
-                        await asyncio.sleep(0)  # 让出控制权
-                    # 捕获 token 用量（astream 最后一个 chunk 包含 usage_metadata）
-                    usage_meta = getattr(chunk, "usage_metadata", None)
-                    if usage_meta:
-                        token_usage = {
-                            "input_tokens": getattr(usage_meta, "input_tokens", 0) or usage_meta.get("input_tokens", 0) if isinstance(usage_meta, dict) else 0,
-                            "output_tokens": getattr(usage_meta, "output_tokens", 0) or usage_meta.get("output_tokens", 0) if isinstance(usage_meta, dict) else 0,
-                            "total_tokens": getattr(usage_meta, "total_tokens", 0) or usage_meta.get("total_tokens", 0) if isinstance(usage_meta, dict) else 0,
-                        }
-            except Exception as exc:
-                logger.exception("流式调用失败: %s", exc)
-                yield f"data: {json.dumps({'type': 'error', 'message': str(exc)}, ensure_ascii=False)}\n\n"
-                return
-
-            yield f"data: {json.dumps({'type': 'done', 'reply': full_reply, 'usage': token_usage}, ensure_ascii=False)}\n\n"
-
-            # 保存执行记录
-            try:
-                exec_record = Execution(
-                    agent_id=agent.id,
-                    status="success",
-                    result={"reply": full_reply, "input": user_input, "mode": "chat_stream"},
-                    trigger_type="agent_test",
-                    finished_at=beijing_now(),
-                )
-                db.add(exec_record)
-                db.commit()
-            except Exception as exc:
-                db.rollback()
-            return
-
-        # ===== 有工具：Agent 决策（流式推送 token） =====
-        yield f"data: {json.dumps({'type': 'start', 'mode': 'agent'}, ensure_ascii=False)}\n\n"
-        from app.agent.decision import run_agent_decision_stream
         try:
-            alert_data = {"input": user_input}
-            try:
-                parsed = json.loads(user_input)
-                if isinstance(parsed, dict):
-                    alert_data = parsed
-            except (json.JSONDecodeError, TypeError):
-                pass
+            with SessionLocal() as s:
+                rec = Execution(
+                    agent_id=agent.id,
+                    status="running",
+                    trigger_type="agent_test",
+                    result={"input": user_input, "engine": "hermes", "mode": "test_stream"},
+                )
+                s.add(rec)
+                s.commit()
+                s.refresh(rec)
+                exec_id = rec.id
+        except Exception:  # noqa: BLE001
+            logger.exception("创建 Execution 记录失败，继续流式输出")
 
-            # 流式 Agent 决策：逐 token 推送 LLM 输出
-            # 透传 override：model_config_id/system_prompt/temperature/max_tokens 直接覆盖；
-            # top_p/frequency_penalty/presence_penalty/seed 打包为 extra_llm_kwargs
-            ov = body.override
-            extra_llm_kwargs: dict = {}
-            if ov:
-                for k in ("top_p", "frequency_penalty", "presence_penalty", "seed"):
-                    v = getattr(ov, k, None)
-                    if v is not None:
-                        extra_llm_kwargs[k] = v
-
-            async for evt in run_agent_decision_stream(
-                alert_data=alert_data,
-                enabled_tools=agent.enabled_tools or [],
-                enabled_kbs=agent.enabled_kbs or [],
-                enabled_asset_types=agent.enabled_asset_types or [],
-                enabled_workflows=agent.enabled_workflows or [],
-                agent_id=agent.id,
-                model_config_id=(ov.model_config_id if ov and ov.model_config_id is not None else agent.model_config_id),
-                system_prompt=(
-                    ov.system_prompt if ov and ov.system_prompt is not None
-                    else assemble_system_prompt(db, agent, allow_none=True)
-                ),
-                temperature=(ov.temperature if ov and ov.temperature is not None else agent.temperature),
-                max_tokens=(ov.max_tokens if ov and ov.max_tokens is not None else agent.max_tokens),
-                max_iterations=agent.max_iterations,
-                extra_llm_kwargs=extra_llm_kwargs or None,
+        try:
+            async for chunk in invoke_agent_sse(
+                db=db,
+                agent=agent,
+                input=user_input,
+                user=current_user,
+                channel=body.channel or "test",
+                override=body.override,
+                session_id=session_id,
             ):
-                yield f"data: {json.dumps(evt, ensure_ascii=False)}\n\n"
-                await asyncio.sleep(0)  # 让出控制权，确保前端实时收到
+                if chunk.startswith("data: "):
+                    try:
+                        data = json.loads(chunk[6:].strip())
+                        etype = data.get("type", "")
+                        if etype == "done":
+                            final_reply = data.get("content", "") or data.get("reply", "")
+                        elif etype == "error":
+                            exec_status = "failed"
+                            error_msg = data.get("message", "")
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+                yield chunk
+                await asyncio.sleep(0)
         except Exception as exc:
-            logger.exception("Agent 决策失败: %s", exc)
+            logger.exception("Agent SSE 失败: %s", exc)
+            exec_status = "failed"
+            error_msg = str(exc)
             yield f"data: {json.dumps({'type': 'error', 'message': str(exc)}, ensure_ascii=False)}\n\n"
+        finally:
+            if exec_id is not None:
+                try:
+                    with SessionLocal() as s:
+                        rec = s.query(Execution).filter(Execution.id == exec_id).first()
+                        if rec is not None:
+                            rec.status = exec_status
+                            rec.finished_at = beijing_now()
+                            result = {
+                                "input": user_input,
+                                "engine": "hermes",
+                                "mode": "test_stream",
+                                "reply": final_reply,
+                            }
+                            if error_msg:
+                                result["error"] = error_msg
+                            rec.result = result
+                            s.commit()
+                except Exception:  # noqa: BLE001
+                    logger.exception("更新 Execution 记录失败: exec_id=%s", exec_id)
 
     return StreamingResponse(sse_stream(), media_type="text/event-stream")
 
@@ -981,67 +935,32 @@ async def chat_agent(
     db: Session = Depends(get_db),
     current_user=Depends(require_permission("agent", "execute")),
 ):
-    """Hermes 引擎 SSE 对话端点。
+    """Hermes 引擎 SSE 对话端点（经 invoke_agent_sse 统一入口）。
 
-    仅 ``engine=hermes`` 的 Agent 走此路径；``engine=langgraph`` 返回 400
-    引导用 ``/{agent_id}/test/stream``。
-
-    SSE 事件契约（现有契约的超集）：
-    - ``start``: 会话开始
-    - ``status``: 状态更新
-    - ``token``: LLM 流式 token
-    - ``tool_start`` / ``tool_end``: 工具执行
-    - ``skill_interrupt``: 技能中断等待审批
-    - ``delegate``: 子代理事件
-    - ``log``: 日志
-    - ``done``: 完成
-    - ``error``: 错误
+    ``engine=langgraph`` 会告警并路由到 Hermes；Playground 调试请用 ``/{agent_id}/test/stream``。
     """
-    logger.info("Hermes 引擎对话: agent_id=%s", agent_id)
+    logger.info("Agent 对话(SSE): agent_id=%s", agent_id)
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
-    if agent.engine != "hermes":
-        raise HTTPException(
-            status_code=400,
-            detail="此端点仅支持 engine=hermes 的智能体，请用 /test/stream",
-        )
     if (body.channel or "conversation") != "test":
         _require_published(agent)
 
-    from app.agent.hermes import HermesAgentExecutor, sse_stream
+    from app.platform.agent_runtime import invoke_agent_sse
 
-    # 解析 override.system_prompt：非 None 时覆盖智能体配置（仅本次会话）
-    # 注意：override 的 system_prompt 不会经过 assemble_system_prompt 的技能注入，
-    # 这是 Playground 调试模式的语义——用户应看到原始 prompt 的效果
-    override_sp = (
-        body.override.system_prompt
-        if body.override and body.override.system_prompt is not None
-        else None
-    )
-
-    try:
-        executor = HermesAgentExecutor(
-            db=db, agent=agent, user=current_user,
-            override=body.override,             # 透传完整 override（含 model_config_id/temperature 等）
-            system_prompt=override_sp,          # 复用 executor 已有的 system_prompt 覆盖参数
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("Hermes 执行器创建失败: %s", exc)
-        raise HTTPException(status_code=400, detail=f"执行器创建失败: {exc}") from exc
-
-    # 加载历史对话注入 executor（多轮对话上下文持久化）
     session_id = body.session_id or "default"
+    history: list[dict] = []
     try:
         history = _load_chat_history(db, agent.id, session_id, agent.context_turns or 10)
         if history:
-            executor.load_history(history)
             logger.info(
                 "Hermes 历史注入: agent_id=%s session=%s 历史消息数=%d",
                 agent.id, session_id, len(history),
             )
     except Exception:  # noqa: BLE001
         logger.exception("加载对话历史失败，将以无历史模式继续")
+
+    executor_holder: list = []
 
     async def sse_stream_with_execution():
         """SSE 流 + Execution 记录追踪。
@@ -1083,8 +1002,17 @@ async def chat_agent(
         tool_timers: dict[str, float] = {}
 
         try:
-            async for chunk in sse_stream(executor, body.input, session_id=session_id):
-                # 解析事件以追踪状态（不修改原始 chunk，透传给前端）
+            async for chunk in invoke_agent_sse(
+                db=db,
+                agent=agent,
+                input=body.input,
+                user=current_user,
+                channel=body.channel or "conversation",
+                override=body.override,
+                session_id=session_id,
+                history=history or None,
+                executor_holder=executor_holder,
+            ):
                 try:
                     if chunk.startswith("data: "):
                         data = json.loads(chunk[6:].strip())
@@ -1120,6 +1048,7 @@ async def chat_agent(
             error_msg = str(exc)
             raise
         finally:
+            executor = executor_holder[0] if executor_holder else None
             # 流结束：独立 session 更新 Execution 状态（用完即关）
             if exec_id is not None:
                 try:
@@ -1129,10 +1058,10 @@ async def chat_agent(
                             rec.status = exec_status
                             rec.finished_at = beijing_now()
                             # 从 executor 实例读取监控元数据
-                            model_meta = getattr(executor, "_model_meta", {}) or {}
-                            token_usage = getattr(executor, "_token_usage", {}) or {}
-                            iteration_count = getattr(executor, "_iteration_count", 0)
-                            thinking_chars = getattr(executor, "_thinking_chars", 0)
+                            model_meta = getattr(executor, "_model_meta", {}) or {} if executor else {}
+                            token_usage = getattr(executor, "_token_usage", {}) or {} if executor else {}
+                            iteration_count = getattr(executor, "_iteration_count", 0) if executor else 0
+                            thinking_chars = getattr(executor, "_thinking_chars", 0) if executor else 0
                             result: dict[str, Any] = {
                                 "input": body.input,
                                 "engine": "hermes",
@@ -1158,7 +1087,10 @@ async def chat_agent(
             # 持久化本轮新增对话消息（多轮上下文）。
             # 仅在至少产生了 assistant 回复时持久化（避免错误/中止时存入孤立的 user 消息）。
             try:
-                new_msgs = executor.get_new_messages()
+                if executor is not None:
+                    new_msgs = executor.get_new_messages()
+                else:
+                    new_msgs = []
                 has_assistant = any(m.get("role") == "assistant" for m in new_msgs)
                 if has_assistant and new_msgs:
                     with SessionLocal() as s:
