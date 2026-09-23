@@ -1,0 +1,76 @@
+{
+  "strategy_name": "青藤万相 Syslog安全事件 v1.0",
+  "device_type": "qingteng_wanxiang",
+  "status": "enabled",
+  "version": "1.0",
+  "route_rules": {
+    "match_type": "exact",
+    "match_field": "__source",
+    "match_value": "qingteng_syslog"
+  },
+  "outer_wrapper": {
+    "data_path": "",
+    "header_fields": ["__source", "__qt_recv_at"],
+    "uuid_source": "event_uuid"
+  },
+  "field_mappings": [
+    {"source": "event_uuid", "target": "uuid", "type": "string", "required": true},
+
+    {"source": "datatype", "target": "threat_type", "type": "string"},
+    {"source": "event_type", "target": "threat_sub_type", "type": "string"},
+    {"source": "event_name", "target": "alert_name", "type": "string"},
+    {"source": "event_content", "target": "description", "type": "string"},
+    {"source": "url", "target": "recommendation", "type": "string"},
+
+    {"source": "datatime", "target": "occur_timestamp", "type": "qt_datetime"},
+    {"source": "__qt_recv_at", "target": "upload_timestamp", "type": "qt_datetime"},
+    {"source": "datatime_raw", "target": "upload_time_raw", "type": "string"},
+
+    {"source": "agent_ip", "target": "host_ip", "type": "comma_split_to_json"},
+    {"source": "host_name", "target": "account_name", "type": "string"},
+    {"source": "group_name", "target": "src_region_name", "type": "string"},
+    {"source": "agent_id", "target": "agent_id", "type": "string"},
+    {"source": "os", "target": "relate_asset_type", "type": "string"},
+
+    {"source": "severity", "target": "risk_level", "type": "enum_int", "enum_map": "SEVERITY", "enum_target": "risk_level_name"},
+    {"source": "event_level", "target": "risk_tag", "type": "string"},
+
+    {"source": "detail_uname", "target": "user_name", "type": "string"},
+    {"source": "detail_src_ip", "target": "src_ip", "type": "comma_split_to_json"},
+    {"source": "detail_region", "target": "src_region_name", "type": "string"},
+    {"source": "detail_dst_ip", "target": "dst_ip", "type": "comma_split_to_json"},
+    {"source": "detail_port", "target": "dst_port", "type": "string"},
+    {"source": "detail_service", "target": "protocol", "type": "string"},
+
+    {"source": "detail_pname", "target": "threat_class", "type": "string"},
+    {"source": "detail_rule", "target": "threat_define", "type": "string"},
+
+    {"source": "src_ip", "target": "proof_description", "type": "string"}
+  ],
+  "enum_maps": {
+    "SEVERITY": {
+      "0": "信息", "1": "低危", "2": "中危", "3": "高危", "4": "危急"
+    }
+  },
+  "validations": [
+    {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+    {"field": "src_ip", "rule": "ip_list_valid", "severity": "warning"},
+    {"field": "dst_ip", "rule": "ip_list_valid", "severity": "warning"},
+    {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
+  ],
+  "extension_fields": [
+    "internal_ip", "external_ip", "host_tag", "host_memo", "action",
+    "type", "group", "comid",
+    "event_name", "event_level", "event_content", "url",
+    "datatype", "datatype_marker",
+    "log_type", "reason", "uname", "uid", "euname", "euid", "tty",
+    "cmd", "pid", "pname", "ppid", "ppname", "ppath", "shell", "home",
+    "size", "md5", "sha1", "sha256", "path", "file_type", "file_path", "file_operation",
+    "ctime", "mtime", "atime", "process_tree", "process_name", "process_chain",
+    "domain", "login_time", "login_type", "login_user", "login_error", "logout_reason",
+    "location", "port", "login_conn_port", "login_con_port",
+    "risk_id", "risk_name", "cves", "cvss_score", "serv_impact", "app", "account",
+    "acct_type", "acct_status", "category", "event", "id",
+    "platform", "agent_version", "duration", "threshold", "last_offline_time"
+  ]
+}

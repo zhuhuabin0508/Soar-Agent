@@ -217,6 +217,54 @@ def decrypt_env_value(ciphertext: Optional[str]) -> str:
         return ""
 
 
+# ============ 设备凭据加解密 ============
+def _derive_device_key() -> bytes:
+    """从 JWT_SECRET 派生设备凭据专用 32 字节对称密钥。
+
+    前缀 ``device-secret:`` 与 ``env:`` 相隔离，凭证用途密钥与其它用途分离。
+    """
+    return hashlib.sha256(("device-secret:" + settings.JWT_SECRET).encode("utf-8")).digest()
+
+
+def encrypt_device_secret(plaintext: Optional[str]) -> str:
+    """加密设备凭据（api_key/password/username）。
+
+    - ``None`` 或空原样返回；
+    - 已加密（``enc:`` 前缀）不重复加密；
+    - 其余明文加密为 ``enc:<base64>``。
+    """
+    if not plaintext:
+        return ""
+    if isinstance(plaintext, str) and plaintext.startswith(_ENV_ENC_PREFIX):
+        # 已加密，避免重复加密
+        return plaintext
+    key = _derive_device_key()
+    data = plaintext.encode("utf-8")
+    encrypted = bytes(b ^ key[i % len(key)] for i, b in enumerate(data))
+    return _ENV_ENC_PREFIX + base64.b64encode(encrypted).decode("ascii")
+
+
+def decrypt_device_secret(ciphertext: Optional[str]) -> str:
+    """解密设备凭据。
+
+    - 无 ``enc:`` 前缀视为历史明文原样返回（兼容旧数据）；
+    - 解密失败返回空字符串，避免泄露与异常。
+    """
+    if not ciphertext:
+        return ""
+    if not isinstance(ciphertext, str) or not ciphertext.startswith(_ENV_ENC_PREFIX):
+        # 兼容历史明文
+        return ciphertext
+    try:
+        key = _derive_device_key()
+        encrypted = base64.b64decode(ciphertext[len(_ENV_ENC_PREFIX):])
+        decrypted = bytes(b ^ key[i % len(key)] for i, b in enumerate(encrypted))
+        return decrypted.decode("utf-8")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("设备凭据解密失败: %s", exc)
+        return ""
+
+
 # ============ 轻量数据库迁移 ============
 
 def ensure_columns(engine, table_name: str, columns: dict[str, str]) -> None:
@@ -562,6 +610,12 @@ def run_lightweight_migrations(engine) -> None:
                 "action_response": "TEXT",
             },
         )
+        # log_receivers 表新增异常通知间隔列（>0 时异常持续期间按分钟重复提醒）
+        ensure_columns(
+            engine,
+            "log_receivers",
+            {"notify_interval_minutes": "INTEGER NOT NULL DEFAULT 0"},
+        )
         # assets 表（资产管理智能体）：首次由 create_all 建表，此处为老库补列
         ensure_columns(
             engine,
@@ -682,6 +736,7 @@ def run_lightweight_migrations(engine) -> None:
                 "max_retries": "INTEGER",
                 "verify_tls": "BOOLEAN NOT NULL DEFAULT FALSE",
                 "icon": "VARCHAR(32) NOT NULL DEFAULT ''",
+                "ip_address": "VARCHAR(64) NOT NULL DEFAULT ''",
             },
         )
         # device_actions 表新增分类、风险等级、版本、调用统计、示例数据

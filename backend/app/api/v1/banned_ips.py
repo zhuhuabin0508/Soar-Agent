@@ -124,7 +124,7 @@ def manual_ban_ip(
         "reason": body.reason or "手动添加封禁",
         "region": body.region or "",
     }
-    result = execute_device_action(device, action, params)
+    result = execute_device_action(device, action, params, db=db, source="api")
     if not result["success"]:
         logger.warning("手动封禁 IP 设备 API 调用失败: ip=%s, device=%s, error=%s",
                        body.ip, device.name, result.get("error"))
@@ -383,7 +383,7 @@ async def import_banned_ips(
                 "reason": reason or "CSV 导入封禁",
                 "region": region,
             }
-            result = execute_device_action(device, action, params)
+            result = execute_device_action(device, action, params, db=db, source="api")
             if not result["success"]:
                 errors.append(
                     f"第 {idx} 行: IP {ip} 封禁失败: {result.get('error')} "

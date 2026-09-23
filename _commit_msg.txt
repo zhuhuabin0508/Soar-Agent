@@ -1,0 +1,10 @@
+security: 复测整改第五轮——按业务决策将 default-src/object-src/frame-ancestors 调整为 'self'
+
+- default-src 'self'：所有取载指令均已显式声明，仅兜底语义，无检查触发
+- frame-ancestors 'self'：允许同源 iframe 嵌入（系统自身无此用法），仍禁跨源；
+  csp-evaluator 无对应检查，预期不产生扫描发现
+- object-src 'self'：系统无 object/embed/applet 使用，业务零影响；
+  已知风险 checkFlashObjectAllowlistBypass 对 'self' 报 OBJECT_ALLOWLIST_BYPASS
+  （MEDIUM_MAYBE），复测可能新增 1 项中危，届时仅回退本指令为 'none' 即可
+- script-src 维持第四轮的 'nonce-$request_id' + 'strict-dynamic' 不变
+- csp_evaluator 1.1.8 实测：除 object-src 1 项 MEDIUM_MAYBE 外无 HIGH/MEDIUM 发现

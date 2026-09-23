@@ -474,7 +474,10 @@ export const devices = {
   // 从模板创建设备
   fromTemplate: (body) => request('/devices/from-template', { method: 'POST', body }),
   // 导入导出
-  export: () => request('/devices/export'),
+  export: (ids) => {
+    const q = Array.isArray(ids) && ids.length ? `?ids=${ids.join(',')}` : ''
+    return request(`/devices/export${q}`)
+  },
   import: (body) => request('/devices/import', { method: 'POST', body }),
   // 设备下动作 CRUD
   listActions: (deviceId) => request(`/devices/${deviceId}/actions`),
@@ -504,6 +507,27 @@ export const devices = {
   },
   callLogDetail: (logId) => request(`/devices/call-logs/${logId}`),
   callLogStats: (days = 7) => request(`/devices/call-logs/stats?days=${days}`),
+  // ---- 日志接收渠道（设备被动推送：syslog/kafka）----
+  logReceivers: {
+    list: () => request('/log-receivers'),
+    summary: () => request('/log-receivers/summary'),
+    create: (body) => request('/log-receivers', { method: 'POST', body }),
+    detail: (id) => request(`/log-receivers/${id}`),
+    update: (id, body) => request(`/log-receivers/${id}`, { method: 'PUT', body }),
+    remove: (id) => request(`/log-receivers/${id}`, { method: 'DELETE' }),
+    byDevice: (deviceId) => request(`/log-receivers/by-device/${deviceId}`),
+    reload: (id) => request(`/log-receivers/${id}/reload`, { method: 'PATCH' }),
+    metrics: (params = {}) => {
+      const q = new URLSearchParams()
+      Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') q.set(k, v) })
+      return request(`/log-receivers/metrics?${q.toString()}`)
+    },
+    receiveLogs: (params = {}) => {
+      const q = new URLSearchParams()
+      Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') q.set(k, v) })
+      return request(`/log-receivers/receive-logs?${q.toString()}`)
+    },
+  },
 }
 
 // ============ 系统反馈（BUG 与优化建议） ============

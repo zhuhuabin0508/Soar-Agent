@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 # 内置策略文件清单（strategies 目录下的文件名）
 BUILTIN_STRATEGIES = [
     "sangfor_xdr_v130.json",
+    "qingteng_wanxiang_v100.json",
 ]
 
 _STRATEGY_DIR = Path(__file__).parent / "strategies"

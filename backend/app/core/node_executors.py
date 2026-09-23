@@ -34,6 +34,19 @@ def _node_id(node_data: dict) -> str:
     return str(node_data.get("id", "") or node_data.get("node_id", "") or "unknown")
 
 
+def _run_sync_call(func, *args, **kwargs):
+    """在事件循环的默认执行器里运行同步函数，返回其结果。
+
+    供异步节点执行器调用同步 IO 密集逻辑（如设备动作 HTTP 调用），
+    避免阻塞事件循环。
+    """
+    import asyncio
+
+    loop = asyncio.get_event_loop()
+    return loop.run_in_executor(None, lambda: func(*args, **kwargs))
+
+
+
 def _resolve_variable(ctx: dict, path: str) -> Any:
     """按点号路径从 ctx 取值，如 ``agent_decision.target_ip``。
 
@@ -839,8 +852,7 @@ async def execute_device_action(
 
     from app.database import SessionLocal
     from app.models.device import Device, DeviceAction
-    import httpx
-    import json
+    from app.devices.action_executor import execute_device_action
 
     db = SessionLocal()
     try:
@@ -853,6 +865,7 @@ async def execute_device_action(
             return {"error": f"动作不存在: id={action_id}", "output": None}
 
         # 解析变量引用 (${node_id.field} 格式)
+        import json
         resolved_params = {}
         for k, v in params.items():
             if isinstance(v, str) and v.startswith("${") and v.endswith("}"):
@@ -875,72 +888,30 @@ async def execute_device_action(
             else:
                 resolved_params[k] = v
 
-        # 拼接 URL
-        base_url = (device.api_url or "").rstrip("/")
-        api_path = (action.api_path or "").lstrip("/")
-        url = f"{base_url}/{api_path}" if api_path else base_url
+        log(nid, _INFO, f"设备动作: device={device.name}, action={action.name}, url={device.api_url}/{action.api_path}, method={action.http_method}")
 
-        # 构造请求头
-        headers = {"Content-Type": "application/json"}
+        # 统一执行引擎（复用 devices/action_executor，含超时/TLS/重试配置与调用日志）
+        result = await _run_sync_call(
+            execute_device_action,
+            device,
+            action,
+            resolved_params,
+            db=db,
+            source="workflow",
+        )
         try:
-            extra_headers = json.loads(action.headers or "{}")
-            headers.update(extra_headers)
-        except Exception:  # noqa: BLE001
-            pass
+            resp_body = result.get("response_body")
+        except Exception:
+            resp_body = None
 
-        # 认证
-        auth_type = action.auth_type or "api_key"
-        if auth_type == "api_key":
-            headers["Authorization"] = f"Bearer {device.api_key}"
-        elif auth_type == "bearer":
-            headers["Authorization"] = f"Bearer {device.api_key}"
-        elif auth_type == "basic":
-            # httpx 的 auth 参数
-            pass  # 用 auth 参数
-
-        # 构造请求体
-        if action.body_template:
-            body = action.body_template
-            for k, v in resolved_params.items():
-                body = body.replace(f"{{{{{k}}}}}", str(v))
-            try:
-                body = json.loads(body)
-            except Exception:  # noqa: BLE001
-                pass  # 保持字符串
+        if result.get("success"):
+            log(nid, _INFO, f"设备动作成功: status={result.get('status_code')}")
+            return {"output": resp_body, "status_code": result.get("status_code"), "success": True}
         else:
-            body = resolved_params
-
-        log(nid, _INFO, f"设备动作: device={device.name}, action={action.name}, url={url}, method={action.http_method}")
-
-        # 调用设备 API
-        def _call_api():
-            auth = (device.username, device.password) if auth_type == "basic" else None
-            with httpx.Client(timeout=30, verify=False) as client:  # verify=False 兼容自签证书
-                r = client.request(
-                    method=action.http_method or "POST",
-                    url=url,
-                    headers=headers,
-                    json=body if isinstance(body, (dict, list)) else None,
-                    data=body if isinstance(body, str) else None,
-                    auth=auth,
-                )
-            return r
-
-        import asyncio
-        loop = asyncio.get_event_loop()
-        r = await loop.run_in_executor(None, _call_api)
-
-        try:
-            resp_body = r.json()
-        except Exception:  # noqa: BLE001
-            resp_body = r.text
-
-        if r.status_code < 400:
-            log(nid, _INFO, f"设备动作成功: status={r.status_code}")
-            return {"output": resp_body, "status_code": r.status_code, "success": True}
-        else:
-            log(nid, _ERROR, f"设备动作失败: status={r.status_code}, body={str(resp_body)[:200]}")
-            return {"error": f"HTTP {r.status_code}", "output": resp_body, "status_code": r.status_code, "success": False}
+            err = result.get("error")
+            log(nid, _ERROR, f"设备动作失败: {err}, body={str(resp_body)[:200]}")
+            return {"error": err, "output": resp_body,
+                    "status_code": result.get("status_code"), "success": False}
 
     except Exception as exc:  # noqa: BLE001
         import traceback

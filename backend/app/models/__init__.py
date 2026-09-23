@@ -32,6 +32,11 @@ from app.models.govcloud_asset import (
     GovCloudElasticIP,
 )
 from app.models.ingestion_metric import IngestionMetric
+from app.models.log_receiver import (
+    DeviceReceiveLog,
+    DeviceReceiveMetric,
+    LogReceiver,
+)
 from app.models.knowledge_base import KnowledgeBase, KnowledgeDocument, KnowledgeSegment
 from app.models.llm_config import LLMConfig
 from app.models.model_call_log import ModelCallLog
@@ -103,6 +108,9 @@ __all__ = [
     "ParseStrategy",
     "ParseErrorQueue",
     "IngestionMetric",
+    "LogReceiver",
+    "DeviceReceiveLog",
+    "DeviceReceiveMetric",
     "WorkflowTriggerRule",
     "WorkflowInstance",
     "WorkflowNodeLog",

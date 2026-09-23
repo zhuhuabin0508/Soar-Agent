@@ -9,6 +9,7 @@ v2 扩展：
 - 动作分类/风险等级/版本管理/调用统计
 - DeviceCallLog 调用日志列表、详情、统计
 """
+import ipaddress
 import json
 import logging
 import time
@@ -16,15 +17,17 @@ from datetime import timedelta
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.audit import get_client_ip, log_audit
 from app.core.device_templates import get_device_template, get_device_templates
+from app.core.security import decrypt_device_secret, encrypt_device_secret
 from app.core.timezone import beijing_now, beijing_now_iso
 from app.database import get_db
 from app.dependencies import get_current_user, require_role
+from app.devices.action_executor import execute_device_action
 from app.models.device import Device, DeviceAction, DeviceCallLog
 from app.models.user import User
 from app.schemas.common import paginate, to_dict, to_dict_list
@@ -40,12 +43,25 @@ router = APIRouter(
 
 # ============ Pydantic 请求体 ============
 
+def _validate_ip_address(v: str) -> str:
+    """校验设备 IP 地址：允许空串，或合法的 IPv4 / IPv6 地址，否则抛错。"""
+    if not v or not v.strip():
+        return ""
+    value = v.strip()
+    try:
+        ipaddress.ip_address(value)
+    except (ipaddress.AddressValueError, ValueError) as exc:
+        raise ValueError(f"无效的 IP 地址: {value}") from exc
+    return value
+
+
 class DeviceBase(BaseModel):
     """设备创建/更新请求体。"""
 
     name: str = Field(..., description="设备名称")
     type: str = Field("firewall", description="设备类型: firewall/waf/ips/ids/edr/soar/switch/cloud/custom")
     vendor: str = Field("", description="厂商")
+    ip_address: str = Field("", description="设备 IP 地址（管理地址，可选）")
     api_url: str = Field("", description="设备 API 基地址")
     api_key: str = Field("", description="API Key 或 Token")
     username: str = Field("", description="用户名（Basic Auth 时用）")
@@ -53,12 +69,17 @@ class DeviceBase(BaseModel):
     enabled: bool = Field(True, description="是否启用")
     description: str = Field("", description="设备描述")
     # v2 新增字段
-    auth_type: str = Field("api_key", description="认证方式: none/api_key/basic/bearer/oauth2/mtls")
+    auth_type: str = Field("api_key", description="认证方式: none/api_key/basic/bearer/oauth2/mtls/qingteng")
     timeout: int | None = Field(None, description="请求超时(秒)")
     max_retries: int | None = Field(None, description="最大重试次数")
     verify_tls: bool = Field(False, description="是否校验 TLS 证书")
     tags: list[str] = Field(default_factory=list, description="标签列表")
     icon: str = Field("", description="设备图标")
+
+    @field_validator("ip_address")
+    @classmethod
+    def _check_ip(cls, v: str) -> str:
+        return _validate_ip_address(v)
 
 
 class DeviceActionBase(BaseModel):
@@ -71,7 +92,7 @@ class DeviceActionBase(BaseModel):
     params_schema: str = Field("[]", description="参数定义 JSON 数组")
     headers: str = Field("{}", description="额外请求头 JSON 对象")
     body_template: str = Field("", description="请求体模板（含 {{param}} 占位符）")
-    auth_type: str = Field("api_key", description="认证方式: api_key/basic/bearer/none")
+    auth_type: str = Field("api_key", description="认证方式: api_key/basic/bearer/none/qingteng")
     enabled: bool = Field(True, description="是否启用")
     description: str = Field("", description="动作描述")
     # v2 新增字段
@@ -92,6 +113,7 @@ class FromTemplateRequest(BaseModel):
 
     template_key: str = Field(..., description="模板 key，如 firewall_paloalto")
     name: str = Field(..., description="设备名称")
+    ip_address: str = Field("", description="设备 IP 地址（管理地址，可选）")
     api_url: str = Field("", description="设备 API 基地址（留空则使用模板格式）")
     host: str = Field("", description="设备主机地址（用于填充模板中的 {host} 占位符）")
     api_key: str = Field("", description="API Key 或 Token")
@@ -103,6 +125,11 @@ class FromTemplateRequest(BaseModel):
     max_retries: int | None = Field(None, description="最大重试次数")
     verify_tls: bool = Field(False, description="是否校验 TLS 证书")
     tags: list[str] = Field(default_factory=list, description="标签列表")
+
+    @field_validator("ip_address")
+    @classmethod
+    def _check_ip(cls, v: str) -> str:
+        return _validate_ip_address(v)
 
 
 class ImportDevicesRequest(BaseModel):
@@ -151,9 +178,24 @@ def _test_device_connection(device: Device) -> tuple[bool, int | None, int | Non
     auth_type = device.auth_type or "api_key"
     auth = None
     if auth_type in ("api_key", "bearer") and device.api_key:
-        headers["Authorization"] = f"Bearer {device.api_key}"
+        headers["Authorization"] = f"Bearer {decrypt_device_secret(device.api_key)}"
     elif auth_type == "basic":
-        auth = (device.username or "", device.password or "")
+        auth = (
+            decrypt_device_secret(device.username or ""),
+            decrypt_device_secret(device.password or ""),
+        )
+
+    # 青藤万相：通过登录接口 POST {base}/v1/api/auth 验证账号连通性
+    if auth_type == "qingteng":
+        try:
+            from app.devices.action_executor import _qingteng_login
+
+            start = time.perf_counter()
+            _qingteng_login(device, timeout=timeout, verify=verify)
+            latency = int((time.perf_counter() - start) * 1000)
+            return True, 200, latency, None, "online"
+        except Exception as exc:  # noqa: BLE001
+            return False, None, None, f"{type(exc).__name__}: {exc}", "abnormal"
     # none/oauth2/mtls: 此处仅做基础连通性探测，不附加复杂认证
 
     candidates = [f"{base_url}/health", base_url]
@@ -186,12 +228,13 @@ def _apply_device_fields(device: Device, body: DeviceBase, *, is_create: bool) -
     device.name = body.name
     device.type = body.type
     device.vendor = body.vendor
+    device.ip_address = body.ip_address
     device.api_url = body.api_url
-    device.api_key = body.api_key
-    device.username = body.username
+    device.api_key = encrypt_device_secret(body.api_key)
+    device.username = encrypt_device_secret(body.username)
     # 更新时密码留空不修改
     if is_create or body.password:
-        device.password = body.password
+        device.password = encrypt_device_secret(body.password)
     device.enabled = body.enabled
     device.description = body.description
     device.auth_type = body.auth_type
@@ -243,42 +286,6 @@ def _recompute_action_stats(db: Session, action: DeviceAction) -> None:
     ]
     action.avg_latency_ms = int(sum(succ_lat) / len(succ_lat)) if succ_lat else None
     action.last_call_at = beijing_now()
-
-
-def _record_call_log(
-    db: Session,
-    *,
-    device: Device | None,
-    action: DeviceAction | None,
-    source: str,
-    request_summary: str | None,
-    response_summary: str | None,
-    status: str,
-    status_code: int | None,
-    latency_ms: int | None,
-    error_message: str | None,
-    user: User | None,
-    request: Request | None,
-) -> DeviceCallLog:
-    """写入一条设备调用日志并返回。"""
-    log = DeviceCallLog(
-        device_id=device.id if device else None,
-        device_name=device.name if device else "",
-        action_id=action.id if action else None,
-        action_name=action.name if action else "",
-        source=source,
-        request_summary=request_summary,
-        response_summary=response_summary,
-        status=status,
-        status_code=status_code,
-        latency_ms=latency_ms,
-        error_message=error_message,
-        user_id=user.id if user else None,
-        source_ip=get_client_ip(request) if request else None,
-    )
-    db.add(log)
-    db.flush()
-    return log
 
 
 # ============ 设备 CRUD ============
@@ -337,7 +344,7 @@ def create_device(
         ip_address=get_client_ip(request),
         result="success",
     )
-    return to_dict(device)
+    return to_dict(device, exclude={"api_key", "password"})
 
 
 @router.put("/{device_id}")
@@ -358,6 +365,7 @@ def update_device(
     changes: dict = {}
     field_map = {
         "name": body.name, "type": body.type, "vendor": body.vendor,
+        "ip_address": body.ip_address,
         "api_url": body.api_url, "api_key": body.api_key, "username": body.username,
         "enabled": body.enabled, "description": body.description,
         "auth_type": body.auth_type, "timeout": body.timeout,
@@ -391,7 +399,7 @@ def update_device(
         ip_address=get_client_ip(request),
         result="success",
     )
-    return to_dict(device)
+    return to_dict(device, exclude={"api_key", "password"})
 
 
 @router.delete("/{device_id}")
@@ -401,12 +409,39 @@ def delete_device(
     db: Session = Depends(get_db),
     user: User = Depends(require_role("admin")),
 ) -> dict:
-    """删除安全设备（同时级联删除其下所有动作）。"""
+    """删除安全设备（同时级联清理动作、接收渠道及其关联数据，并停止监听线程）。"""
     logger.info("删除设备: id=%s", device_id)
     device = db.query(Device).filter(Device.id == device_id).first()
     if device is None:
         raise HTTPException(status_code=404, detail="Device not found")
     device_name = device.name
+
+    # 级联清理：该设备下的日志接收渠道（含明细/指标），并停止对应监听线程
+    try:
+        from app.models.log_receiver import LogReceiver, DeviceReceiveLog, DeviceReceiveMetric
+        from app.core.log_receiver_manager import stop_receiver_thread
+
+        receiver_ids = [
+            r.id for r in db.query(LogReceiver.id).filter(LogReceiver.device_id == device_id).all()
+        ]
+        for rid in receiver_ids:
+            try:
+                stop_receiver_thread(rid)
+            except Exception:  # noqa: BLE001
+                logger.warning("停止接收渠道线程失败（忽略）: receiver=%s", rid)
+        if receiver_ids:
+            db.query(DeviceReceiveLog).filter(DeviceReceiveLog.device_id == device_id).delete()
+            db.query(DeviceReceiveMetric).filter(DeviceReceiveMetric.device_id == device_id).delete()
+            db.query(LogReceiver).filter(LogReceiver.device_id == device_id).delete()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("清理设备接收渠道失败（忽略）: %s", exc)
+
+    # 清理该设备的调用日志（孤儿数据）
+    try:
+        db.query(DeviceCallLog).filter(DeviceCallLog.device_id == device_id).delete()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("清理设备调用日志失败（忽略）: %s", exc)
+
     # 级联删除该设备下所有动作
     db.query(DeviceAction).filter(DeviceAction.device_id == device_id).delete()
     db.delete(device)
@@ -465,10 +500,11 @@ def create_device_from_template(
         name=body.name,
         type=template.get("type", "firewall"),
         vendor=template.get("vendor", ""),
+        ip_address=body.ip_address,
         api_url=api_url,
-        api_key=body.api_key,
-        username=body.username,
-        password=body.password,
+        api_key=encrypt_device_secret(body.api_key),
+        username=encrypt_device_secret(body.username),
+        password=encrypt_device_secret(body.password),
         enabled=body.enabled,
         description=body.description or template.get("label", ""),
         auth_type=template.get("auth_type", "api_key"),
@@ -524,13 +560,28 @@ def create_device_from_template(
         ip_address=get_client_ip(request),
         result="success",
     )
-    return {"device": to_dict(device), "actions_created": created_actions}
+    return {"device": to_dict(device, exclude={"api_key", "password"}), "actions_created": created_actions}
 
 
 @router.get("/export", dependencies=[Depends(require_role("admin"))])
-def export_devices(db: Session = Depends(get_db)) -> dict:
-    """导出所有设备配置（含动作）为 JSON。"""
-    devices = db.query(Device).order_by(Device.created_at.desc()).all()
+def export_devices(
+    ids: str = Query("", description="逗号分隔的设备 ID，为空则导出全部"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """导出设备配置（含动作）为 JSON。
+
+    支持用 ?ids=1,2,3 指定导出部分设备；不传时导出全部。
+    """
+    query = db.query(Device)
+    if ids.strip():
+        id_list = []
+        for seg in ids.split(","):
+            seg = seg.strip()
+            if seg.isdigit():
+                id_list.append(int(seg))
+        if id_list:
+            query = query.filter(Device.id.in_(id_list))
+    devices = query.order_by(Device.created_at.desc()).all()
     items: list[dict] = []
     for d in devices:
         item = to_dict(d)
@@ -567,8 +618,9 @@ def import_devices(
                 name=dev_data.get("name", "") or "未命名设备",
                 type=dev_data.get("type", "firewall"),
                 vendor=dev_data.get("vendor", ""),
+                ip_address=dev_data.get("ip_address", ""),
                 api_url=dev_data.get("api_url", ""),
-                api_key=dev_data.get("api_key", ""),
+                api_key=encrypt_device_secret(dev_data.get("api_key", "")),
                 username=dev_data.get("username", ""),
                 password=dev_data.get("password", ""),
                 enabled=bool(dev_data.get("enabled", True)),
@@ -725,7 +777,7 @@ def test_device_connection(
         "status_code": status_code,
         "latency_ms": latency,
         "error": error,
-        "device": to_dict(device),
+        "device": to_dict(device, exclude={"api_key", "password"}),
     }
 
 
@@ -946,144 +998,31 @@ def test_device_action(
 
     params = body.params or {}
 
-    # 拼接完整 URL
-    base_url = (device.api_url or "").rstrip("/")
-    api_path = (action.api_path or "").lstrip("/")
-    url = f"{base_url}/{api_path}" if api_path else base_url
-    if not url:
-        _record_call_log(
-            db,
-            device=device,
-            action=action,
-            source="manual_test",
-            request_summary=json.dumps(params, ensure_ascii=False),
-            response_summary=None,
-            status="failed",
-            status_code=None,
-            latency_ms=None,
-            error_message="设备未配置 api_url 且动作未配置 api_path",
-            user=user,
-            request=request,
-        )
-        db.commit()
-        return {
-            "success": False, "status_code": None, "response_body": None,
-            "error": "设备未配置 api_url 且动作未配置 api_path",
-        }
-
-    # 构造请求头
-    headers = {"Content-Type": "application/json"}
-    try:
-        extra_headers = json.loads(action.headers or "{}")
-        if isinstance(extra_headers, dict):
-            headers.update(extra_headers)
-    except Exception:  # noqa: BLE001
-        logger.warning("解析动作 headers 失败，忽略: action_id=%s", action_id)
-
-    # 认证
-    auth_type = action.auth_type or "api_key"
-    auth = None
-    if auth_type in ("api_key", "bearer"):
-        if device.api_key:
-            headers["Authorization"] = f"Bearer {device.api_key}"
-    elif auth_type == "basic":
-        auth = (device.username or "", device.password or "")
-    # none: 不添加认证
-
-    # 构造请求体
-    if action.body_template:
-        body_str = action.body_template
-        for k, v in params.items():
-            body_str = body_str.replace(f"{{{{{k}}}}}", str(v))
-        try:
-            req_body = json.loads(body_str)
-        except Exception:  # noqa: BLE001
-            req_body = body_str  # 保持字符串
-    else:
-        req_body = params
-
-    method = (action.http_method or "POST").upper()
-    timeout = device.timeout or 30
-    verify = bool(device.verify_tls)
-    logger.info("调用设备 API: %s %s, auth=%s", method, url, auth_type)
-
-    start = time.perf_counter()
-    try:
-        with httpx.Client(timeout=timeout, verify=verify) as client:
-            r = client.request(
-                method=method,
-                url=url,
-                headers=headers,
-                json=req_body if isinstance(req_body, (dict, list)) else None,
-                data=req_body if isinstance(req_body, str) else None,
-                auth=auth,
-            )
-        latency_ms = int((time.perf_counter() - start) * 1000)
-    except Exception as exc:  # noqa: BLE001
-        latency_ms = int((time.perf_counter() - start) * 1000)
-        logger.warning("设备动作测试请求异常: %s", exc)
-        error_msg = f"{type(exc).__name__}: {exc}"
-        _record_call_log(
-            db,
-            device=device,
-            action=action,
-            source="manual_test",
-            request_summary=json.dumps(params, ensure_ascii=False),
-            response_summary=None,
-            status="failed",
-            status_code=None,
-            latency_ms=latency_ms,
-            error_message=error_msg,
-            user=user,
-            request=request,
-        )
-        _recompute_action_stats(db, action)
-        db.commit()
-        return {
-            "success": False, "status_code": None, "response_body": None,
-            "error": error_msg, "latency_ms": latency_ms,
-        }
-
-    try:
-        resp_body = r.json()
-    except Exception:  # noqa: BLE001
-        resp_body = r.text
-
-    success = r.status_code < 400
-    error_msg = None if success else f"HTTP {r.status_code}"
-
-    # 响应摘要（截断防止过长）
-    try:
-        if isinstance(resp_body, (dict, list)):
-            resp_summary = json.dumps(resp_body, ensure_ascii=False)[:2000]
-        else:
-            resp_summary = str(resp_body)[:2000]
-    except Exception:  # noqa: BLE001
-        resp_summary = str(resp_body)[:2000]
-
-    _record_call_log(
-        db,
-        device=device,
-        action=action,
+    # 统一执行引擎（复用 devices/action_executor：超时/TLS/重试 + 写 DeviceCallLog）
+    result = execute_device_action(
+        device,
+        action,
+        params,
+        db=db,
         source="manual_test",
-        request_summary=json.dumps(params, ensure_ascii=False),
-        response_summary=resp_summary,
-        status="success" if success else "failed",
-        status_code=r.status_code,
-        latency_ms=latency_ms,
-        error_message=error_msg,
-        user=user,
-        request=request,
+        user_id=user.id if user else None,
+        source_ip=get_client_ip(request) if request else None,
     )
+
+    latency_ms = result.get("latency_ms")
+    success = result.get("success", False)
+
+    # 更新动作统计（24h 调用/成功率/平均耗时），基于已写入的调用日志
     _recompute_action_stats(db, action)
     db.commit()
 
-    logger.info("设备动作测试完成: status=%s, success=%s, latency=%sms", r.status_code, success, latency_ms)
+    logger.info("设备动作测试完成: status=%s, success=%s, latency=%sms",
+                result.get("status_code"), success, latency_ms)
     return {
         "success": success,
-        "status_code": r.status_code,
-        "response_body": resp_body,
-        "error": error_msg,
+        "status_code": result.get("status_code"),
+        "response_body": result.get("response_body"),
+        "error": result.get("error"),
         "latency_ms": latency_ms,
     }
 

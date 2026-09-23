@@ -28,6 +28,7 @@ from app.api.v1 import (
     knowledge_base,
     llm_config,
     log_center,
+    log_receivers,
     monitor,
     notification_rules,
     notifications,
@@ -102,6 +103,8 @@ api_router.include_router(deliverables.router)
 api_router.include_router(govcloud.router)
 # 日志中心（统一查看操作日志/执行日志/模型调用日志 + 保留策略）
 api_router.include_router(log_center.router)
+# 设备日志接收（被动接入：syslog/kafka 配置、接收情况查看、异常通知）
+api_router.include_router(log_receivers.router)
 # 值班管理（人员/排班/请假/调班）
 api_router.include_router(duty.router)
 # 告警解析入库引擎（策略驱动：接入/策略管理/错误队列/指标）

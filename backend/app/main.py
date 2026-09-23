@@ -259,6 +259,20 @@ async def lifespan(app: FastAPI):
         start_unban_scheduler()
     except Exception as exc:  # noqa: BLE001
         logger.warning("到期解封/审批超时调度器启动失败（忽略）: %s", exc)
+    # 启动设备日志接收管理器（被动接入：启动 syslog/kafka 监听 + 接收健康检查）
+    try:
+        from app.core.log_receiver_manager import start_log_receiver_manager
+
+        start_log_receiver_manager()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("日志接收管理器启动失败（忽略）: %s", exc)
+    # 启动设备后台健康检查心跳（周期探测启用设备并刷新连接状态）
+    try:
+        from app.devices.heartbeat import start_device_heartbeat
+
+        start_device_heartbeat()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("设备心跳健康检查启动失败（忽略）: %s", exc)
     yield
 
 

@@ -105,6 +105,28 @@ def convert_value(value: Any, conv_type: str, tz_value: Any = None) -> Any:
         local = datetime.fromtimestamp(ts, tz=tz)
         return local.astimezone(BEIJING_TZ).replace(tzinfo=None)
 
+    if conv_type == "qt_datetime":
+        # 兼容两种青藤时间：Unix 秒级时间戳（10 位数字）或字符串
+        # yyyy-MM-dd HH:mm:ss（青藤 Agent 安全日志用字符串时间），统一转为北京时区 naive。
+        if value is None or value == "":
+            return None
+        s = str(value).strip()
+        # 纯数字（秒级时间戳）
+        if s.replace(".", "", 1).isdigit() and "." not in s:
+            try:
+                ts = float(s)
+                local = datetime.fromtimestamp(ts, tz=BEIJING_TZ)
+                return local.astimezone(BEIJING_TZ).replace(tzinfo=None)
+            except (ValueError, OSError, OverflowError):
+                return None
+        # 字符串时间
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+            try:
+                return datetime.strptime(s[:19], fmt)
+            except ValueError:
+                continue
+        return None
+
     if conv_type == "comma_split_to_json":
         if value is None:
             return "[]"
@@ -213,7 +235,7 @@ def _type_default(conv_type: str) -> Any:
         return "[]"
     if conv_type == "json_object_to_string":
         return "{}"
-    if conv_type == "timestamp_to_datetime":
+    if conv_type in ("timestamp_to_datetime", "qt_datetime"):
         return None
     return ""
 

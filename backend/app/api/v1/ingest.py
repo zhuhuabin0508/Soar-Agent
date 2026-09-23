@@ -221,6 +221,7 @@ CONVERT_TYPES = {
     "string", "int", "float", "bool",
     "json_array_to_string", "json_object_to_string",
     "timestamp_to_datetime", "comma_split_to_json", "enum_int",
+    "qt_datetime",
 }
 
 # 支持的校验规则类型（与 validator.run_validations 一致）

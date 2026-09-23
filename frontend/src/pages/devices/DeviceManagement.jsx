@@ -1,0 +1,1175 @@
+// 设备对接主页面（从 DeviceManagement.jsx 拆分，重新汇总子组件）
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import {
+  Shield, Plus, RefreshCw, Download, Upload, Wifi, WifiOff, Files, Columns, CheckSquare,
+} from 'lucide-react'
+import { devices as devicesApi } from '../../api/client'
+import { Modal } from '../../components/Dialog'
+import { confirm } from '../../components/ConfirmDialog'
+import { toast } from '../../store/toastStore'
+import { TutorialButton, TutorialDrawer } from '../../components/TutorialDrawer'
+import { DEVICE_TUTORIAL } from '../../components/tutorialContent'
+import { usePersistedFilters } from '../../hooks/usePersistedFilters'
+import FilterBar from '../../components/FilterBar'
+import {
+  VIEW_MODES,
+  DEVICE_TYPES,
+  DEVICE_TYPE_LABELS,
+  STATUS_OPTIONS,
+  fmtRelative,
+  fmtTime,
+  parseTags,
+  truncate,
+} from './constants'
+import { DeviceTypeIcon, StatusBadge } from './Badges'
+import {
+  ActionFormModal,
+  ActionHistoryModal,
+  ActionTestDrawer,
+  TemplateCreateModal,
+  TemplateModal,
+} from './ActionModal'
+import { CallLogsTab } from './CallLogsTab'
+import { ActionTable, DeviceCard, DeviceRow } from './DeviceList'
+import { LogReceiversTab } from './LogReceivers'
+import { DeviceFormModal } from './DeviceModal'
+
+function DeviceManagement() {
+  const [activeTab, setActiveTab] = useState('devices') // devices | logs | receivers
+  const [devices, setDevices] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  // 视图模式：card / table / split
+  const [viewMode, setViewMode] = useState(() => {
+    try {
+      return localStorage.getItem('soar_device_view') || 'card'
+    } catch {
+      return 'card'
+    }
+  })
+  useEffect(() => {
+    try {
+      localStorage.setItem('soar_device_view', viewMode)
+    } catch {
+      // ignore
+    }
+  }, [viewMode])
+
+  // 筛选
+  const [filters, setFilters] = usePersistedFilters('device_mgmt', {
+    search: '',
+    type: '',
+    vendor: '',
+    status: '',
+    tag: '',
+  })
+
+  // 展开状态（记忆展开）
+  const [expandedIds, setExpandedIds] = useState(() => {
+    try {
+      const raw = localStorage.getItem('soar_device_expanded')
+      return raw ? JSON.parse(raw) : []
+    } catch {
+      return []
+    }
+  })
+  useEffect(() => {
+    try {
+      localStorage.setItem('soar_device_expanded', JSON.stringify(expandedIds))
+    } catch {
+      // ignore
+    }
+  }, [expandedIds])
+
+  // 选中设备（分栏视图用）
+  const [selectedId, setSelectedId] = useState(null)
+  const [actions, setActions] = useState([])
+  const [loadingActions, setLoadingActions] = useState(false)
+  // 勾选用于导出的设备 ID 集合
+  const [checkIds, setCheckIds] = useState([])
+
+  // 切换某台设备的勾选状态
+  const toggleCheck = (device) =>
+    setCheckIds((prev) =>
+      prev.includes(device.id) ? prev.filter((x) => x !== device.id) : [...prev, device.id]
+    )
+
+  // 弹窗状态
+  const [devFormOpen, setDevFormOpen] = useState(false)
+  const [devEditing, setDevEditing] = useState(null)
+  const [devSaving, setDevSaving] = useState(false)
+
+  const [actFormOpen, setActFormOpen] = useState(false)
+  const [actEditing, setActEditing] = useState(null)
+  const [actSaving, setActSaving] = useState(false)
+  const [actDeviceId, setActDeviceId] = useState(null)
+
+  // 测试连接
+  const [testingDeviceId, setTestingDeviceId] = useState(null)
+  const [testConnResult, setTestConnResult] = useState(null)
+  const [testConnOpen, setTestConnOpen] = useState(false)
+
+  // 动作测试抽屉
+  const [testDrawerOpen, setTestDrawerOpen] = useState(false)
+  const [testAction, setTestAction] = useState(null)
+  const [testRunning, setTestRunning] = useState(false)
+  const [testResult, setTestResult] = useState(null)
+
+  // 动作启用切换
+  const [togglingActionId, setTogglingActionId] = useState(null)
+
+  // 动作历史
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyAction, setHistoryAction] = useState(null)
+  const [historyDeviceId, setHistoryDeviceId] = useState(null)
+
+  // 模板
+  const [templates, setTemplates] = useState([])
+  const [templateOpen, setTemplateOpen] = useState(false)
+  const [templateCreateOpen, setTemplateCreateOpen] = useState(false)
+  const [selectedTemplate, setSelectedTemplate] = useState(null)
+  const [templateSaving, setTemplateSaving] = useState(false)
+
+  // 健康检查
+  const [healthChecking, setHealthChecking] = useState(false)
+
+  const [tutorialOpen, setTutorialOpen] = useState(false)
+
+  // 导入文件 input ref
+  const importInputRef = useRef(null)
+
+  // 加载设备
+  const loadDevices = useCallback(async () => {
+    setLoading(true)
+    try {
+      const data = await devicesApi.list()
+      const list = Array.isArray(data) ? data : []
+      setDevices(list)
+      setError('')
+      // 失败告警：状态由 online 变为 offline 时提示
+      // 通过对比前后状态实现
+    } catch (err) {
+      setError(err.message || '加载设备失败')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  // 用 ref 记录上次状态用于失败告警
+  const prevStatusRef = useRef({})
+  useEffect(() => {
+    if (!devices.length) return
+    const prev = prevStatusRef.current
+    const next = {}
+    devices.forEach((d) => {
+      next[d.id] = d.status
+      if (prev[d.id] === 'online' && d.status === 'offline') {
+        toast.error(`设备「${d.name}」已离线`)
+      }
+    })
+    prevStatusRef.current = next
+  }, [devices])
+
+  useEffect(() => {
+    loadDevices()
+  }, [loadDevices])
+
+  const loadActions = useCallback(async (deviceId) => {
+    if (!deviceId) return
+    setLoadingActions(true)
+    try {
+      const data = await devicesApi.listActions(deviceId)
+      setActions(Array.isArray(data) ? data : [])
+    } catch (err) {
+      toast.error(`加载动作失败：${err.message || err}`)
+      setActions([])
+    } finally {
+      setLoadingActions(false)
+    }
+  }, [])
+
+  const handleToggleExpand = (device) => {
+    setExpandedIds((prev) => {
+      if (prev.includes(device.id)) {
+        return prev.filter((id) => id !== device.id)
+      }
+      loadActions(device.id)
+      return [...prev, device.id]
+    })
+  }
+
+  // 切换分栏视图选中
+  const handleSelectDevice = (device) => {
+    setSelectedId(device.id)
+    loadActions(device.id)
+  }
+
+  // 设备保存
+  const handleDeviceSubmit = async (form) => {
+    setDevSaving(true)
+    try {
+      if (devEditing) {
+        await devicesApi.update(devEditing.id, form)
+      } else {
+        await devicesApi.create(form)
+      }
+      setDevFormOpen(false)
+      setDevEditing(null)
+      await loadDevices()
+      toast.success(devEditing ? '设备已更新' : '设备已创建')
+      return true
+    } catch (err) {
+      toast.error(`保存失败：${err.message || err}`)
+      return false
+    } finally {
+      setDevSaving(false)
+    }
+  }
+
+  const handleDeviceDelete = async (device) => {
+    const ok = await confirm({
+      message: `确定删除设备「${device.name}」吗？将同时删除其下所有动作。`,
+      variant: 'danger',
+      confirmText: '确定删除',
+    })
+    if (!ok) return
+    try {
+      await devicesApi.remove(device.id)
+      if (selectedId === device.id) {
+        setSelectedId(null)
+        setActions([])
+      }
+      setExpandedIds((prev) => prev.filter((id) => id !== device.id))
+      await loadDevices()
+      toast.success('设备已删除')
+    } catch (err) {
+      toast.error(`删除失败：${err.message || err}`)
+    }
+  }
+
+  // 测试设备连接
+  const handleTestDevice = async (device) => {
+    setTestingDeviceId(device.id)
+    try {
+      const res = await devicesApi.test(device.id)
+      setTestConnResult({ ...res, deviceName: device.name })
+      setTestConnOpen(true)
+      await loadDevices()
+    } catch (err) {
+      setTestConnResult({
+        success: false,
+        error: err.message || String(err),
+        deviceName: device.name,
+      })
+      setTestConnOpen(true)
+      await loadDevices()
+    } finally {
+      setTestingDeviceId(null)
+    }
+  }
+
+  // 弹窗内测试设备连接（先保存或直接传表单测试）
+  const handleTestInDialog = async (form) => {
+    // 如果是编辑模式，直接测试；否则提示先保存
+    if (devEditing) {
+      const res = await devicesApi.test(devEditing.id)
+      return res
+    }
+    throw new Error('请先保存设备后再测试')
+  }
+
+  // 健康检查
+  const handleHealthCheck = async () => {
+    setHealthChecking(true)
+    try {
+      const res = await devicesApi.healthCheck()
+      toast.success(
+        `健康检查完成：${res.healthy ?? res.online ?? 0} 在线 / ${res.abnormal ?? 0} 异常 / 共 ${res.checked ?? res.total ?? 0} 个`
+      )
+      await loadDevices()
+    } catch (err) {
+      toast.error(`健康检查失败：${err.message || err}`)
+    } finally {
+      setHealthChecking(false)
+    }
+  }
+
+  // 动作保存
+  const handleActionSubmit = async (form) => {
+    if (!actDeviceId) return false
+    setActSaving(true)
+    try {
+      if (actEditing) {
+        await devicesApi.updateAction(actDeviceId, actEditing.id, form)
+      } else {
+        await devicesApi.createAction(actDeviceId, form)
+      }
+      setActFormOpen(false)
+      setActEditing(null)
+      await loadActions(actDeviceId)
+      await loadDevices()
+      toast.success(actEditing ? '动作已更新' : '动作已创建')
+      return true
+    } catch (err) {
+      toast.error(`保存失败：${err.message || err}`)
+      return false
+    } finally {
+      setActSaving(false)
+    }
+  }
+
+  const handleActionDelete = async (action) => {
+    const ok = await confirm({
+      message: `确定删除动作「${action.name}」吗？`,
+      variant: 'danger',
+      confirmText: '确定删除',
+    })
+    if (!ok) return
+    try {
+      await devicesApi.removeAction(actDeviceId, action.id)
+      await loadActions(actDeviceId)
+      await loadDevices()
+      toast.success('动作已删除')
+    } catch (err) {
+      toast.error(`删除失败：${err.message || err}`)
+    }
+  }
+
+  // 切换动作启用
+  const handleToggleAction = async (action) => {
+    setTogglingActionId(action.id)
+    try {
+      await devicesApi.toggleAction(actDeviceId, action.id)
+      await loadActions(actDeviceId)
+      toast.success(`动作「${action.name}」已${action.enabled ? '禁用' : '启用'}`)
+    } catch (err) {
+      toast.error(`切换失败：${err.message || err}`)
+    } finally {
+      setTogglingActionId(null)
+    }
+  }
+
+  // 动作测试
+  const handleActionTest = async (params) => {
+    if (!actDeviceId || !testAction) return
+    setTestRunning(true)
+    setTestResult(null)
+    try {
+      const res = await devicesApi.testAction(actDeviceId, testAction.id, params)
+      setTestResult(res)
+    } catch (err) {
+      setTestResult({
+        success: false,
+        status_code: null,
+        response_body: null,
+        error: err.message || String(err),
+      })
+    } finally {
+      setTestRunning(false)
+    }
+  }
+
+  // 打开动作测试抽屉
+  const openActionTestDrawer = (action) => {
+    setTestAction(action)
+    setTestResult(null)
+    setTestDrawerOpen(true)
+  }
+
+  // 动作历史
+  const openActionHistory = (action) => {
+    setHistoryAction(action)
+    setHistoryDeviceId(actDeviceId)
+    setHistoryOpen(true)
+  }
+
+  // 新建动作
+  const handleNewAction = (deviceId) => {
+    const did = deviceId || selectedId || expandedIds[0]
+    if (!did) {
+      toast.warning('请先选择或展开一个设备')
+      return
+    }
+    setActDeviceId(did)
+    setActEditing(null)
+    setActFormOpen(true)
+  }
+
+  // 编辑动作
+  const handleEditAction = (action, deviceId) => {
+    setActDeviceId(deviceId || actDeviceId || selectedId)
+    setActEditing(action)
+    setActFormOpen(true)
+  }
+
+  // ============ 模板相关 ============
+  const loadTemplates = useCallback(async () => {
+    try {
+      const res = await devicesApi.templates()
+      setTemplates(Array.isArray(res) ? res : res?.templates || [])
+    } catch (err) {
+      toast.error(`加载模板失败：${err.message || err}`)
+    }
+  }, [])
+
+  const handleOpenTemplate = async () => {
+    await loadTemplates()
+    setTemplateOpen(true)
+  }
+
+  const handleSelectTemplate = (tpl) => {
+    setSelectedTemplate(tpl)
+    setTemplateOpen(false)
+    setTemplateCreateOpen(true)
+  }
+
+  const handleTemplateCreate = async (form) => {
+    setTemplateSaving(true)
+    try {
+      await devicesApi.fromTemplate({
+        template_id: selectedTemplate.id,
+        name: form.name,
+        ip_address: form.ip_address,
+        api_url: form.api_url,
+        api_key: form.api_key,
+        vendor: form.vendor,
+      })
+      setTemplateCreateOpen(false)
+      setSelectedTemplate(null)
+      await loadDevices()
+      toast.success('设备已从模板创建')
+    } catch (err) {
+      toast.error(`创建失败：${err.message || err}`)
+    } finally {
+      setTemplateSaving(false)
+    }
+  }
+
+  // ============ 导入导出 ============
+  const handleExport = async (ids) => {
+    try {
+      const data = await devicesApi.export(ids)
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `devices-export-${new Date().toISOString().slice(0, 10)}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      toast.success(`导出成功，共 ${data.total || data.devices?.length || 0} 台设备`)
+      if (ids?.length) setCheckIds([]) // 导出所选后清空勾选
+    } catch (err) {
+      toast.error(`导出失败：${err.message || err}`)
+    }
+  }
+
+  // 导出所选设备（未勾选时提示）
+  const handleExportSelected = () => {
+    if (!checkIds.length) {
+      toast.warning('请先勾选要导出的设备（卡片左上角勾选框）')
+      return
+    }
+    handleExport(checkIds)
+  }
+
+  // 全选 / 取消全选当前过滤列表
+  const toggleCheckAll = () => {
+    const allIds = filteredDevices.map((d) => d.id)
+    const allChecked = allIds.every((id) => checkIds.includes(id))
+    setCheckIds(allChecked ? [] : allIds)
+  }
+
+  const handleImport = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = '' // 清空以便重复导入同名文件
+    try {
+      const text = await file.text()
+      const body = JSON.parse(text)
+      await devicesApi.import(body)
+      await loadDevices()
+      toast.success('导入成功')
+    } catch (err) {
+      toast.error(`导入失败：${err.message || err}`)
+    }
+  }
+
+  // ============ 筛选后的设备列表 ============
+  const filteredDevices = useMemo(() => {
+    let r = devices
+    if (filters.search) {
+      const q = filters.search.toLowerCase()
+      r = r.filter((d) =>
+        [d.name, d.vendor, d.type, d.description]
+          .filter(Boolean)
+          .some((v) => v.toLowerCase().includes(q))
+      )
+    }
+    if (filters.type) r = r.filter((d) => d.type === filters.type)
+    if (filters.vendor) r = r.filter((d) => (d.vendor || '').toLowerCase() === filters.vendor.toLowerCase())
+    if (filters.status) {
+      r = r.filter((d) => (d.status || (d.enabled ? 'unconfigured' : 'disabled')) === filters.status)
+    }
+    if (filters.tag) {
+      r = r.filter((d) => {
+        const tags = parseTags(d.tags)
+        return tags.includes(filters.tag)
+      })
+    }
+    return r
+  }, [devices, filters.search, filters.type, filters.vendor, filters.status, filters.tag])
+
+  // 厂商选项
+  const vendorOptions = useMemo(() => {
+    const set = new Set()
+    devices.forEach((d) => d.vendor && set.add(d.vendor))
+    return [{ value: '', label: '全部厂商' }, ...Array.from(set).map((v) => ({ value: v, label: v }))]
+  }, [devices])
+
+  // 标签选项
+  const tagOptions = useMemo(() => {
+    const set = new Set()
+    devices.forEach((d) => parseTags(d.tags).forEach((t) => set.add(t)))
+    return [{ value: '', label: '全部标签' }, ...Array.from(set).map((t) => ({ value: t, label: t }))]
+  }, [devices])
+
+  // 选中的设备（分栏视图）
+  const selectedDevice = useMemo(
+    () => devices.find((d) => d.id === selectedId),
+    [devices, selectedId]
+  )
+
+  // 视图模式切换按钮组
+  const viewModeButtons = (
+    <div className="flex items-center gap-0.5 rounded-md border border-border bg-secondary p-0.5">
+      {VIEW_MODES.map((m) => {
+        const Icon = m.icon
+        return (
+          <button
+            key={m.value}
+            type="button"
+            onClick={() => setViewMode(m.value)}
+            className={`rounded p-1.5 transition ${
+              viewMode === m.value
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+            title={m.label}
+          >
+            <Icon className="h-3.5 w-3.5" />
+          </button>
+        )
+      })}
+    </div>
+  )
+
+  return (
+    <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
+      <header className="flex items-center justify-between gap-4 border-b border-border bg-card/60 px-6 py-4">
+        <div className="flex min-w-0 items-center gap-4">
+          <h1 className="text-xl font-semibold text-foreground">设备对接</h1>
+          {activeTab === 'devices' && (
+            <span className="text-xs text-muted-foreground/70">共 {filteredDevices.length} 台</span>
+          )}
+        </div>
+        {activeTab === 'devices' && (
+          <div className="flex shrink-0 items-center gap-2">
+            <TutorialButton onClick={() => setTutorialOpen(true)} />
+            <button
+              type="button"
+              onClick={handleHealthCheck}
+              disabled={healthChecking}
+              className="btn-secondary btn-sm"
+              title="对所有启用的设备执行健康检查"
+            >
+              {healthChecking ? '检查中…' : '健康检查'}
+            </button>
+            <button type="button" onClick={toggleCheckAll} className="btn-secondary btn-sm" title="全选/取消全选当前列表用于导出">
+               <CheckSquare className="mr-1 h-3.5 w-3.5" /> {checkIds.length ? `已选 ${checkIds.length}` : '全选'}
+            </button>
+            <button
+              type="button"
+              onClick={handleExportSelected}
+              className="btn-secondary btn-sm"
+              title="导出已勾选的设备（含动作）"
+            >
+              <Download className="mr-1 h-3.5 w-3.5" /> 导出所选
+            </button>
+            <button type="button" onClick={() => handleExport()} className="btn-secondary btn-sm" title="导出全部设备（含动作）">
+              <Download className="mr-1 h-3.5 w-3.5" /> 导出全部
+            </button>
+            <button
+              type="button"
+              onClick={() => importInputRef.current?.click()}
+              className="btn-secondary btn-sm"
+              title="导入 JSON"
+            >
+              <Upload className="mr-1 h-3.5 w-3.5" /> 导入
+            </button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept="application/json,.json"
+              onChange={handleImport}
+              className="hidden"
+            />
+            <button type="button" onClick={loadDevices} className="btn-secondary btn-sm">
+              <RefreshCw className="mr-1 h-3.5 w-3.5" /> 刷新
+            </button>
+            <button
+              type="button"
+              onClick={handleOpenTemplate}
+              className="btn-secondary btn-sm"
+              title="从模板创建设备"
+            >
+              <Files className="mr-1 h-3.5 w-3.5" /> 从模板
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setDevEditing(null)
+                setDevFormOpen(true)
+              }}
+              className="btn-primary btn-sm"
+            >
+              <Plus className="mr-1 h-3.5 w-3.5" /> 新建设备
+            </button>
+          </div>
+        )}
+      </header>
+
+      {/* Tab 切换 */}
+      <div className="flex items-center gap-1 border-b border-border bg-card/30 px-6">
+        <button
+          type="button"
+          onClick={() => setActiveTab('devices')}
+          className={`-mb-px border-b-2 px-4 py-3 text-sm transition ${
+            activeTab === 'devices'
+              ? 'border-primary text-foreground'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          设备管理
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('logs')}
+          className={`-mb-px border-b-2 px-4 py-3 text-sm transition ${
+            activeTab === 'logs'
+              ? 'border-primary text-foreground'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          调用日志
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('receivers')}
+          className={`-mb-px border-b-2 px-4 py-3 text-sm transition ${
+            activeTab === 'receivers'
+              ? 'border-primary text-foreground'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          日志接收
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-hidden">
+        {activeTab === 'logs' ? (
+          <div className="h-full overflow-y-auto p-6">
+            <CallLogsTab />
+          </div>
+        ) : activeTab === 'receivers' ? (
+          <div className="h-full overflow-y-auto p-6">
+            <LogReceiversTab devices={devices} />
+          </div>
+        ) : (
+          <div className="flex h-full flex-col overflow-hidden">
+            {/* 工具栏：筛选器 + 视图切换 */}
+            <div className="border-b border-border bg-card/30 px-6 py-3">
+              <FilterBar
+                search={{
+                  value: filters.search,
+                  onChange: (v) => setFilters({ search: v }),
+                  placeholder: '搜索设备名称 / 厂商 / 类型...',
+                }}
+                filters={[
+                  {
+                    key: 'type',
+                    label: '类型',
+                    value: filters.type,
+                    onChange: (v) => setFilters({ type: v }),
+                    options: [
+                      { value: '', label: '全部类型' },
+                      ...DEVICE_TYPES.map((t) => ({ value: t.value, label: t.label })),
+                    ],
+                  },
+                  {
+                    key: 'vendor',
+                    label: '厂商',
+                    value: filters.vendor,
+                    onChange: (v) => setFilters({ vendor: v }),
+                    options: vendorOptions,
+                  },
+                  {
+                    key: 'status',
+                    label: '状态',
+                    value: filters.status,
+                    onChange: (v) => setFilters({ status: v }),
+                    options: STATUS_OPTIONS,
+                  },
+                  {
+                    key: 'tag',
+                    label: '标签',
+                    value: filters.tag,
+                    onChange: (v) => setFilters({ tag: v }),
+                    options: tagOptions,
+                  },
+                ]}
+                actions={viewModeButtons}
+              />
+            </div>
+
+            {/* 内容区 */}
+            <div className="flex-1 overflow-hidden">
+              {error && (
+                <div className="m-4 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive">
+                  {error}
+                </div>
+              )}
+
+              {loading ? (
+                <div className="flex h-40 items-center justify-center text-sm text-muted-foreground/70">
+                  加载中...
+                </div>
+              ) : filteredDevices.length === 0 ? (
+                <div className="flex h-60 flex-col items-center justify-center gap-2 text-muted-foreground/70">
+                  <Shield className="h-10 w-10" />
+                  <div className="text-sm">暂无安全设备，点击右上角「新建设备」</div>
+                </div>
+              ) : viewMode === 'split' ? (
+                // 分栏视图：左设备列表 + 右详情
+                <div className="flex h-full">
+                  <div className="w-80 shrink-0 overflow-y-auto border-r border-border bg-card/30">
+                    {filteredDevices.map((dev) => (
+                      <DeviceRow
+                        key={dev.id}
+                        device={dev}
+                        selected={selectedId === dev.id}
+                        onClick={() => handleSelectDevice(dev)}
+                        onTest={handleTestDevice}
+                        testing={testingDeviceId === dev.id}
+                        checked={checkIds.includes(dev.id)}
+                        onToggleCheck={toggleCheck}
+                      />
+                    ))}
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-6">
+                    {selectedDevice ? (
+                      <div className="flex flex-col gap-4">
+                        {/* 设备详情 */}
+                        <div className="rounded-lg border border-border bg-card/40 p-4">
+                          <div className="mb-3 flex items-center gap-3">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/15 text-primary">
+                              <DeviceTypeIcon type={selectedDevice.type} className="h-5 w-5" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="truncate text-base font-semibold text-foreground">
+                                  {selectedDevice.name}
+                                </span>
+                                <StatusBadge
+                                  status={
+                                    selectedDevice.status ||
+                                    (selectedDevice.enabled ? 'unconfigured' : 'disabled')
+                                  }
+                                />
+                              </div>
+                              <div className="mt-0.5 text-xs text-muted-foreground/70">
+                                #{selectedDevice.id} · {DEVICE_TYPE_LABELS[selectedDevice.type]} ·{' '}
+                                {selectedDevice.vendor || '未知厂商'}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleTestDevice(selectedDevice)}
+                                disabled={testingDeviceId === selectedDevice.id}
+                                className="btn-secondary btn-sm"
+                              >
+                                {testingDeviceId === selectedDevice.id ? (
+                                  <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Wifi className="mr-1 h-3 w-3" />
+                                )}
+                                测试
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDevEditing(selectedDevice)
+                                  setDevFormOpen(true)
+                                }}
+                                className="btn-secondary btn-sm"
+                              >
+                                编辑
+                              </button>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3 text-xs lg:grid-cols-5">
+                            <div>
+                              <div className="text-muted-foreground/70">设备 IP</div>
+                              <div
+                                className="truncate text-foreground"
+                                title={selectedDevice.ip_address}
+                              >
+                                {selectedDevice.ip_address || (
+                                  <span className="text-muted-foreground/50">—</span>
+                                )}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-muted-foreground/70">API 地址</div>
+                              <div
+                                className="truncate text-foreground"
+                                title={selectedDevice.api_url}
+                              >
+                                {selectedDevice.api_url || (
+                                  <span className="text-destructive">未配置</span>
+                                )}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-muted-foreground/70">动作数</div>
+                              <div className="text-foreground">
+                                {selectedDevice.action_count ?? '-'}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-muted-foreground/70">今日调用</div>
+                              <div className="text-foreground">
+                                {selectedDevice.today_call_count ?? 0}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-muted-foreground/70">最后心跳</div>
+                              <div
+                                className="text-foreground"
+                                title={fmtTime(selectedDevice.last_heartbeat)}
+                              >
+                                {fmtRelative(selectedDevice.last_heartbeat)}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 动作列表 */}
+                        <div className="rounded-lg border border-border bg-card/40 p-4">
+                          <div className="mb-3 flex items-center justify-between">
+                            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                              设备动作（{loadingActions ? '...' : actions.length} 个）
+                            </h3>
+                            <button
+                              type="button"
+                              onClick={() => handleNewAction(selectedDevice.id)}
+                              className="btn-primary btn-sm"
+                            >
+                              <Plus className="mr-1 h-3 w-3" /> 新建动作
+                            </button>
+                          </div>
+                          <ActionTable
+                            actions={actions}
+                            loading={loadingActions}
+                            onEdit={(a) => handleEditAction(a, selectedDevice.id)}
+                            onDelete={handleActionDelete}
+                            onTest={openActionTestDrawer}
+                            onToggle={handleToggleAction}
+                            onHistory={openActionHistory}
+                            togglingActionId={togglingActionId}
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex h-60 flex-col items-center justify-center gap-2 text-muted-foreground/70">
+                        <Columns className="h-10 w-10" />
+                        <div className="text-sm">请从左侧选择一个设备查看详情</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : viewMode === 'table' ? (
+                // 列表视图
+                <div className="h-full overflow-y-auto p-6">
+                  <div className="overflow-hidden rounded-lg border border-border">
+                    <table className="w-full min-w-[1000px] table-fixed border-collapse text-sm">
+                      <thead className="bg-card text-muted-foreground">
+                        <tr>
+                          <th className="w-16 px-4 py-3 text-left font-medium">ID</th>
+                          <th className="w-48 px-4 py-3 text-left font-medium">设备名称</th>
+                          <th className="w-24 px-4 py-3 text-left font-medium">类型</th>
+                          <th className="w-32 px-4 py-3 text-left font-medium">厂商</th>
+                          <th className="px-4 py-3 text-left font-medium">API 地址</th>
+                          <th className="w-24 px-4 py-3 text-left font-medium">状态</th>
+                          <th className="w-20 px-4 py-3 text-right font-medium">动作数</th>
+                          <th className="w-20 px-4 py-3 text-right font-medium">今日调用</th>
+                          <th className="w-32 px-4 py-3 text-left font-medium">最后心跳</th>
+                          <th className="w-44 px-4 py-3 text-left font-medium">操作</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredDevices.map((dev, idx) => (
+                          <tr
+                            key={dev.id}
+                            className={`border-t border-border hover:bg-primary/5 ${
+                              idx % 2 === 0 ? 'bg-card/30' : ''
+                            }`}
+                          >
+                            <td className="px-4 py-3 font-mono text-primary">#{dev.id}</td>
+                            <td className="truncate px-4 py-3 text-foreground">{dev.name}</td>
+                            <td className="truncate px-4 py-3 text-muted-foreground">
+                              {DEVICE_TYPE_LABELS[dev.type] || dev.type}
+                            </td>
+                            <td className="truncate px-4 py-3 text-muted-foreground">
+                              {dev.vendor || '-'}
+                            </td>
+                            <td
+                              className="truncate px-4 py-3 font-mono text-xs text-muted-foreground"
+                              title={dev.api_url}
+                            >
+                              {dev.api_url ? (
+                                truncate(dev.api_url, 30)
+                              ) : (
+                                <span className="text-destructive">未配置</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3">
+                              <StatusBadge
+                                status={dev.status || (dev.enabled ? 'unconfigured' : 'disabled')}
+                              />
+                            </td>
+                            <td className="px-4 py-3 text-right font-mono text-foreground">
+                              {dev.action_count ?? '-'}
+                            </td>
+                            <td className="px-4 py-3 text-right font-mono text-foreground">
+                              {dev.today_call_count ?? 0}
+                            </td>
+                            <td
+                              className="px-4 py-3 text-[11px] text-muted-foreground"
+                              title={fmtTime(dev.last_heartbeat)}
+                            >
+                              {fmtRelative(dev.last_heartbeat)}
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex flex-wrap gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleTestDevice(dev)}
+                                  disabled={testingDeviceId === dev.id}
+                                  className="btn-secondary btn-sm"
+                                >
+                                  {testingDeviceId === dev.id ? '测试中' : '测试'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDevEditing(dev)
+                                    setDevFormOpen(true)
+                                  }}
+                                  className="btn-secondary btn-sm"
+                                >
+                                  编辑
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeviceDelete(dev)}
+                                  className="btn-danger btn-sm"
+                                >
+                                  删除
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                // 卡片视图（默认）
+                <div className="h-full overflow-y-auto p-6">
+                  <div className="flex flex-col gap-3">
+                    {filteredDevices.map((dev) => (
+                      <DeviceCard
+                        key={dev.id}
+                        device={dev}
+                        expanded={expandedIds.includes(dev.id)}
+                        onToggleExpand={handleToggleExpand}
+                        onEdit={(d) => {
+                          setDevEditing(d)
+                          setDevFormOpen(true)
+                        }}
+                        onDelete={handleDeviceDelete}
+                        onTest={handleTestDevice}
+                        testing={testingDeviceId === dev.id}
+                        actions={expandedIds.includes(dev.id) ? actions : []}
+                        loadingActions={loadingActions && expandedIds.includes(dev.id)}
+                        onEditAction={(a) => {
+                          setActDeviceId(dev.id)
+                          handleEditAction(a, dev.id)
+                        }}
+                        onDeleteAction={handleActionDelete}
+                        onTestAction={openActionTestDrawer}
+                        onToggleAction={handleToggleAction}
+                        onNewAction={() => handleNewAction(dev.id)}
+                        onActionHistory={openActionHistory}
+                        togglingActionId={togglingActionId}
+                        checked={checkIds.includes(dev.id)}
+                        onToggleCheck={toggleCheck}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 设备表单 */}
+      <DeviceFormModal
+        open={devFormOpen}
+        initial={devEditing}
+        onClose={() => {
+          setDevFormOpen(false)
+          setDevEditing(null)
+        }}
+        onSubmit={handleDeviceSubmit}
+        saving={devSaving}
+        onTest={handleTestInDialog}
+      />
+
+      {/* 动作表单 */}
+      <ActionFormModal
+        open={actFormOpen}
+        initial={actEditing}
+        onClose={() => {
+          setActFormOpen(false)
+          setActEditing(null)
+        }}
+        onSubmit={handleActionSubmit}
+        saving={actSaving}
+      />
+
+      {/* 动作测试抽屉 */}
+      <ActionTestDrawer
+        open={testDrawerOpen}
+        action={testAction}
+        onClose={() => {
+          setTestDrawerOpen(false)
+          setTestAction(null)
+          setTestResult(null)
+        }}
+        onRun={handleActionTest}
+        running={testRunning}
+        result={testResult}
+      />
+
+      {/* 动作历史 */}
+      <ActionHistoryModal
+        open={historyOpen}
+        deviceId={historyDeviceId}
+        actionId={historyAction?.id}
+        actionName={historyAction?.name}
+        onClose={() => {
+          setHistoryOpen(false)
+          setHistoryAction(null)
+        }}
+      />
+
+      {/* 设备连接测试结果 */}
+      <Modal
+        open={testConnOpen}
+        title={`连接测试${testConnResult?.deviceName ? `：${testConnResult.deviceName}` : ''}`}
+        onClose={() => setTestConnOpen(false)}
+        maxWidth="max-w-lg"
+        footer={
+          <button type="button" onClick={() => setTestConnOpen(false)} className="btn-primary">
+            关闭
+          </button>
+        }
+      >
+        {testConnResult ? (
+          <div className="flex flex-col gap-3">
+            <div
+              className={`flex items-center gap-2 rounded-md border px-4 py-3 ${
+                testConnResult.success
+                  ? 'border-success/40 bg-success/10'
+                  : 'border-destructive/40 bg-destructive/10'
+              }`}
+            >
+              {testConnResult.success ? (
+                <Wifi className="h-4 w-4 text-success" />
+              ) : (
+                <WifiOff className="h-4 w-4 text-destructive" />
+              )}
+              <span
+                className={`text-sm font-medium ${
+                  testConnResult.success ? 'text-success' : 'text-destructive'
+                }`}
+              >
+                {testConnResult.success
+                  ? `连接成功 · 延迟 ${testConnResult.latency_ms ?? testConnResult.latency ?? '-'}ms`
+                  : '连接失败'}
+              </span>
+            </div>
+            {testConnResult.error && (
+              <div>
+                <div className="mb-1 text-xs text-muted-foreground/70">错误信息</div>
+                <pre className="overflow-auto rounded-md bg-background p-3 font-mono text-xs text-destructive ring-1 ring-border">
+                  {testConnResult.error}
+                </pre>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-sm text-muted-foreground/70">测试中...</div>
+        )}
+      </Modal>
+
+      {/* 模板选择 */}
+      <TemplateModal
+        open={templateOpen}
+        templates={templates}
+        onClose={() => setTemplateOpen(false)}
+        onSelect={handleSelectTemplate}
+      />
+
+      {/* 从模板创建 */}
+      <TemplateCreateModal
+        open={templateCreateOpen}
+        template={selectedTemplate}
+        onClose={() => {
+          setTemplateCreateOpen(false)
+          setSelectedTemplate(null)
+        }}
+        onSubmit={handleTemplateCreate}
+        saving={templateSaving}
+      />
+
+      {/* 使用教程 */}
+      <TutorialDrawer
+        open={tutorialOpen}
+        onClose={() => setTutorialOpen(false)}
+        title="设备对接使用教程"
+        subtitle="了解如何添加设备和配置操作"
+        sections={DEVICE_TUTORIAL}
+      />
+    </div>
+  )
+}
+
+export default DeviceManagement
