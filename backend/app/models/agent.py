@@ -61,7 +61,7 @@ class Agent(Base):
 
     # ===== 引擎选择 =====
     # 执行引擎：langgraph（默认，零侵入）| hermes（Hermes 风格 ReAct + 分段并行 + 记忆 + 委派）
-    engine = Column(String(16), nullable=False, default="langgraph")
+    engine = Column(String(16), nullable=False, default="hermes")
     publish_status = Column(String(16), nullable=False, default="published")
 
     def __repr__(self) -> str:

@@ -469,7 +469,7 @@ def run_lightweight_migrations(engine) -> None:
                 # 启用的资产类型 code 列表（关联 AssetTypeTemplate.code）
                 "enabled_asset_types": "JSON",
                 # 执行引擎选择：langgraph（默认）| hermes
-                "engine": "VARCHAR(16) NOT NULL DEFAULT 'langgraph'",
+                "engine": "VARCHAR(16) NOT NULL DEFAULT 'hermes'",
                 "publish_status": "VARCHAR(16) NOT NULL DEFAULT 'published'",
             },
         )

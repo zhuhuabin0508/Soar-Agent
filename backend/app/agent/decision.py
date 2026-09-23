@@ -914,6 +914,52 @@ async def _real_langgraph_decision(
     return {**action_decision, "messages": messages_dict, "logs": logs}
 
 
+async def _run_agent_decision_via_runtime(
+    *,
+    db,
+    agent_id: int,
+    alert_data: dict,
+    system_prompt: Optional[str] = None,
+    override=None,
+    logs: Optional[list] = None,
+) -> dict:
+    from app.models.agent import Agent
+    from app.platform.agent_runtime import (
+        OUTPUT_MODE_CHAT,
+        OUTPUT_MODE_SOC_DECISION,
+        invoke_agent,
+        resolve_runtime_user,
+    )
+
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if agent is None:
+        out_logs = list(logs or [])
+        out_logs.append(_new_log("error", f"Agent not found: {agent_id}"))
+        return await _mock_decision(alert_data, out_logs)
+
+    output_mode = OUTPUT_MODE_CHAT if system_prompt is not None else OUTPUT_MODE_SOC_DECISION
+    result = await invoke_agent(
+        db=db,
+        agent=agent,
+        input=alert_data,
+        user=resolve_runtime_user(db),
+        channel="decision",
+        output_mode=output_mode,
+        override=override,
+    )
+    out_logs = list(logs or [])
+    if output_mode == OUTPUT_MODE_CHAT:
+        return {
+            "response": result.response,
+            "messages": result.messages,
+            "logs": out_logs,
+        }
+    raw = dict(result.raw or {})
+    raw["messages"] = result.messages
+    raw["logs"] = out_logs + list(raw.get("logs") or [])
+    return raw
+
+
 async def run_agent_decision(
     alert_data: dict,
     enabled_tools: Optional[list[str]] = None,
@@ -956,9 +1002,47 @@ async def run_agent_decision(
                 "logs": [{"level", "message"}, ...]
             }
     """
+    import warnings
+
+    warnings.warn(
+        "run_agent_decision is deprecated; use invoke_agent",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     logger.info("=" * 60)
     logger.info("收到告警决策请求, alert_data=%s", alert_data)
     logs: list[dict[str, str]] = []
+
+    if agent_id is not None:
+        from app.database import SessionLocal
+
+        db = SessionLocal()
+        try:
+            override = None
+            if any(
+                v is not None
+                for v in (system_prompt, temperature, max_tokens, max_iterations, model_config_id, model_name)
+            ):
+                from types import SimpleNamespace
+
+                override = SimpleNamespace(
+                    system_prompt=system_prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    max_iterations=max_iterations,
+                    model_config_id=model_config_id,
+                    model_name=model_name,
+                )
+            return await _run_agent_decision_via_runtime(
+                db=db,
+                agent_id=agent_id,
+                alert_data=alert_data,
+                system_prompt=system_prompt,
+                override=override,
+                logs=logs,
+            )
+        finally:
+            db.close()
 
     # DB 会话用于读取 LLMConfig / Tool / 知识库
     from app.database import SessionLocal
@@ -1063,8 +1147,62 @@ async def run_agent_decision_stream(
         - ``done``: 最终结果（``result`` 字段）
         - ``error``: 错误（``message`` 字段）
     """
+    import warnings
+
+    warnings.warn(
+        "run_agent_decision_stream is deprecated; use invoke_agent_sse",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     logger.info("=" * 60)
     logger.info("收到流式告警决策请求, alert_data=%s", alert_data)
+
+    if agent_id is not None:
+        from app.database import SessionLocal
+        from app.models.agent import Agent
+        from app.platform.agent_runtime import invoke_agent_sse, resolve_runtime_user
+
+        db = SessionLocal()
+        try:
+            agent = db.query(Agent).filter(Agent.id == agent_id).first()
+            if agent is None:
+                yield {"type": "error", "message": f"Agent not found: {agent_id}"}
+                return
+            override = None
+            if any(
+                v is not None
+                for v in (system_prompt, temperature, max_tokens, max_iterations, model_config_id, model_name)
+            ):
+                from types import SimpleNamespace
+
+                override = SimpleNamespace(
+                    system_prompt=system_prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    max_iterations=max_iterations,
+                    model_config_id=model_config_id,
+                    model_name=model_name,
+                )
+            user_input = json.dumps(alert_data, ensure_ascii=False)
+            async for chunk in invoke_agent_sse(
+                db=db,
+                agent=agent,
+                input=user_input,
+                user=resolve_runtime_user(db),
+                channel="decision",
+                override=override,
+            ):
+                if not chunk.startswith("data: "):
+                    continue
+                try:
+                    data = json.loads(chunk[6:].strip())
+                except (json.JSONDecodeError, ValueError):
+                    continue
+                yield data
+        finally:
+            db.close()
+        return
+
     logs: list[dict[str, str]] = []
 
     from app.database import SessionLocal
