@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     # /auth/otp/send 返回 503 业务错误且响应中绝不含验证码。
     ENABLE_DEV_CODE: bool = False
 
+    BAN_ANALYST_AGENT_ID: int = 0
+
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",
         env_file_encoding="utf-8",
