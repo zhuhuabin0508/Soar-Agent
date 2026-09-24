@@ -511,6 +511,16 @@ def parse_qingteng_syslog(text: str) -> Optional[dict]:
             flat[k] = v
     flat.update(detail)
 
+    # 青藤 severity（0信息/1低危/2中危/3高危/4危急）翻译为系统 risk_level 编号
+    # （系统口径 0严重/1高危/2中危/3低危/4信息），避免"信息"被当成"严重"计入高危及以上。
+    _QT_SEV_TO_RISK = {"0": 4, "1": 3, "2": 2, "3": 1, "4": 0}
+    sev = flat.get("severity")
+    if sev is not None:
+        try:
+            flat["severity"] = _QT_SEV_TO_RISK.get(str(int(float(str(sev)))), str(sev))
+        except (ValueError, TypeError):
+            pass
+
     # 派生去重 uuid 与来源标记
     uid = hashlib.sha256(
         f"{flat.get('agent_id', '')}|{flat.get('datatype', '')}|{flat.get('datatime', '')}"
