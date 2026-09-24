@@ -26,8 +26,10 @@ from app.core.timezone import BEIJING_TZ, beijing_now
 from app.database import SessionLocal, get_db
 from app.dependencies import get_current_user, require_permission, require_role
 from app.engine.enum_translator import translate as enum_translate
+from app.engine.extractor import apply_rule_map, extract_fields
 from app.engine.field_mapper import apply_mappings
 from app.engine.parser_engine import ParseEngine, ParseSink
+from app.engine.rule_matcher import resolve_rule
 from app.engine.strategy_loader import StrategyLoader, get_path
 from app.engine.validator import run_validations
 from app.models.alert_event import AlertEvent
@@ -248,6 +250,11 @@ def _validate_strategy_config(config: dict) -> None:
     if status not in ("enabled", "disabled"):
         raise HTTPException(status_code=422, detail=f"status 仅支持 enabled/disabled，当前 {status!r}")
 
+    # 新结构：rules[] 多规则；旧结构退化为单规则校验
+    if config.get("rules") is not None:
+        _validate_rules_config(config)
+        return
+
     rules = config.get("route_rules")
     if not isinstance(rules, dict) or not rules.get("match_field"):
         raise HTTPException(status_code=422, detail="route_rules.match_field 不能为空")
@@ -308,6 +315,74 @@ def _validate_strategy_config(config: dict) -> None:
     ext_fields = config.get("extension_fields")
     if ext_fields is not None and not isinstance(ext_fields, list):
         raise HTTPException(status_code=422, detail="extension_fields 必须是字符串数组")
+
+
+def _validate_rules_config(config: dict) -> None:
+    """校验新结构 rules[] 的每一规则（match / extract / map）。
+
+    规则字段：
+    - rule_id / log_type / enabled
+    - match: {type: all|any, conditions:[{field,op,value}]}
+    - extract: {type: fields|regex|template, ...}
+    - map: {field_mappings, enum_maps, defaults, validations}
+    """
+    rules = config.get("rules")
+    if not isinstance(rules, list) or not rules:
+        raise HTTPException(status_code=422, detail="rules 必须是非空数组")
+
+    wrapper = config.get("outer_wrapper")
+    if wrapper is not None and not isinstance(wrapper, dict):
+        raise HTTPException(status_code=422, detail="outer_wrapper 必须是对象")
+
+    for i, rule in enumerate(rules, 1):
+        if not isinstance(rule, dict):
+            raise HTTPException(status_code=422, detail=f"rules 第 {i} 条必须是对象")
+        if not rule.get("rule_id"):
+            raise HTTPException(status_code=422, detail=f"rules 第 {i} 条缺少 rule_id")
+        # match 校验
+        match = rule.get("match") or {}
+        if not isinstance(match, dict):
+            raise HTTPException(status_code=422, detail=f"rules[{rule.get('rule_id')}] match 必须是对象")
+        combine = str(match.get("type") or "all").lower()
+        if combine not in ("all", "any"):
+            raise HTTPException(status_code=422, detail=f"rules[{rule.get('rule_id')}] match.type 仅支持 all/any")
+        conditions = match.get("conditions") or []
+        if not isinstance(conditions, list):
+            raise HTTPException(status_code=422, detail=f"rules[{rule.get('rule_id')}] match.conditions 必须是数组")
+        for c in conditions:
+            if not c.get("field") or not c.get("op"):
+                raise HTTPException(status_code=422, detail=f"rules[{rule.get('rule_id')}] 条件缺少 field/op")
+        # extract 校验
+        extract = rule.get("extract") or {}
+        etype = (extract or {}).get("type") or "fields"
+        if etype == "regex" and not (extract or {}).get("regex"):
+            raise HTTPException(status_code=422, detail=f"rules[{rule.get('rule_id')}] extract(regex) 缺少 regex 表达式")
+        if etype == "fields":
+            mappings = (extract or {}).get("fields") or []
+            if not isinstance(mappings, list):
+                raise HTTPException(status_code=422, detail=f"rules[{rule.get('rule_id')}] extract.fields 必须是数组")
+            for j, m in enumerate(mappings, 1):
+                if not m.get("source") or not m.get("target"):
+                    raise HTTPException(status_code=422, detail=f"rules[{rule.get('rule_id')}] extract.fields 第 {j} 行缺少 source/target")
+                if m.get("type") and m["type"] not in CONVERT_TYPES:
+                    raise HTTPException(status_code=422, detail=f"rules[{rule.get('rule_id')}] extract.fields 第 {j} 行转换类型 {m['type']!r} 不支持")
+        # map 校验
+        rmap = rule.get("map") or {}
+        if not isinstance(rmap, dict):
+            raise HTTPException(status_code=422, detail=f"rules[{rule.get('rule_id')}] map 必须是对象")
+        for ename, table in (rmap.get("enum_maps") or {}).items():
+            if not isinstance(table, dict):
+                raise HTTPException(status_code=422, detail=f"rules[{rule.get('rule_id')}] map.enum_maps.{ename} 必须是对象")
+        for v in rmap.get("validations") or []:
+            if not isinstance(v, dict) or not v.get("field") or not v.get("rule"):
+                raise HTTPException(status_code=422, detail=f"rules[{rule.get('rule_id')}] map.validations 缺少 field/rule")
+            if v["rule"] not in VALIDATION_RULES:
+                raise HTTPException(status_code=422, detail=f"rules[{rule.get('rule_id')}] map.validations 规则 {v['rule']!r} 不支持")
+            if v["rule"] == "regex":
+                try:
+                    re.compile(str(v.get("pattern") or ""))
+                except re.error as exc:
+                    raise HTTPException(status_code=422, detail=f"rules[{rule.get('rule_id')}] map.validations 正则非法: {exc}")
 
 
 def _json_safe(value: Any) -> Any:
@@ -571,16 +646,36 @@ def test_strategy(body: StrategyTestRequest) -> dict:
     sample = body.sample or {}
     started = time.perf_counter()
 
-    # 1. 路由匹配过程：提交的策略 + 全部已启用策略逐一评估
-    rules = config.get("route_rules") or {}
-    actual_value = get_path(sample, rules.get("match_field") or "")
-    route = {
-        "match_type": str(rules.get("match_type") or "exact").lower(),
-        "match_field": rules.get("match_field") or "",
-        "match_value": rules.get("match_value"),
-        "actual_value": actual_value,
-        "matched": _eval_route(rules, sample),
-    }
+    has_rules = isinstance(config.get("rules"), list) and bool(config.get("rules"))
+
+    # 1. 规则匹配过程（新结构）或路由匹配（旧结构）
+    rule = None
+    rule_detail = None
+    if has_rules:
+        rule = resolve_rule(sample, config)
+        rule_detail = {
+            "rule_id": (rule or {}).get("rule_id", ""),
+            "log_type": (rule or {}).get("log_type", ""),
+            "matched": rule is not None,
+            "match": (rule or {}).get("match") or {},
+        }
+        route = {
+            "mode": "rules",
+            "matched": rule is not None,
+            "rule_id": (rule or {}).get("rule_id", ""),
+            "log_type": (rule or {}).get("log_type", ""),
+        }
+    else:
+        rules = config.get("route_rules") or {}
+        actual_value = get_path(sample, rules.get("match_field") or "")
+        route = {
+            "mode": "route",
+            "match_type": str(rules.get("match_type") or "exact").lower(),
+            "match_field": rules.get("match_field") or "",
+            "match_value": rules.get("match_value"),
+            "actual_value": actual_value,
+            "matched": _eval_route(rules, sample),
+        }
 
     db_hits = []
     try:
@@ -588,12 +683,14 @@ def test_strategy(body: StrategyTestRequest) -> dict:
         if not loader.strategies:
             loader.refresh()
         for strat in loader.strategies:
-            s_rules = (strat.get("config") or {}).get("route_rules") or {}
+            s_config = strat.get("config") or {}
+            s_rules = s_config.get("route_rules") or {}
             db_hits.append(
                 {
                     "id": strat.get("id"),
                     "strategy_name": strat.get("strategy_name"),
                     "version": strat.get("version"),
+                    "mode": "rules" if s_config.get("rules") else "route",
                     "match_field": s_rules.get("match_field"),
                     "match_value": s_rules.get("match_value"),
                     "hit": _eval_route(s_rules, sample),
@@ -610,14 +707,33 @@ def test_strategy(body: StrategyTestRequest) -> dict:
     if not unwrap_ok:
         data = {}
 
-    # 3. 字段映射（逐字段明细）
-    fields, mapping_warnings, enum_specs = apply_mappings(
-        data, config.get("field_mappings") or [], sample,
-    )
+    # 3. 字段提取（新结构按命中规则 extract；旧结构用根级 field_mappings）
+    if has_rules and rule is not None:
+        extract = rule.get("extract") or {}
+        rule_map = rule.get("map") or {}
+        fields, mapping_warnings, enum_specs = extract_fields(data, extract, sample)
+        enum_maps = rule_map.get("enum_maps") or {}
+        defaults = rule_map.get("defaults") or []
+        validations = rule_map.get("validations") or []
+        ext_fields = rule.get("extension_fields") or config.get("extension_fields") or []
+        # 默认值补充
+        for d in defaults:
+            target = d.get("target")
+            if target and not fields.get(target):
+                fields[target] = d.get("value")
+        # 规则内额外映射
+        apply_rule_map(fields, rule_map, sample, mapping_warnings)
+    else:
+        fields, mapping_warnings, enum_specs = apply_mappings(
+            data, config.get("field_mappings") or [], sample,
+        )
+        enum_maps = config.get("enum_maps") or {}
+        validations = config.get("validations") or []
+        ext_fields = config.get("extension_fields") or []
 
     # 4. 枚举翻译
     enum_translations = []
-    enum_translate(fields, enum_specs, config.get("enum_maps") or {})
+    enum_translate(fields, enum_specs, enum_maps)
     for spec in enum_specs:
         enum_translations.append(
             {
@@ -629,17 +745,20 @@ def test_strategy(body: StrategyTestRequest) -> dict:
         )
 
     # 5. 校验
-    validation_warnings = run_validations(fields, config.get("validations") or [])
+    validation_warnings = run_validations(fields, validations)
     warnings = mapping_warnings + validation_warnings
 
-    # 6. 扩展归档（header + extension_fields → extensions）
+    # 6. 扩展归档（header + ext_fields → extensions）
     headers = {k: sample.get(k) for k in wrapper.get("header_fields") or [] if k in sample}
     extensions: dict[str, Any] = dict(headers)
-    for src in config.get("extension_fields") or []:
+    for src in ext_fields:
         if src in data:
             extensions[src] = data[src]
     fields["extensions"] = json.dumps(extensions, ensure_ascii=False)
     fields["device_type"] = config.get("device_type") or ""
+    if has_rules and rule is not None:
+        fields["rule_id"] = (rule or {}).get("rule_id", "")
+        fields["log_type"] = (rule or {}).get("log_type", "")
     uuid_source = wrapper.get("uuid_source") or ""
     uuid_val = get_path(sample, uuid_source)
     if uuid_val is not None:
@@ -650,23 +769,44 @@ def test_strategy(body: StrategyTestRequest) -> dict:
     for w in warnings:
         warning_by_field.setdefault(w.get("field") or "", w)
     mappings_detail = []
-    for m in config.get("field_mappings") or []:
-        source = m.get("source") or ""
-        target = m.get("target") or ""
-        mappings_detail.append(
-            {
-                "source": source,
-                "target": target,
-                "type": m.get("type") or "string",
-                "raw_value": _preview(data.get(source)) if source in data else None,
-                "missing": bool(source) and source not in data,
-                "converted": _preview(fields.get(target)),
-                "warning": (warning_by_field.get(target) or {}).get("message"),
-            }
-        )
+    if has_rules and rule is not None:
+        mapping_list = []
+        etype = ((rule.get("extract") or {}).get("type") or "fields")
+        if etype == "fields":
+            mapping_list = (rule.get("extract") or {}).get("fields") or []
+        for m in mapping_list:
+            source = m.get("source") or ""
+            target = m.get("target") or ""
+            mappings_detail.append(
+                {
+                    "source": source,
+                    "target": target,
+                    "type": m.get("type") or "string",
+                    "raw_value": _preview(data.get(source)) if source in data else None,
+                    "missing": bool(source) and source not in data,
+                    "converted": _preview(fields.get(target)),
+                    "warning": (warning_by_field.get(target) or {}).get("message"),
+                }
+            )
+    else:
+        for m in config.get("field_mappings") or []:
+            source = m.get("source") or ""
+            target = m.get("target") or ""
+            mappings_detail.append(
+                {
+                    "source": source,
+                    "target": target,
+                    "type": m.get("type") or "string",
+                    "raw_value": _preview(data.get(source)) if source in data else None,
+                    "missing": bool(source) and source not in data,
+                    "converted": _preview(fields.get(target)),
+                    "warning": (warning_by_field.get(target) or {}).get("message"),
+                }
+            )
 
     return {
         "route": route,
+        "rule": rule_detail,
         "db_hits": db_hits,
         "unwrap": {"data_path": data_path, "found": unwrap_ok},
         "mappings": mappings_detail,

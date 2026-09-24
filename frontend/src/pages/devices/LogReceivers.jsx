@@ -6,11 +6,12 @@ import { confirm } from '../../components/ConfirmDialog'
 import { toast } from '../../store/toastStore'
 import { inputCls } from '../../components/property/FormControls'
 import { devices as devicesApi } from '../../api/client'
+import { strategyApi } from '../../api/strategy'
 import { Section, Switch } from './Badges'
 
 // ============ 日志接收渠道表单弹窗 ============
-// 对方设备主动推送日志时，配置 syslog / kafka 接收方式
-export function LogReceiverFormModal({ open, initial, devices: devList, onClose, onSubmit, saving }) {
+// 对方设备主动推送日志时，配置 syslog / kafka 接收方式；可手动固定解析策略
+export function LogReceiverFormModal({ open, initial, devices: devList, strategies, onClose, onSubmit, saving }) {
   const [form, setForm] = useState(() => buildInitialReceiverForm(initial))
 
   function buildInitialReceiverForm(src) {
@@ -27,6 +28,7 @@ export function LogReceiverFormModal({ open, initial, devices: devList, onClose,
       kafka_group: src?.kafka_group || 'soar-ingest',
       kafka_security: src?.kafka_security || '',
       format: src?.format || 'json',
+      strategy_id: src?.strategy_id || '',
       notify_interval_minutes: src?.notify_interval_minutes ?? 0,
       description: src?.description || '',
     }
@@ -103,6 +105,22 @@ export function LogReceiverFormModal({ open, initial, devices: devList, onClose,
               </select>
             </label>
           </div>
+          <label className="mt-3 block">
+            <div className="mb-1 text-xs font-medium text-muted-foreground">解析策略</div>
+            <select className={inputCls} value={form.strategy_id} onChange={(e) => set('strategy_id')(e.target.value)}>
+              <option value="">自动匹配（推荐）</option>
+              {(strategies || []).map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.strategy_name}{s.device_type ? `（${s.device_type}）` : ''}
+                </option>
+              ))}
+            </select>
+            <div className="mt-1 text-xs text-muted-foreground">
+              {form.strategy_id
+                ? '选择策略后固定使用该策略解析，解析失败即记为失败，不会自动切换其他策略。'
+                : '不选择则由系统按路由规则自动匹配解析策略，适合青藤之类可一条策略解析所有日志的场景。'}
+            </div>
+          </label>
           <label className="mt-3 block">
             <div className="mb-1 text-xs font-medium text-muted-foreground">异常通知间隔（分钟）</div>
             <input type="number" min={0} className={inputCls} value={form.notify_interval_minutes}
@@ -186,6 +204,7 @@ export function LogReceiversTab({ devices }) {
   const [summary, setSummary] = useState(null)
   const [metrics, setMetrics] = useState([])
   const [logs, setLogs] = useState([])
+  const [strategies, setStrategies] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -216,6 +235,20 @@ export function LogReceiversTab({ devices }) {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // 解析策略列表（供渠道表单手动固定解析策略下拉；admin 权限）
+  useEffect(() => {
+    let cancelled = false
+    strategyApi.list()
+      .then((res) => { if (!cancelled) setStrategies(Array.isArray(res) ? res : res?.items || []) })
+      .catch(() => { /* 无权限或无数据时忽略 */ })
+    return () => { cancelled = true }
+  }, [])
+
+  const strategyName = useCallback((id) => {
+    const s = (strategies || []).find((x) => String(x.id) === String(id))
+    return s ? s.strategy_name : (id ? `#${id}` : '')
+  }, [strategies])
 
   const handleSubmit = async (body) => {
     try {
@@ -353,6 +386,13 @@ export function LogReceiversTab({ devices }) {
                     <td className="px-4 py-2.5">
                       <div className="font-medium">{r.name}</div>
                       <div className="text-xs text-muted-foreground/70">{r.device_name}</div>
+                      {r.strategy_id ? (
+                        <div className="mt-0.5 text-[11px] text-primary">
+                          固定策略：{strategyName(r.strategy_id)}
+                        </div>
+                      ) : (
+                        <div className="mt-0.5 text-[11px] text-muted-foreground/60">自动匹配策略</div>
+                      )}
                     </td>
                     <td className="px-4 py-2.5">
                       <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${r.protocol === 'syslog' ? 'bg-primary/15 text-primary' : 'bg-purple-500/15 text-purple-400'}`}>
@@ -509,6 +549,7 @@ export function LogReceiversTab({ devices }) {
         open={formOpen}
         initial={editing}
         devices={devices}
+        strategies={strategies}
         onClose={() => { setFormOpen(false); setEditing(null) }}
         onSubmit={handleSubmit}
       />

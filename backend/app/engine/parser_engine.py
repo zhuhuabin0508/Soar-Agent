@@ -14,7 +14,8 @@ from datetime import datetime
 from typing import Any, Optional, Protocol
 
 from app.engine.enum_translator import translate as enum_translate
-from app.engine.field_mapper import apply_mappings
+from app.engine.extractor import apply_rule_map, extract_fields
+from app.engine.rule_matcher import resolve_rule
 from app.engine.strategy_loader import StrategyLoader, get_path
 from app.engine.validator import run_validations
 from app.core.timezone import BEIJING_TZ
@@ -67,6 +68,8 @@ class ParseResult:
     warnings: list[dict] = field(default_factory=list)
     strategy_id: Optional[int] = None
     strategy_name: str = ""
+    rule_id: str = ""
+    log_type: str = ""
     error_type: str = ""
     error_msg: str = ""
     uuid: str = ""
@@ -78,6 +81,8 @@ class ParseResult:
             "status": self.status,
             "strategy_id": self.strategy_id,
             "strategy_name": self.strategy_name,
+            "rule_id": self.rule_id,
+            "log_type": self.log_type,
             "uuid": self.uuid,
             "warnings": self.warnings,
             "error_type": self.error_type,
@@ -101,11 +106,14 @@ class ParseEngine:
     # ------------------------------------------------------------------
     # 单条解析（纯计算，不落库）
     # ------------------------------------------------------------------
-    def parse_one(self, raw: dict) -> ParseResult:
+    def parse_one(self, raw: dict, strategy: Optional[dict] = None) -> ParseResult:
         """解析单条原始告警，返回解析结果（不落库，可独立测试）。
 
         Args:
             raw: 原始告警 JSON（dict）。
+            strategy: 指定解析策略（dict，形如 loader.match 返回）。传 None 时按
+                route_rules 自动匹配；传入指定策略时跳过自动匹配直接用它（用于
+                日志渠道手动固定解析策略）。
 
         Returns:
             :class:`ParseResult`，status 为 success / partial / fail。
@@ -113,8 +121,9 @@ class ParseEngine:
         started = time.perf_counter()
         result = ParseResult()
 
-        # 1. 策略路由
-        strategy = self.loader.match(raw)
+        # 1. 策略路由：指定策略则跳过自动匹配；否则按 route_rules 匹配
+        if strategy is None:
+            strategy = self.loader.match(raw)
         if strategy is None:
             result.status = "fail"
             result.error_type = ERR_NO_STRATEGY
@@ -146,27 +155,43 @@ class ParseEngine:
         uuid_val = get_path(raw, uuid_source)
         result.uuid = str(uuid_val) if uuid_val is not None else ""
 
-        # 3. 字段映射
-        fields, mapping_warnings, enum_specs = apply_mappings(
-            data, config.get("field_mappings") or [], raw,
-        )
+        # 3. 规则匹配：从 config 的 rules[] 中选出命中规则（旧结构自动归一化）
+        rule = resolve_rule(raw, config)
+        if rule is None:
+            result.status = "fail"
+            result.error_type = ERR_NO_STRATEGY
+            result.error_msg = "无匹配规则"
+            result.parse_ms = int((time.perf_counter() - started) * 1000)
+            return result
+        result.rule_id = rule.get("rule_id", "")
+        result.log_type = rule.get("log_type", "")
+        logger.debug("规则命中: rule_id=%s log_type=%s", result.rule_id, result.log_type)
+
+        # 4. 提取字段（fields / regex / template 三种模式）
+        extract = rule.get("extract") or {}
+        fields, mapping_warnings, enum_specs = extract_fields(data, extract, raw)
         result.warnings.extend(mapping_warnings)
 
-        # 4. 枚举翻译
-        enum_translate(fields, enum_specs, config.get("enum_maps") or {})
+        # 5. 规则 map：枚举翻译 + 默认值补充
+        rule_map = rule.get("map") or {}
+        enum_translate(fields, enum_specs, rule_map.get("enum_maps") or {})
+        apply_rule_map(fields, rule_map, raw, result.warnings)
 
-        # 5. 校验（失败不阻断，记入 warnings，状态降为 partial）
-        validation_warnings = run_validations(fields, config.get("validations") or [])
+        # 6. 校验（失败不阻断，记入 warnings，状态降为 partial）
+        validation_warnings = run_validations(fields, rule_map.get("validations") or [])
         result.warnings.extend(validation_warnings)
 
-        # 6. 扩展归档：extension_fields + header_fields → extensions
+        # 7. 扩展归档：rule.extension_fields + header_fields → extensions
         extensions: dict[str, Any] = dict(headers)
-        for src in config.get("extension_fields") or []:
+        for src in rule.get("extension_fields") or config.get("extension_fields") or []:
             if src in data:
                 extensions[src] = data[src]
         fields["extensions"] = json.dumps(extensions, ensure_ascii=False)
         fields["strategy_id"] = result.strategy_id
         fields["device_type"] = config.get("device_type") or fields.get("device_type", "")
+        if result.rule_id:
+            fields["rule_id"] = result.rule_id
+            fields["log_type"] = result.log_type
         if result.uuid:
             fields["uuid"] = result.uuid
         fields["raw_data"] = json.dumps(raw, ensure_ascii=False)

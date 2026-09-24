@@ -49,6 +49,9 @@ class LogReceiver(Base):
     # 接收内容格式
     format = Column(String(16), nullable=False, default="json", comment="内容格式: json/raw")
 
+    # 手动指定解析策略：NULL/0=自动匹配；>0 固定用该策略解析（失败即解析失败，不自动换）
+    strategy_id = Column(Integer, nullable=True, comment="手动绑定的解析策略 ID（NULL/0=自动匹配）")
+
     # 异常通知间隔（分钟）：0=异常期间仅首次通知一次，>0=异常持续期间每 N 分钟重复提醒
     notify_interval_minutes = Column(Integer, nullable=False, default=0, comment="异常通知间隔（分钟）")
 

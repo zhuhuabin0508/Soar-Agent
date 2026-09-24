@@ -75,6 +75,7 @@ class DeviceBase(BaseModel):
     verify_tls: bool = Field(False, description="是否校验 TLS 证书")
     tags: list[str] = Field(default_factory=list, description="标签列表")
     icon: str = Field("", description="设备图标")
+    parser_strategy_id: int | None = Field(None, description="设备级解析策略 ID（parse_strategies.id，NULL=自动路由/渠道指定）")
 
     @field_validator("ip_address")
     @classmethod
@@ -243,6 +244,7 @@ def _apply_device_fields(device: Device, body: DeviceBase, *, is_create: bool) -
     device.verify_tls = body.verify_tls
     device.tags = _tags_to_json(body.tags)
     device.icon = body.icon
+    device.parser_strategy_id = body.parser_strategy_id
     # 创建时状态默认 unconfigured
     if is_create and not device.status:
         device.status = "unconfigured"
@@ -370,7 +372,7 @@ def update_device(
         "enabled": body.enabled, "description": body.description,
         "auth_type": body.auth_type, "timeout": body.timeout,
         "max_retries": body.max_retries, "verify_tls": body.verify_tls,
-        "icon": body.icon,
+        "icon": body.icon, "parser_strategy_id": body.parser_strategy_id,
     }
     for fname, new_val in field_map.items():
         old_val = getattr(device, fname)

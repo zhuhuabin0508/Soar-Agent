@@ -1,8 +1,8 @@
 {
-  "strategy_name": "青藤万相 Syslog安全事件 v1.0",
+  "strategy_name": "青藤万相 Syslog安全事件 v2.0",
   "device_type": "qingteng_wanxiang",
   "status": "enabled",
-  "version": "1.0",
+  "version": "2.0",
   "route_rules": {
     "match_type": "exact",
     "match_field": "__source",
@@ -10,64 +10,753 @@
   },
   "outer_wrapper": {
     "data_path": "",
-    "header_fields": ["__source", "__qt_recv_at"],
+    "header_fields": [
+      "__source",
+      "__qt_recv_at"
+    ],
     "uuid_source": "event_uuid"
   },
-  "field_mappings": [
-    {"source": "event_uuid", "target": "uuid", "type": "string", "required": true},
-
-    {"source": "datatype", "target": "threat_type", "type": "string"},
-    {"source": "event_type", "target": "threat_sub_type", "type": "string"},
-    {"source": "event_name", "target": "alert_name", "type": "string"},
-    {"source": "event_content", "target": "description", "type": "string"},
-    {"source": "url", "target": "recommendation", "type": "string"},
-
-    {"source": "datatime", "target": "occur_timestamp", "type": "qt_datetime"},
-    {"source": "__qt_recv_at", "target": "upload_timestamp", "type": "qt_datetime"},
-    {"source": "datatime_raw", "target": "upload_time_raw", "type": "string"},
-
-    {"source": "agent_ip", "target": "host_ip", "type": "comma_split_to_json"},
-    {"source": "host_name", "target": "account_name", "type": "string"},
-    {"source": "group_name", "target": "src_region_name", "type": "string"},
-    {"source": "agent_id", "target": "agent_id", "type": "string"},
-
-    {"source": "severity", "target": "risk_level", "type": "enum_int", "enum_map": "SEVERITY", "enum_target": "risk_level_name"},
-    {"source": "event_level", "target": "risk_tag", "type": "string"},
-
-    {"source": "detail_uname", "target": "user_name", "type": "string"},
-    {"source": "detail_src_ip", "target": "src_ip", "type": "comma_split_to_json"},
-    {"source": "detail_region", "target": "src_region_name", "type": "string"},
-    {"source": "detail_dst_ip", "target": "dst_ip", "type": "comma_split_to_json"},
-    {"source": "detail_port", "target": "dst_port", "type": "string"},
-    {"source": "detail_service", "target": "protocol", "type": "string"},
-
-    {"source": "detail_pname", "target": "threat_class", "type": "string"},
-    {"source": "detail_rule", "target": "threat_define", "type": "string"},
-
-    {"source": "src_ip", "target": "proof_description", "type": "string"}
-  ],
   "enum_maps": {
     "SEVERITY": {
-      "0": "严重", "1": "高危", "2": "中危", "3": "低危", "4": "信息"
+      "0": "严重",
+      "1": "高危",
+      "2": "中危",
+      "3": "低危",
+      "4": "信息"
     }
   },
-  "validations": [
-    {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
-    {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
-  ],
-  "extension_fields": [
-    "internal_ip", "external_ip", "host_tag", "host_memo", "action",
-    "type", "group", "comid",
-    "event_name", "event_level", "event_content", "url",
-    "datatype", "datatype_marker",
-    "log_type", "reason", "uname", "uid", "euname", "euid", "tty",
-    "cmd", "pid", "pname", "ppid", "ppname", "ppath", "shell", "home",
-    "size", "md5", "sha1", "sha256", "path", "file_type", "file_path", "file_operation",
-    "ctime", "mtime", "atime", "process_tree", "process_name", "process_chain",
-    "domain", "login_time", "login_type", "login_user", "login_error", "logout_reason",
-    "location", "port", "login_conn_port", "login_con_port",
-    "risk_id", "risk_name", "cves", "cvss_score", "serv_impact", "app", "account",
-    "acct_type", "acct_status", "category", "event", "id",
-    "platform", "os", "agent_version", "duration", "threshold", "last_offline_time"
+  "rules": [
+    {
+      "rule_id": "bruteforce",
+      "log_type": "暴力破解",
+      "enabled": true,
+      "match": {
+        "type": "all",
+        "conditions": [
+          {"field": "datatype", "op": "in", "value": ["bruteforce_ext", "bruteforce_inter"]},
+          {"field": "__source", "op": "eq", "value": "qingteng_syslog"}
+        ]
+      },
+      "extract": {
+        "type": "fields",
+        "fields": [
+          {"source": "event_uuid", "target": "uuid", "type": "string", "required": true},
+          {"source": "datatype", "target": "threat_type", "type": "string"},
+          {"source": "event_type", "target": "threat_sub_type", "type": "string"},
+          {"source": "event_name", "target": "alert_name", "type": "string"},
+          {"source": "event_content", "target": "description", "type": "string"},
+          {"source": "url", "target": "recommendation", "type": "string"},
+          {"source": "datatime", "target": "occur_timestamp", "type": "qt_datetime"},
+          {"source": "__qt_recv_at", "target": "upload_timestamp", "type": "qt_datetime"},
+          {"source": "datatime_raw", "target": "upload_time_raw", "type": "string"},
+          {"source": "agent_ip", "target": "host_ip", "type": "comma_split_to_json"},
+          {"source": "host_name", "target": "account_name", "type": "string"},
+          {"source": "agent_id", "target": "agent_id", "type": "string"},
+          {"source": "severity", "target": "risk_level", "type": "enum_int", "enum_map": "SEVERITY", "enum_target": "risk_level_name"},
+          {"source": "event_level", "target": "risk_tag", "type": "string"},
+          {"source": "detail_src_ip", "target": "src_ip", "type": "comma_split_to_json"},
+          {"source": "detail_region", "target": "src_region_name", "type": "string"},
+          {"source": "detail_uname", "target": "user_name", "type": "string"},
+          {"source": "detail_service", "target": "protocol", "type": "string"},
+          {"source": "src_ip", "target": "proof_description", "type": "string"}
+        ]
+      },
+      "map": {
+        "field_mappings": [],
+        "enum_maps": {
+          "SEVERITY": {"0": "严重", "1": "高危", "2": "中危", "3": "低危", "4": "信息"}
+        },
+        "defaults": [],
+        "validations": [
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
+        ]
+      },
+      "extension_fields": [
+        "internal_ip", "external_ip", "host_tag", "host_memo", "group_name", "action", "type", "group", "comid", "os",
+        "event_level", "event_content", "url", "datatype",
+        "detail_region", "detail_uname", "detail_service", "detail_reason", "detail_block_time", "log_type"
+      ]
+    },
+    {
+      "rule_id": "excep_login",
+      "log_type": "异常登录",
+      "enabled": true,
+      "match": {
+        "type": "all",
+        "conditions": [
+          {"field": "datatype", "op": "eq", "value": "excep_login"},
+          {"field": "__source", "op": "eq", "value": "qingteng_syslog"}
+        ]
+      },
+      "extract": {
+        "type": "fields",
+        "fields": [
+          {"source": "event_uuid", "target": "uuid", "type": "string", "required": true},
+          {"source": "datatype", "target": "threat_type", "type": "string"},
+          {"source": "event_type", "target": "threat_sub_type", "type": "string"},
+          {"source": "event_name", "target": "alert_name", "type": "string"},
+          {"source": "event_content", "target": "description", "type": "string"},
+          {"source": "url", "target": "recommendation", "type": "string"},
+          {"source": "datatime", "target": "occur_timestamp", "type": "qt_datetime"},
+          {"source": "__qt_recv_at", "target": "upload_timestamp", "type": "qt_datetime"},
+          {"source": "datatime_raw", "target": "upload_time_raw", "type": "string"},
+          {"source": "agent_ip", "target": "host_ip", "type": "comma_split_to_json"},
+          {"source": "host_name", "target": "account_name", "type": "string"},
+          {"source": "agent_id", "target": "agent_id", "type": "string"},
+          {"source": "severity", "target": "risk_level", "type": "enum_int", "enum_map": "SEVERITY", "enum_target": "risk_level_name"},
+          {"source": "event_level", "target": "risk_tag", "type": "string"},
+          {"source": "detail_uname", "target": "user_name", "type": "string"},
+          {"source": "detail_src_ip", "target": "src_ip", "type": "comma_split_to_json"},
+          {"source": "detail_region", "target": "src_region_name", "type": "string"},
+          {"source": "detail_reason", "target": "threat_define", "type": "string"},
+          {"source": "src_ip", "target": "proof_description", "type": "string"}
+        ]
+      },
+      "map": {
+        "field_mappings": [],
+        "enum_maps": {
+          "SEVERITY": {"0": "严重", "1": "高危", "2": "中危", "3": "低危", "4": "信息"}
+        },
+        "defaults": [],
+        "validations": [
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
+        ]
+      },
+      "extension_fields": [
+        "internal_ip", "external_ip", "host_tag", "host_memo", "group_name", "action", "type", "group", "comid", "os",
+        "event_level", "event_content", "url", "datatype",
+        "detail_uname", "detail_src_ip", "detail_region", "detail_login_time", "detail_reason", "log_type"
+      ]
+    },
+    {
+      "rule_id": "bounce_shell",
+      "log_type": "反弹Shell",
+      "enabled": true,
+      "match": {
+        "type": "all",
+        "conditions": [
+          {"field": "datatype", "op": "in", "value": ["bounce_shell", "win_bounce_shell"]},
+          {"field": "__source", "op": "eq", "value": "qingteng_syslog"}
+        ]
+      },
+      "extract": {
+        "type": "fields",
+        "fields": [
+          {"source": "event_uuid", "target": "uuid", "type": "string", "required": true},
+          {"source": "datatype", "target": "threat_type", "type": "string"},
+          {"source": "event_type", "target": "threat_sub_type", "type": "string"},
+          {"source": "event_name", "target": "alert_name", "type": "string"},
+          {"source": "event_content", "target": "description", "type": "string"},
+          {"source": "url", "target": "recommendation", "type": "string"},
+          {"source": "datatime", "target": "occur_timestamp", "type": "qt_datetime"},
+          {"source": "__qt_recv_at", "target": "upload_timestamp", "type": "qt_datetime"},
+          {"source": "datatime_raw", "target": "upload_time_raw", "type": "string"},
+          {"source": "agent_ip", "target": "host_ip", "type": "comma_split_to_json"},
+          {"source": "host_name", "target": "account_name", "type": "string"},
+          {"source": "agent_id", "target": "agent_id", "type": "string"},
+          {"source": "severity", "target": "risk_level", "type": "enum_int", "enum_map": "SEVERITY", "enum_target": "risk_level_name"},
+          {"source": "event_level", "target": "risk_tag", "type": "string"},
+          {"source": "detail_dst_ip", "target": "dst_ip", "type": "comma_split_to_json"},
+          {"source": "detail_port", "target": "dst_port", "type": "string"},
+          {"source": "detail_uname", "target": "user_name", "type": "string"},
+          {"source": "detail_pname", "target": "threat_class", "type": "string"},
+          {"source": "src_ip", "target": "proof_description", "type": "string"}
+        ]
+      },
+      "map": {
+        "field_mappings": [],
+        "enum_maps": {
+          "SEVERITY": {"0": "严重", "1": "高危", "2": "中危", "3": "低危", "4": "信息"}
+        },
+        "defaults": [],
+        "validations": [
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
+        ]
+      },
+      "extension_fields": [
+        "internal_ip", "external_ip", "host_tag", "host_memo", "group_name", "action", "type", "group", "comid", "os",
+        "event_level", "event_content", "url", "datatype",
+        "detail_dst_ip", "detail_port", "detail_pname", "detail_pid", "detail_uname", "detail_gname", "detail_path",
+        "detail_ppname", "detail_ppid", "detail_ppath", "detail_process_tree", "detail_cmd", "detail_pcmd", "log_type"
+      ]
+    },
+    {
+      "rule_id": "privilege_escalation",
+      "log_type": "本地提权",
+      "enabled": true,
+      "match": {
+        "type": "all",
+        "conditions": [
+          {"field": "datatype", "op": "eq", "value": "privilege_escalation"},
+          {"field": "__source", "op": "eq", "value": "qingteng_syslog"}
+        ]
+      },
+      "extract": {
+        "type": "fields",
+        "fields": [
+          {"source": "event_uuid", "target": "uuid", "type": "string", "required": true},
+          {"source": "datatype", "target": "threat_type", "type": "string"},
+          {"source": "event_type", "target": "threat_sub_type", "type": "string"},
+          {"source": "event_name", "target": "alert_name", "type": "string"},
+          {"source": "event_content", "target": "description", "type": "string"},
+          {"source": "url", "target": "recommendation", "type": "string"},
+          {"source": "datatime", "target": "occur_timestamp", "type": "qt_datetime"},
+          {"source": "__qt_recv_at", "target": "upload_timestamp", "type": "qt_datetime"},
+          {"source": "datatime_raw", "target": "upload_time_raw", "type": "string"},
+          {"source": "agent_ip", "target": "host_ip", "type": "comma_split_to_json"},
+          {"source": "host_name", "target": "account_name", "type": "string"},
+          {"source": "agent_id", "target": "agent_id", "type": "string"},
+          {"source": "severity", "target": "risk_level", "type": "enum_int", "enum_map": "SEVERITY", "enum_target": "risk_level_name"},
+          {"source": "event_level", "target": "risk_tag", "type": "string"},
+          {"source": "detail_uname", "target": "user_name", "type": "string"},
+          {"source": "detail_pname", "target": "threat_class", "type": "string"},
+          {"source": "src_ip", "target": "proof_description", "type": "string"}
+        ]
+      },
+      "map": {
+        "field_mappings": [],
+        "enum_maps": {
+          "SEVERITY": {"0": "严重", "1": "高危", "2": "中危", "3": "低危", "4": "信息"}
+        },
+        "defaults": [],
+        "validations": [
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
+        ]
+      },
+      "extension_fields": [
+        "internal_ip", "external_ip", "host_tag", "host_memo", "group_name", "action", "type", "group", "comid", "os",
+        "event_level", "event_content", "url", "datatype",
+        "detail_pname", "detail_pid", "detail_uname", "detail_ppname", "detail_ppid", "detail_puname", "detail_process_tree", "log_type"
+      ]
+    },
+    {
+      "rule_id": "backdoor",
+      "log_type": "后门检测",
+      "enabled": true,
+      "match": {
+        "type": "all",
+        "conditions": [
+          {"field": "datatype", "op": "in", "value": ["backdoor_diagnose", "backdoor_diagnose_win"]},
+          {"field": "__source", "op": "eq", "value": "qingteng_syslog"}
+        ]
+      },
+      "extract": {
+        "type": "fields",
+        "fields": [
+          {"source": "event_uuid", "target": "uuid", "type": "string", "required": true},
+          {"source": "datatype", "target": "threat_type", "type": "string"},
+          {"source": "event_type", "target": "threat_sub_type", "type": "string"},
+          {"source": "event_name", "target": "alert_name", "type": "string"},
+          {"source": "event_content", "target": "description", "type": "string"},
+          {"source": "url", "target": "recommendation", "type": "string"},
+          {"source": "datatime", "target": "occur_timestamp", "type": "qt_datetime"},
+          {"source": "__qt_recv_at", "target": "upload_timestamp", "type": "qt_datetime"},
+          {"source": "datatime_raw", "target": "upload_time_raw", "type": "string"},
+          {"source": "agent_ip", "target": "host_ip", "type": "comma_split_to_json"},
+          {"source": "host_name", "target": "account_name", "type": "string"},
+          {"source": "agent_id", "target": "agent_id", "type": "string"},
+          {"source": "severity", "target": "risk_level", "type": "enum_int", "enum_map": "SEVERITY", "enum_target": "risk_level_name"},
+          {"source": "event_level", "target": "risk_tag", "type": "string"},
+          {"source": "detail_pname", "target": "threat_class", "type": "string"},
+          {"source": "detail_rule", "target": "threat_define", "type": "string"},
+          {"source": "detail_uname", "target": "user_name", "type": "string"},
+          {"source": "src_ip", "target": "proof_description", "type": "string"}
+        ]
+      },
+      "map": {
+        "field_mappings": [],
+        "enum_maps": {
+          "SEVERITY": {"0": "严重", "1": "高危", "2": "中危", "3": "低危", "4": "信息"}
+        },
+        "defaults": [],
+        "validations": [
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
+        ]
+      },
+      "extension_fields": [
+        "internal_ip", "external_ip", "host_tag", "host_memo", "group_name", "action", "type", "group", "comid", "os",
+        "event_level", "event_content", "url", "datatype",
+        "detail_log_type", "detail_backdoor_type", "detail_name", "detail_item", "detail_comment", "detail_rule",
+        "detail_pname", "detail_pid", "detail_path", "detail_file_type", "detail_size", "detail_access_permission",
+        "detail_uname", "detail_md5", "detail_sha256", "detail_ctime", "detail_mtime", "detail_atime",
+        "detail_ppname", "detail_ppid", "detail_ppath", "detail_puname", "detail_cmd",
+        "detail_rootkit_info", "detail_bootkit_info", "log_type"
+      ]
+    },
+    {
+      "rule_id": "webshell",
+      "log_type": "Web后门",
+      "enabled": true,
+      "match": {
+        "type": "all",
+        "conditions": [
+          {"field": "datatype", "op": "eq", "value": "webshell"},
+          {"field": "__source", "op": "eq", "value": "qingteng_syslog"}
+        ]
+      },
+      "extract": {
+        "type": "fields",
+        "fields": [
+          {"source": "event_uuid", "target": "uuid", "type": "string", "required": true},
+          {"source": "datatype", "target": "threat_type", "type": "string"},
+          {"source": "event_type", "target": "threat_sub_type", "type": "string"},
+          {"source": "event_name", "target": "alert_name", "type": "string"},
+          {"source": "event_content", "target": "description", "type": "string"},
+          {"source": "url", "target": "recommendation", "type": "string"},
+          {"source": "datatime", "target": "occur_timestamp", "type": "qt_datetime"},
+          {"source": "__qt_recv_at", "target": "upload_timestamp", "type": "qt_datetime"},
+          {"source": "datatime_raw", "target": "upload_time_raw", "type": "string"},
+          {"source": "agent_ip", "target": "host_ip", "type": "comma_split_to_json"},
+          {"source": "host_name", "target": "account_name", "type": "string"},
+          {"source": "agent_id", "target": "agent_id", "type": "string"},
+          {"source": "severity", "target": "risk_level", "type": "enum_int", "enum_map": "SEVERITY", "enum_target": "risk_level_name"},
+          {"source": "event_level", "target": "risk_tag", "type": "string"},
+          {"source": "detail_path", "target": "threat_define", "type": "string"},
+          {"source": "detail_uname", "target": "user_name", "type": "string"},
+          {"source": "src_ip", "target": "proof_description", "type": "string"}
+        ]
+      },
+      "map": {
+        "field_mappings": [],
+        "enum_maps": {
+          "SEVERITY": {"0": "严重", "1": "高危", "2": "中危", "3": "低危", "4": "信息"}
+        },
+        "defaults": [],
+        "validations": [
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
+        ]
+      },
+      "extension_fields": [
+        "internal_ip", "external_ip", "host_tag", "host_memo", "group_name", "action", "type", "group", "comid", "os",
+        "event_level", "event_content", "url", "datatype",
+        "detail_website", "detail_webshell_type", "detail_file_type", "detail_path", "detail_size",
+        "detail_access_permission", "detail_uname", "detail_gname", "detail_md5", "detail_sha256",
+        "detail_ctime", "detail_mtime", "detail_atime", "log_type"
+      ]
+    },
+    {
+      "rule_id": "malic_opera",
+      "log_type": "可疑操作",
+      "enabled": true,
+      "match": {
+        "type": "all",
+        "conditions": [
+          {"field": "datatype", "op": "eq", "value": "malic_opera"},
+          {"field": "__source", "op": "eq", "value": "qingteng_syslog"}
+        ]
+      },
+      "extract": {
+        "type": "fields",
+        "fields": [
+          {"source": "event_uuid", "target": "uuid", "type": "string", "required": true},
+          {"source": "datatype", "target": "threat_type", "type": "string"},
+          {"source": "event_type", "target": "threat_sub_type", "type": "string"},
+          {"source": "event_name", "target": "alert_name", "type": "string"},
+          {"source": "event_content", "target": "description", "type": "string"},
+          {"source": "url", "target": "recommendation", "type": "string"},
+          {"source": "datatime", "target": "occur_timestamp", "type": "qt_datetime"},
+          {"source": "__qt_recv_at", "target": "upload_timestamp", "type": "qt_datetime"},
+          {"source": "datatime_raw", "target": "upload_time_raw", "type": "string"},
+          {"source": "agent_ip", "target": "host_ip", "type": "comma_split_to_json"},
+          {"source": "host_name", "target": "account_name", "type": "string"},
+          {"source": "agent_id", "target": "agent_id", "type": "string"},
+          {"source": "severity", "target": "risk_level", "type": "enum_int", "enum_map": "SEVERITY", "enum_target": "risk_level_name"},
+          {"source": "event_level", "target": "risk_tag", "type": "string"},
+          {"source": "detail_uname", "target": "user_name", "type": "string"},
+          {"source": "detail_src_ip", "target": "src_ip", "type": "comma_split_to_json"},
+          {"source": "detail_rule", "target": "threat_define", "type": "string"},
+          {"source": "detail_cmd", "target": "proof_description", "type": "string"}
+        ]
+      },
+      "map": {
+        "field_mappings": [],
+        "enum_maps": {
+          "SEVERITY": {"0": "严重", "1": "高危", "2": "中危", "3": "低危", "4": "信息"}
+        },
+        "defaults": [],
+        "validations": [
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
+        ]
+      },
+      "extension_fields": [
+        "internal_ip", "external_ip", "host_tag", "host_memo", "group_name", "action", "type", "group", "comid", "os",
+        "event_level", "event_content", "url", "datatype",
+        "detail_uname", "detail_src_ip", "detail_login_user", "detail_rule", "detail_cmd", "detail_time",
+        "detail_pname", "detail_execute_pname", "detail_tty", "detail_hit_rule_names", "log_type"
+      ]
+    },
+    {
+      "rule_id": "honeypot",
+      "log_type": "蜜罐",
+      "enabled": true,
+      "match": {
+        "type": "all",
+        "conditions": [
+          {"field": "datatype", "op": "in", "value": ["honeypot", "honey_file"]},
+          {"field": "__source", "op": "eq", "value": "qingteng_syslog"}
+        ]
+      },
+      "extract": {
+        "type": "fields",
+        "fields": [
+          {"source": "event_uuid", "target": "uuid", "type": "string", "required": true},
+          {"source": "datatype", "target": "threat_type", "type": "string"},
+          {"source": "event_type", "target": "threat_sub_type", "type": "string"},
+          {"source": "event_name", "target": "alert_name", "type": "string"},
+          {"source": "event_content", "target": "description", "type": "string"},
+          {"source": "url", "target": "recommendation", "type": "string"},
+          {"source": "datatime", "target": "occur_timestamp", "type": "qt_datetime"},
+          {"source": "__qt_recv_at", "target": "upload_timestamp", "type": "qt_datetime"},
+          {"source": "datatime_raw", "target": "upload_time_raw", "type": "string"},
+          {"source": "agent_ip", "target": "host_ip", "type": "comma_split_to_json"},
+          {"source": "host_name", "target": "account_name", "type": "string"},
+          {"source": "agent_id", "target": "agent_id", "type": "string"},
+          {"source": "severity", "target": "risk_level", "type": "enum_int", "enum_map": "SEVERITY", "enum_target": "risk_level_name"},
+          {"source": "event_level", "target": "risk_tag", "type": "string"},
+          {"source": "detail_src_ip", "target": "src_ip", "type": "comma_split_to_json"},
+          {"source": "detail_port", "target": "dst_port", "type": "string"},
+          {"source": "detail_file_path", "target": "threat_define", "type": "string"},
+          {"source": "src_ip", "target": "proof_description", "type": "string"}
+        ]
+      },
+      "map": {
+        "field_mappings": [],
+        "enum_maps": {
+          "SEVERITY": {"0": "严重", "1": "高危", "2": "中危", "3": "低危", "4": "信息"}
+        },
+        "defaults": [],
+        "validations": [
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
+        ]
+      },
+      "extension_fields": [
+        "internal_ip", "external_ip", "host_tag", "host_memo", "group_name", "action", "type", "group", "comid", "os",
+        "event_level", "event_content", "url", "datatype",
+        "detail_src_ip", "detail_port", "detail_file_path", "detail_file_operation",
+        "detail_process_name", "detail_process_chain", "detail_file_rules", "detail_size",
+        "detail_access_permission", "detail_uname", "detail_md5", "detail_sha1", "detail_sha256", "log_type"
+      ]
+    },
+    {
+      "rule_id": "web_command",
+      "log_type": "Web命令执行",
+      "enabled": true,
+      "match": {
+        "type": "all",
+        "conditions": [
+          {"field": "datatype", "op": "in", "value": ["web_command", "web_command_win"]},
+          {"field": "__source", "op": "eq", "value": "qingteng_syslog"}
+        ]
+      },
+      "extract": {
+        "type": "fields",
+        "fields": [
+          {"source": "event_uuid", "target": "uuid", "type": "string", "required": true},
+          {"source": "datatype", "target": "threat_type", "type": "string"},
+          {"source": "event_type", "target": "threat_sub_type", "type": "string"},
+          {"source": "event_name", "target": "alert_name", "type": "string"},
+          {"source": "event_content", "target": "description", "type": "string"},
+          {"source": "url", "target": "recommendation", "type": "string"},
+          {"source": "datatime", "target": "occur_timestamp", "type": "qt_datetime"},
+          {"source": "__qt_recv_at", "target": "upload_timestamp", "type": "qt_datetime"},
+          {"source": "datatime_raw", "target": "upload_time_raw", "type": "string"},
+          {"source": "agent_ip", "target": "host_ip", "type": "comma_split_to_json"},
+          {"source": "host_name", "target": "account_name", "type": "string"},
+          {"source": "agent_id", "target": "agent_id", "type": "string"},
+          {"source": "severity", "target": "risk_level", "type": "enum_int", "enum_map": "SEVERITY", "enum_target": "risk_level_name"},
+          {"source": "event_level", "target": "risk_tag", "type": "string"},
+          {"source": "detail_process_name", "target": "threat_class", "type": "string"},
+          {"source": "detail_hit_rule_name", "target": "threat_define", "type": "string"},
+          {"source": "src_ip", "target": "proof_description", "type": "string"}
+        ]
+      },
+      "map": {
+        "field_mappings": [],
+        "enum_maps": {
+          "SEVERITY": {"0": "严重", "1": "高危", "2": "中危", "3": "低危", "4": "信息"}
+        },
+        "defaults": [],
+        "validations": [
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
+        ]
+      },
+      "extension_fields": [
+        "internal_ip", "external_ip", "host_tag", "host_memo", "group_name", "action", "type", "group", "comid", "os",
+        "event_level", "event_content", "url", "datatype",
+        "detail_process_name", "detail_process_tree", "detail_hit_rule_name", "log_type"
+      ]
+    },
+    {
+      "rule_id": "file_monitor",
+      "log_type": "异常文件监控",
+      "enabled": true,
+      "match": {
+        "type": "all",
+        "conditions": [
+          {"field": "datatype", "op": "eq", "value": "file_monitor"},
+          {"field": "__source", "op": "eq", "value": "qingteng_syslog"}
+        ]
+      },
+      "extract": {
+        "type": "fields",
+        "fields": [
+          {"source": "event_uuid", "target": "uuid", "type": "string", "required": true},
+          {"source": "datatype", "target": "threat_type", "type": "string"},
+          {"source": "event_type", "target": "threat_sub_type", "type": "string"},
+          {"source": "event_name", "target": "alert_name", "type": "string"},
+          {"source": "event_content", "target": "description", "type": "string"},
+          {"source": "url", "target": "recommendation", "type": "string"},
+          {"source": "datatime", "target": "occur_timestamp", "type": "qt_datetime"},
+          {"source": "__qt_recv_at", "target": "upload_timestamp", "type": "qt_datetime"},
+          {"source": "datatime_raw", "target": "upload_time_raw", "type": "string"},
+          {"source": "agent_ip", "target": "host_ip", "type": "comma_split_to_json"},
+          {"source": "host_name", "target": "account_name", "type": "string"},
+          {"source": "agent_id", "target": "agent_id", "type": "string"},
+          {"source": "severity", "target": "risk_level", "type": "enum_int", "enum_map": "SEVERITY", "enum_target": "risk_level_name"},
+          {"source": "event_level", "target": "risk_tag", "type": "string"},
+          {"source": "detail_process_name", "target": "threat_class", "type": "string"},
+          {"source": "detail_file_path", "target": "threat_define", "type": "string"},
+          {"source": "src_ip", "target": "proof_description", "type": "string"}
+        ]
+      },
+      "map": {
+        "field_mappings": [],
+        "enum_maps": {
+          "SEVERITY": {"0": "严重", "1": "高危", "2": "中危", "3": "低危", "4": "信息"}
+        },
+        "defaults": [],
+        "validations": [
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
+        ]
+      },
+      "extension_fields": [
+        "internal_ip", "external_ip", "host_tag", "host_memo", "group_name", "action", "type", "group", "comid", "os",
+        "event_level", "event_content", "url", "datatype",
+        "detail_process_name", "detail_process_chain", "detail_file_rules", "detail_file_path", "detail_file_operation",
+        "detail_size", "detail_access_permission", "detail_uname", "detail_md5", "detail_sha1", "detail_sha256",
+        "detail_first_discovery_time", "detail_discovery_time", "detail_ctime", "detail_mtime", "detail_atime", "log_type"
+      ]
+    },
+    {
+      "rule_id": "virus_detect",
+      "log_type": "病毒查杀",
+      "enabled": true,
+      "match": {
+        "type": "all",
+        "conditions": [
+          {"field": "datatype", "op": "in", "value": ["virus_detect", "virus_detect_win", "anti_virus_detect"]},
+          {"field": "__source", "op": "eq", "value": "qingteng_syslog"}
+        ]
+      },
+      "extract": {
+        "type": "fields",
+        "fields": [
+          {"source": "event_uuid", "target": "uuid", "type": "string", "required": true},
+          {"source": "datatype", "target": "threat_type", "type": "string"},
+          {"source": "event_type", "target": "threat_sub_type", "type": "string"},
+          {"source": "event_name", "target": "alert_name", "type": "string"},
+          {"source": "event_content", "target": "description", "type": "string"},
+          {"source": "url", "target": "recommendation", "type": "string"},
+          {"source": "datatime", "target": "occur_timestamp", "type": "qt_datetime"},
+          {"source": "__qt_recv_at", "target": "upload_timestamp", "type": "qt_datetime"},
+          {"source": "datatime_raw", "target": "upload_time_raw", "type": "string"},
+          {"source": "agent_ip", "target": "host_ip", "type": "comma_split_to_json"},
+          {"source": "host_name", "target": "account_name", "type": "string"},
+          {"source": "agent_id", "target": "agent_id", "type": "string"},
+          {"source": "severity", "target": "risk_level", "type": "enum_int", "enum_map": "SEVERITY", "enum_target": "risk_level_name"},
+          {"source": "event_level", "target": "risk_tag", "type": "string"},
+          {"source": "detail_name", "target": "threat_define", "type": "string"},
+          {"source": "detail_pname", "target": "threat_class", "type": "string"},
+          {"source": "src_ip", "target": "proof_description", "type": "string"}
+        ]
+      },
+      "map": {
+        "field_mappings": [],
+        "enum_maps": {
+          "SEVERITY": {"0": "严重", "1": "高危", "2": "中危", "3": "低危", "4": "信息"}
+        },
+        "defaults": [],
+        "validations": [
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
+        ]
+      },
+      "extension_fields": [
+        "internal_ip", "external_ip", "host_tag", "host_memo", "group_name", "action", "type", "group", "comid", "os",
+        "event_level", "event_content", "url", "datatype",
+        "detail_name", "detail_desc", "detail_comment", "detail_rule",
+        "detail_pname", "detail_pid", "detail_path", "detail_file_type", "detail_size", "detail_access_permission",
+        "detail_uname", "detail_md5", "detail_sha256", "detail_ctime", "detail_mtime", "detail_atime",
+        "detail_ppname", "detail_ppid", "detail_ppath", "detail_puname", "detail_discovery_time", "detail_cmd", "log_type"
+      ]
+    },
+    {
+      "rule_id": "mem_backdoor",
+      "log_type": "内存后门",
+      "enabled": true,
+      "match": {
+        "type": "all",
+        "conditions": [
+          {"field": "datatype", "op": "eq", "value": "mem_backdoor"},
+          {"field": "__source", "op": "eq", "value": "qingteng_syslog"}
+        ]
+      },
+      "extract": {
+        "type": "fields",
+        "fields": [
+          {"source": "event_uuid", "target": "uuid", "type": "string", "required": true},
+          {"source": "datatype", "target": "threat_type", "type": "string"},
+          {"source": "event_type", "target": "threat_sub_type", "type": "string"},
+          {"source": "event_name", "target": "alert_name", "type": "string"},
+          {"source": "event_content", "target": "description", "type": "string"},
+          {"source": "url", "target": "recommendation", "type": "string"},
+          {"source": "datatime", "target": "occur_timestamp", "type": "qt_datetime"},
+          {"source": "__qt_recv_at", "target": "upload_timestamp", "type": "qt_datetime"},
+          {"source": "datatime_raw", "target": "upload_time_raw", "type": "string"},
+          {"source": "agent_ip", "target": "host_ip", "type": "comma_split_to_json"},
+          {"source": "host_name", "target": "account_name", "type": "string"},
+          {"source": "agent_id", "target": "agent_id", "type": "string"},
+          {"source": "severity", "target": "risk_level", "type": "enum_int", "enum_map": "SEVERITY", "enum_target": "risk_level_name"},
+          {"source": "event_level", "target": "risk_tag", "type": "string"},
+          {"source": "detail_name", "target": "threat_define", "type": "string"},
+          {"source": "detail_pname", "target": "threat_class", "type": "string"},
+          {"source": "src_ip", "target": "proof_description", "type": "string"}
+        ]
+      },
+      "map": {
+        "field_mappings": [],
+        "enum_maps": {
+          "SEVERITY": {"0": "严重", "1": "高危", "2": "中危", "3": "低危", "4": "信息"}
+        },
+        "defaults": [],
+        "validations": [
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
+        ]
+      },
+      "extension_fields": [
+        "internal_ip", "external_ip", "host_tag", "host_memo", "group_name", "action", "type", "group", "comid", "os",
+        "event_level", "event_content", "url", "datatype",
+        "detail_log_type", "detail_backdoor_type", "detail_name", "detail_description", "detail_filePath",
+        "detail_relFileMd5", "detail_pname", "detail_pid", "detail_path", "detail_ppname", "detail_ppid", "detail_ppath",
+        "detail_puname", "detail_size", "detail_uname", "detail_md5", "detail_ctime", "detail_mtime", "detail_atime",
+        "detail_access_permission", "detail_className", "detail_classPath", "detail_parentClass", "detail_jarPath",
+        "detail_classFileMd5", "detail_classLoader", "detail_classHashCode", "detail_classLoaderHashCode", "log_type"
+      ]
+    },
+    {
+      "rule_id": "agent_status",
+      "log_type": "Agent状态",
+      "enabled": true,
+      "match": {
+        "type": "all",
+        "conditions": [
+          {"field": "datatype", "op": "in", "value": ["agent_offline_check", "agent_suspend_check", "agent_remove_check"]},
+          {"field": "__source", "op": "eq", "value": "qingteng_syslog"}
+        ]
+      },
+      "extract": {
+        "type": "fields",
+        "fields": [
+          {"source": "event_uuid", "target": "uuid", "type": "string", "required": true},
+          {"source": "datatype", "target": "threat_type", "type": "string"},
+          {"source": "event_type", "target": "threat_sub_type", "type": "string"},
+          {"source": "event_name", "target": "alert_name", "type": "string"},
+          {"source": "event_content", "target": "description", "type": "string"},
+          {"source": "url", "target": "recommendation", "type": "string"},
+          {"source": "datatime", "target": "occur_timestamp", "type": "qt_datetime"},
+          {"source": "__qt_recv_at", "target": "upload_timestamp", "type": "qt_datetime"},
+          {"source": "datatime_raw", "target": "upload_time_raw", "type": "string"},
+          {"source": "agent_ip", "target": "host_ip", "type": "comma_split_to_json"},
+          {"source": "host_name", "target": "account_name", "type": "string"},
+          {"source": "agent_id", "target": "agent_id", "type": "string"},
+          {"source": "severity", "target": "risk_level", "type": "enum_int", "enum_map": "SEVERITY", "enum_target": "risk_level_name"},
+          {"source": "event_level", "target": "risk_tag", "type": "string"},
+          {"source": "src_ip", "target": "proof_description", "type": "string"}
+        ]
+      },
+      "map": {
+        "field_mappings": [],
+        "enum_maps": {
+          "SEVERITY": {"0": "严重", "1": "高危", "2": "中危", "3": "低危", "4": "信息"}
+        },
+        "defaults": [],
+        "validations": [
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
+        ]
+      },
+      "extension_fields": [
+        "internal_ip", "external_ip", "host_tag", "host_memo", "group_name", "action", "type", "group", "comid", "os",
+        "event_level", "event_content", "url", "datatype",
+        "platform", "agent_version", "duration", "threshold", "last_offline_time", "last_suspended_time", "remove_time", "log_type"
+      ]
+    },
+    {
+      "rule_id": "functional",
+      "log_type": "功能类日志",
+      "enabled": true,
+      "match": {
+        "type": "all",
+        "conditions": [
+          {"field": "datatype", "op": "in", "value": [
+            "shell_log", "access_log", "net_connect", "proc_create", "security_patch", "weak_pwd",
+            "system_audit", "dns_access", "account_change"
+          ]},
+          {"field": "__source", "op": "eq", "value": "qingteng_syslog"}
+        ]
+      },
+      "extract": {
+        "type": "fields",
+        "fields": [
+          {"source": "event_uuid", "target": "uuid", "type": "string", "required": true},
+          {"source": "datatype", "target": "threat_type", "type": "string"},
+          {"source": "event_type", "target": "threat_sub_type", "type": "string"},
+          {"source": "event_name", "target": "alert_name", "type": "string"},
+          {"source": "event_content", "target": "description", "type": "string"},
+          {"source": "url", "target": "recommendation", "type": "string"},
+          {"source": "datatime", "target": "occur_timestamp", "type": "qt_datetime"},
+          {"source": "__qt_recv_at", "target": "upload_timestamp", "type": "qt_datetime"},
+          {"source": "datatime_raw", "target": "upload_time_raw", "type": "string"},
+          {"source": "agent_ip", "target": "host_ip", "type": "comma_split_to_json"},
+          {"source": "host_name", "target": "account_name", "type": "string"},
+          {"source": "agent_id", "target": "agent_id", "type": "string"},
+          {"source": "severity", "target": "risk_level", "type": "enum_int", "enum_map": "SEVERITY", "enum_target": "risk_level_name"},
+          {"source": "event_level", "target": "risk_tag", "type": "string"},
+          {"source": "src_ip", "target": "proof_description", "type": "string"}
+        ]
+      },
+      "map": {
+        "field_mappings": [],
+        "enum_maps": {
+          "SEVERITY": {"0": "严重", "1": "高危", "2": "中危", "3": "低危", "4": "信息"}
+        },
+        "defaults": [],
+        "validations": [
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
+        ]
+      },
+      "extension_fields": [
+        "internal_ip", "external_ip", "host_tag", "host_memo", "group_name", "action", "type", "group", "comid", "os",
+        "event_level", "event_content", "url", "datatype",
+        "log_type", "reason", "uname", "uid", "euname", "euid", "tty", "cmd", "pid", "pname", "ppid", "ppname", "ppath",
+        "shell", "home", "size", "md5", "sha1", "sha256", "path", "file_type", "file_path", "file_operation",
+        "ctime", "mtime", "atime", "process_tree", "process_name", "process_chain", "domain",
+        "login_time", "login_type", "login_user", "login_error", "logout_reason", "location", "port",
+        "login_conn_port", "risk_id", "risk_name", "cves", "cvss_score", "serv_impact",
+        "app", "account", "acct_type", "acct_status", "category", "event", "id", "platform"
+      ]
+    }
   ]
 }

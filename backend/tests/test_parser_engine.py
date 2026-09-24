@@ -248,6 +248,92 @@ def test_regex_route_match():
     print("PASS: regex 路由匹配")
 
 
+# ------------------------------------------------------------------
+# 新结构 rules[] 多规则测试
+# ------------------------------------------------------------------
+RULES_CONFIG = {
+    "strategy_name": "多规则演示",
+    "device_type": "demo",
+    "version": "1.0",
+    "outer_wrapper": {"data_path": "", "header_fields": [], "uuid_source": "uuid"},
+    "rules": [
+        {
+            "rule_id": "alert", "log_type": "安全告警", "enabled": True,
+            "match": {"type": "all", "conditions": [{"field": "type", "op": "eq", "value": "alert"}]},
+            "extract": {"type": "fields", "fields": [
+                {"source": "src_ip", "target": "src_ip", "type": "comma_split_to_json"},
+                {"source": "event_name", "target": "alert_name", "type": "string"},
+                {"source": "level", "target": "risk_level", "type": "enum_int",
+                 "enum_map": "SEV", "enum_target": "risk_level_name"},
+            ]},
+            "map": {
+                "enum_maps": {"SEV": {"0": "严重", "1": "高危", "2": "中危", "3": "低危", "4": "信息"}},
+                "defaults": [{"target": "alert_kind", "value": "intrusion"}],
+                "field_mappings": [], "validations": [],
+            },
+            "extension_fields": ["md5"],
+        },
+        {
+            "rule_id": "login", "log_type": "登录日志", "enabled": True,
+            "match": {"type": "all", "conditions": [{"field": "type", "op": "eq", "value": "login"}]},
+            "extract": {"type": "regex", "source": "raw_text",
+                        "regex": r"user=(?P<user>[\w.@-]+)",
+                        "mappings": [{"target": "event_user", "group": "user", "type": "string"}]},
+            "map": {
+                "enum_maps": {}, "field_mappings": [],
+                "defaults": [{"target": "event_kind", "value": "login"}], "validations": [],
+            },
+            "extension_fields": [],
+        },
+    ],
+}
+
+RULES_STRATEGY = {"id": 99, "strategy_name": "多规则演示", "config": RULES_CONFIG}
+
+
+def test_rules_multi_match_alert():
+    """多规则策略：告警日志命中 alert 规则，提取 + 枚举 + 默认值。"""
+    engine = ParseEngine(loader=StrategyLoader(), sink=None)
+    res = engine.parse_one(
+        {"uuid": "u1", "type": "alert", "event_name": "恶意文件",
+         "src_ip": "1.2.3.4,5.6.7.8", "level": 2, "md5": "ab"},
+        RULES_STRATEGY,
+    )
+    assert res.status == "success"
+    assert res.rule_id == "alert"
+    assert res.log_type == "安全告警"
+    f = res.fields
+    assert f["risk_level"] == 2 and f["risk_level_name"] == "中危"
+    assert f["src_ip"] == json.dumps(["1.2.3.4", "5.6.7.8"], ensure_ascii=False)
+    assert f["alert_kind"] == "intrusion"          # map.defaults
+    assert json.loads(f["extensions"])["md5"] == "ab"  # extension_fields
+    print("PASS: 多规则命中 alert + 提取/枚举/默认值/扩展")
+
+
+def test_rules_regex_extract_login():
+    """多规则策略：登录日志命中 login 规则，regex 提取 + 默认值。"""
+    engine = ParseEngine(loader=StrategyLoader(), sink=None)
+    res = engine.parse_one(
+        {"uuid": "u2", "type": "login", "raw_text": "time=1 user=bob@example.com cmd=ls"},
+        RULES_STRATEGY,
+    )
+    assert res.status == "success"
+    assert res.rule_id == "login"
+    assert res.log_type == "登录日志"
+    assert res.fields["event_user"] == "bob@example.com"   # regex 命名组提取
+    assert res.fields["event_kind"] == "login"
+    print("PASS: 多规则命中 login + regex 提取")
+
+
+def test_rules_no_match():
+    """多规则策略：未命中任何规则 → fail + no_strategy_matched。"""
+    engine = ParseEngine(loader=StrategyLoader(), sink=None)
+    res = engine.parse_one({"uuid": "u3", "type": "other"}, RULES_STRATEGY)
+    assert res.status == "fail"
+    assert res.error_type == "no_strategy_matched"
+    print("PASS: 多规则无命中 → no_strategy_matched")
+
+
 if __name__ == "__main__":
     test_route_match_and_parse()
     test_no_strategy_matched()
@@ -257,4 +343,7 @@ if __name__ == "__main__":
     test_version_priority()
     test_batch_process_with_memory_sink()
     test_regex_route_match()
+    test_rules_multi_match_alert()
+    test_rules_regex_extract_login()
+    test_rules_no_match()
     print("\n全部测试通过 ✓")

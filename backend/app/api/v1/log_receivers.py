@@ -57,6 +57,7 @@ class LogReceiverBase(BaseModel):
     kafka_group: str = Field("soar-ingest", description="kafka 消费组")
     kafka_security: str = Field("", description="kafka 安全配置 JSON")
     format: str = Field("json", description="内容格式: json/raw")
+    strategy_id: int | None = Field(None, description="手动绑定的解析策略 ID（NULL/0=自动匹配，>0 固定用该策略解析）")
     notify_interval_minutes: int = Field(0, ge=0, description="异常通知间隔（分钟）：0=仅首次通知一次，>0=异常期间每 N 分钟重复提醒")
     description: str = Field("", description="描述")
 
@@ -85,6 +86,7 @@ def _serialize(rec: LogReceiver, runtime: dict | None = None) -> dict:
         "kafka_group": rec.kafka_group,
         "kafka_security": rec.kafka_security,
         "format": rec.format,
+        "strategy_id": rec.strategy_id,
         "notify_interval_minutes": rec.notify_interval_minutes,
         "description": rec.description,
         "status": rec.status,
@@ -125,6 +127,7 @@ def _apply_fields(rec: LogReceiver, body: LogReceiverBase, device: Device) -> No
     rec.kafka_group = body.kafka_group
     rec.kafka_security = body.kafka_security
     rec.format = body.format
+    rec.strategy_id = body.strategy_id
     rec.notify_interval_minutes = body.notify_interval_minutes
     rec.description = body.description
 

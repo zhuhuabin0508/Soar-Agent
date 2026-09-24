@@ -48,6 +48,9 @@ class Device(Base):
     verify_tls = Column(Boolean, nullable=False, default=False, comment="是否校验 TLS 证书")
     # v2: 厂商 Logo 图标（emoji 或标识）
     icon = Column(String(32), nullable=False, default="", comment="设备图标")
+    # v3: 设备级解析策略绑定（parse_strategies.id）；NULL=按日志内容路由/渠道指定，
+    # 该设备所有接收渠道（未手动指定策略的）默认用此策略的多规则解析。
+    parser_strategy_id = Column(Integer, nullable=True, comment="设备级解析策略 ID（NULL=自动）")
 
     def __repr__(self):
         return f"<Device id={self.id} name={self.name!r} type={self.type!r}>"

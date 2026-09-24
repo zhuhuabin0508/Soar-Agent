@@ -616,6 +616,12 @@ def run_lightweight_migrations(engine) -> None:
             "log_receivers",
             {"notify_interval_minutes": "INTEGER NOT NULL DEFAULT 0"},
         )
+        # log_receivers 表新增手动解析策略列（NULL/0=自动匹配，>0 固定用该策略解析）
+        ensure_columns(
+            engine,
+            "log_receivers",
+            {"strategy_id": "INTEGER"},
+        )
         # assets 表（资产管理智能体）：首次由 create_all 建表，此处为老库补列
         ensure_columns(
             engine,
@@ -737,6 +743,8 @@ def run_lightweight_migrations(engine) -> None:
                 "verify_tls": "BOOLEAN NOT NULL DEFAULT FALSE",
                 "icon": "VARCHAR(32) NOT NULL DEFAULT ''",
                 "ip_address": "VARCHAR(64) NOT NULL DEFAULT ''",
+                # 设备级解析策略绑定（parse_strategies.id）
+                "parser_strategy_id": "INTEGER",
             },
         )
         # device_actions 表新增分类、风险等级、版本、调用统计、示例数据

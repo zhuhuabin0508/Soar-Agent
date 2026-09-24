@@ -368,8 +368,27 @@ def _ingest_through_pipeline(raw: str, receiver: dict, source_ip: Optional[str])
 
         # 3) 逐条解析（记录到 device_receive_logs + 接收指标 + 解析量指标）
         stat_hour = datetime.now(BEIJING_TZ).strftime("%Y-%m-%dT%H")
+        # 渠道手动固定解析策略：>0 时严格用该策略解析（失败即解析失败，不自动换）
+        # 渠道未指定时，回退到设备级绑定（Device.parser_strategy_id）
+        pinned_id = receiver.get("strategy_id")
+        if not pinned_id:
+            dev_id = receiver.get("device_id")
+            if dev_id:
+                from sqlalchemy import text as sa_text
+
+                dev_strategy_id = db.execute(
+                    sa_text("SELECT parser_strategy_id FROM devices WHERE id = :id"),
+                    {"id": dev_id},
+                ).scalar()
+                pinned_id = dev_strategy_id
+        pinned_strategy = None
+        if pinned_id:
+            pinned_strategy = loader.get_by_id(int(pinned_id))
         for it in items:
-            result = engine.parse_one(it) if isinstance(it, dict) else None
+            if isinstance(it, dict):
+                result = engine.parse_one(it, strategy=pinned_strategy) if pinned_id else engine.parse_one(it)
+            else:
+                result = None
             if result is None or result.status == "fail":
                 sink.record_parsed(
                     raw,
@@ -673,6 +692,7 @@ def _refresh_runtime_receiver(receiver_id: int) -> None:
                 "kafka_group": rec.kafka_group,
                 "kafka_security": rec.kafka_security,
                 "format": rec.format,
+                "strategy_id": rec.strategy_id,
             }
     finally:
         db.close()

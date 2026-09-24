@@ -161,6 +161,16 @@ class StrategyLoader:
         best = max(candidates, key=lambda s: _version_key(s.get("version", "0")))
         return best
 
+    # ------------------------------------------------------------------
+    # 按 ID 取策略（用于日志渠道手动固定解析策略）
+    # ------------------------------------------------------------------
+    def get_by_id(self, strategy_id: int) -> Optional[dict]:
+        """按策略 ID 返回当前缓存中启用的策略 dict，不存在返回 None。"""
+        for strat in self._strategies:
+            if strat.get("id") == strategy_id:
+                return strat
+        return None
+
 
 # 模块级共享的路径取值工具（引擎其他模块复用）
 get_path = _get_path
