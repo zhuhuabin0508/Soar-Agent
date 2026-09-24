@@ -2,7 +2,7 @@
 
 > 状态：**专项执行文档 v1.1（终审稿）**（2026-09-22）  
 > 适用：SOAR 平台 Agent 基座（内网私有化部署）  
-> 关联：`docs/SOAR Agent 平台基座优化方案.md`（**实施优先级以 §13.2 为准**；§12.4 为历史 P0～P2 对照）  
+> 关联：`docs/architecture/SOAR Agent 平台基座优化方案.md`（**实施优先级以 §13.2 为准**；§12.4 为历史 P0～P2 对照）  
 > §13 为 Codex 评审对照；§14 为独立审视；**§15 为终审结论（与基座 §16 同步）**
 
 ---
@@ -412,7 +412,7 @@ Week 4+
 | H-2 ToolRegistryBuilder | §7 与 Step 4 前完成 |
 | Phase E 声明式插件 | 在 invoke_agent / invoke_tool 稳定后进行 |
 
-**本文件为 Agent 运行时收口专项文档；基座整体优先级以 `SOAR Agent 平台基座优化方案.md` §13.2 为准。**
+**本文件为 Agent 运行时收口专项文档；基座整体优先级以 `docs/architecture/SOAR Agent 平台基座优化方案.md` §13.2 为准。**
 
 ---
 
@@ -490,7 +490,7 @@ v1.0 Step 2 示例把 `agent_client` 写成 `output_mode=soc_decision`，与代�
 | 问题定性 | ✅ 准确：同一能力两套实现，迁移做了一半 |
 | 代码落点 | ✅ 经复核：`run_agent_decision`、三路径、`agent_client` 契约、调用方清单均属实 |
 | 架构设计 | ✅ `invoke_agent` 三层 + 双 `output_mode` + 渐进删 LangGraph，风险可控 |
-| 与基座对齐 | ✅ 与 `SOAR Agent 平台基座优化方案.md` §13.2 一致（v0.7 已同步） |
+| 与基座对齐 | ✅ 与 `docs/architecture/SOAR Agent 平台基座优化方案.md` §13.2 一致（v0.7 已同步） |
 | 定稿建议 | **通过**，作为 Agent 收口专项执行文档 |
 
 **项目组需确认的 3 项（非阻塞定稿，阻塞编码）**：

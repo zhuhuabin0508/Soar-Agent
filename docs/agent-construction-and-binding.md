@@ -1,7 +1,7 @@
 # 智能体如何建立：工具 / 技能 / 提示词 / 知识库如何结合
 
 > 目的：帮助熟悉「智能体是怎么建起来、以及四类能力在运行时如何拧到一起的」。
-> 配套：`docs/module-responsibilities-and-relations.md`（模块职责与关系总览）。
+> 配套：`docs/architecture/module-responsibilities-and-relations.md`（模块职责与关系总览）。
 > 代码主链：`app/agent/hermes/executor.py` → `prompt_assembler.py` + `tool_engine.py` → `llm.bind_tools(...)`。
 
 ---

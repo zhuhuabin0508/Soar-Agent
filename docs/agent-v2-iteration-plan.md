@@ -3,7 +3,7 @@
 > 状态：**方案稿，待评审**。
 > 适用对象：SOAR 平台「智能体编排」体系下的**智能体 / 工作流 / 技能 / 工具 / 知识库**。
 > 目标：一次性解决四大痛点 —— ①工具杂乱无法统一管理 ②知识库未启用 ③技能/人物设定/智能体搭建繁琐杂乱 ④工作流创建没人使用。
-> 前置：本文整合 `docs/module-responsibilities-and-relations.md`、`docs/discussion-agent-orchestration.md`、`docs/agent-construction-and-binding.md`、`docs/hermes-tools-migration-to-system.md` 的已有共识，统一为一份可执行规划。
+> 前置：本文整合 `docs/architecture/module-responsibilities-and-relations.md`、`docs/discussion-agent-orchestration.md`、`docs/agent-construction-and-binding.md`、`docs/hermes-tools-migration-to-system.md` 的已有共识，统一为一份可执行规划。
 
 ---
 

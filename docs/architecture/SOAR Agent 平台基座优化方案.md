@@ -6,7 +6,7 @@
 > 定位：在 **不推翻 Hermes 引擎** 的前提下，收敛架构分裂、统一工具化调用与复用，并为内网 → 外网演进预留扩展点；**借鉴 Flocks 声明式插件体系**，实现内网部署下的高可扩展与高解耦。
 > 关联文档：
 > - `docs/soar-agent-current-state.md` — 现状全貌
-> - `docs/module-responsibilities-and-relations.md` — 五模块关系
+> - `docs/architecture/module-responsibilities-and-relations.md` — 五模块关系
 > - `docs/soar-agent-v2-master-plan.md` — V2 产品层（双用户/模板/交付）
 > - `docs/hermes-engine-integration.md` — Hermes 集成说明
 > - `docs/open-source-reference-survey.md` — 开源对标（Shuffle/n8n/LangGraph）
@@ -115,7 +115,7 @@
 
 ### 2.3 五模块与基座关系
 
-智能体为编排中枢，引用模型/技能/知识库/工具/资产类型；工作流可调用智能体与工具。详见 `docs/module-responsibilities-and-relations.md`。
+智能体为编排中枢，引用模型/技能/知识库/工具/资产类型；工作流可调用智能体与工具。详见 `docs/architecture/module-responsibilities-and-relations.md`。
 
 ### 2.4 与 Flocks 的扩展性差距（为何需要声明式）
 
@@ -1154,7 +1154,7 @@ F1 合理方向：**①② 收敛到 AgentMemory + MemoryManager**；③ 是否�
 > **第 0 步（前置，未就绪则第 1～2 项无对象可接）**：确认并创建「封禁研判 Hermes Agent」。
 > 当前封禁走 `/internal` mock；接入 `invoke_agent` 前须先有一个**已发布、可用的 Hermes 研判 Agent**，
 > 且约定其 **`output_mode=ban_risk_analyze` 输出契约**（`is_banned` / `action` / `need_confirm` / `ban_plan` 等，
-> 见 `LangGraph → Hermes 统一.md` §Step 2 与 §5.5）。**不可**用 `soc_decision`（该契约仅服务路径 B / Celery）。
+> 见 `docs/architecture/LangGraph → Hermes 统一.md` §Step 2 与 §5.5）。**不可**用 `soc_decision`（该契约仅服务路径 B / Celery）。
 > 前置依赖 LLMConfig（内网 Ollama/API 已配好，见 §12.8.3）。
 
 > 前置依赖 LLMConfig（内网 Ollama/API 已配好，见 §12.8.3）。若无 Agent 与 LLMConfig，路径 A 无处可接。
@@ -1190,7 +1190,7 @@ F1 合理方向：**①② 收敛到 AgentMemory + MemoryManager**；③ 是否�
 
 ### 13.4 阅读顺序
 
-1. §13.2 开干 → 2. §2.1 三路径 → 3. `LangGraph → Hermes 统一.md` → 4. §4/§7/§12 按需查。
+1. §13.2 开干 → 2. §2.1 三路径 → 3. `docs/architecture/LangGraph → Hermes 统一.md` → 4. §4/§7/§12 按需查。
 
 ### 13.5 结论
 
@@ -1198,7 +1198,7 @@ F1 合理方向：**①② 收敛到 AgentMemory + MemoryManager**；③ 是否�
 
 ---
 
-实施以 **§13.2** 为准。Agent 收口见 `docs/LangGraph → Hermes 统一.md`。
+实施以 **§13.2** 为准。Agent 收口见 `docs/architecture/LangGraph → Hermes 统一.md`。
 
 ---
 
@@ -1208,7 +1208,7 @@ F1 合理方向：**①② 收敛到 AgentMemory + MemoryManager**；③ 是否�
 |----|------|
 | 优化方向 | **建议定稿**：Hermes 单运行时 + `invoke_agent` 门面 + 三路径分别收口 |
 | MVP 范围 | **§13.2 六项**（含第 0 步 Agent 就绪）；§7 Phase A～F / §1.1 四维为 backlog |
-| 专项文档 | `LangGraph → Hermes 统一.md` v1.1 与 §13.2 **已对齐**（双 output_mode） |
+| 专项文档 | `docs/architecture/LangGraph → Hermes 统一.md` v1.1 与 §13.2 **已对齐**（双 output_mode） |
 | 最大实施风险 | `ban_risk_analyze` 适配器保真 + `agent_client` 同步/日志/重试外层契约 |
 | 定稿前必做 | 项目组确认封禁研判 Agent 配置负责人 + 内网 LLMConfig 可用 |
 
