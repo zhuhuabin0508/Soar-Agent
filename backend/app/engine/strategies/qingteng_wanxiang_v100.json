@@ -53,8 +53,6 @@
   },
   "validations": [
     {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
-    {"field": "src_ip", "rule": "ip_list_valid", "severity": "warning"},
-    {"field": "dst_ip", "rule": "ip_list_valid", "severity": "warning"},
     {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
   ],
   "extension_fields": [

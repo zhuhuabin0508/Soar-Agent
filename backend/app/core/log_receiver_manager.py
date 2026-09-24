@@ -366,7 +366,8 @@ def _ingest_through_pipeline(raw: str, receiver: dict, source_ip: Optional[str])
             loader.refresh()
         engine = ParseEngine(loader=loader, sink=SQLAlchemySink(db))
 
-        # 3) 逐条解析（记录到 device_receive_logs + 接收指标）
+        # 3) 逐条解析（记录到 device_receive_logs + 接收指标 + 解析量指标）
+        stat_hour = datetime.now(BEIJING_TZ).strftime("%Y-%m-%dT%H")
         for it in items:
             result = engine.parse_one(it) if isinstance(it, dict) else None
             if result is None or result.status == "fail":
@@ -375,11 +376,22 @@ def _ingest_through_pipeline(raw: str, receiver: dict, source_ip: Optional[str])
                     "fail",
                     result.error_msg if result else "数据不是 JSON 对象",
                 )
+                engine.sink.record_metrics(
+                    stat_hour,
+                    result.strategy_id if result else None,
+                    result.strategy_name if result else "",
+                    "fail",
+                    result.parse_ms if result else 0,
+                )
                 continue
             try:
                 outcome = engine.sink.save_alert(result.fields)
                 if outcome == "duplicate":
                     sink.record_parsed(raw, "partial", "重复告警，已跳过", None)
+                    engine.sink.record_metrics(
+                        stat_hour, result.strategy_id, result.strategy_name,
+                        result.status, result.parse_ms,
+                    )
                     continue
                 alert_row = (
                     db.query(AlertEvent.id)
@@ -390,9 +402,17 @@ def _ingest_through_pipeline(raw: str, receiver: dict, source_ip: Optional[str])
                     raw, result.status, None,
                     alert_row[0] if alert_row else None,
                 )
+                engine.sink.record_metrics(
+                    stat_hour, result.strategy_id, result.strategy_name,
+                    result.status, result.parse_ms,
+                )
             except Exception as exc:  # noqa: BLE001
                 logger.exception("接收日志入库失败: %s", exc)
                 sink.record_parsed(raw, "fail", str(exc))
+                engine.sink.record_metrics(
+                    stat_hour, result.strategy_id, result.strategy_name,
+                    "fail", result.parse_ms,
+                )
 
         db.commit()
     except Exception as exc:  # noqa: BLE001
@@ -406,15 +426,6 @@ def _ingest_through_pipeline(raw: str, receiver: dict, source_ip: Optional[str])
 # syslog 文本 key="value" → dict 预处理器
 # （青藤万相 Syslog 手册报文为「空格分隔的 key="value"」文本，非 JSON）
 # ----------------------------------------------------------------------
-# 识别青藤 datatype 的正则：青藤所有事件类型的 datatype 命名
-_QT_DATATYPE_RE = re.compile(
-    r"^(bruteforce_ext|bruteforce_inter|excep_login|bounce_shell|win_bounce_shell|"
-    r"privilege_escalation|backdoor_diagnose|backdoor_diagnose_win|webshell|malic_opera|"
-    r"honeypot|honey_file|web_command|web_command_win|file_monitor|virus_detect|"
-    r"virus_detect_win|mem_backdoor|anti_virus_detect|shell_log|access_log|net_connect|"
-    r"proc_create|security_patch|weak_pwd|system_audit|dns_access|account_change|"
-    r"agent_offline_check|agent_suspend_check|agent_remove_check)$"
-)
 
 
 def _unescape_qt_value(value: str) -> str:
@@ -443,8 +454,8 @@ def _unescape_qt_value(value: str) -> str:
 def parse_qingteng_syslog(text: str) -> Optional[dict]:
     """把青藤万相 syslog 文本（``<HEADER><TAG>key1="v1" key2="v2"...``）解析为 dict。
 
-    仅当内容体含 ``datatype=`` 且值为已知青藤事件类型，且包含 ``datatime=`` 才判定为
-    青藤日志并解析（避免误匹配其他厂牌 syslog）。解析结果：
+    仅当内容体含 ``datatype=`` 键且为非空值，且包含 ``datatime=`` 才判定为
+    青藤日志并解析（结构判定，不依赖 datatype 值枚举；避免误匹配其他厂牌 syslog）。解析结果：
     - 顶层 ``key="value"`` 平坦化为 dict；
     - ``detail.xxx`` 前缀字段平坦化为 ``detail_xxx``（便于策略 field_mappings 直接取用）；
     - 数组值（``x\,y``）还原为 JSON 数组字符串（``["x","y"]``）；
@@ -482,10 +493,11 @@ def parse_qingteng_syslog(text: str) -> Optional[dict]:
         else:
             fields[key] = val
 
-    datatype = fields.get("datatype", "")
-    if not _QT_DATATYPE_RE.match(datatype.strip()):
+    # 结构判定：含 datatype= 与 datatime=（青藤所有告警/功能类共用的外层标记），
+    # 不依赖 datatype 值枚举，青藤新增日志类型亦自动支持。
+    if not fields.get("datatype", "").strip():
         return None
-    # 事件类型等字段为空时跳过（无有效数据）
+    # 事件时间缺失则无有效数据，跳过
     if not fields.get("datatime"):
         return None
 
