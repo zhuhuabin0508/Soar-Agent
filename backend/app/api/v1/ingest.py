@@ -33,10 +33,13 @@ from app.engine.rule_matcher import resolve_rule
 from app.engine.strategy_loader import StrategyLoader, get_path
 from app.engine.validator import run_validations
 from app.models.alert_event import AlertEvent
+from app.models.device import Device
 from app.models.ingestion_metric import IngestionMetric
+from app.models.log_receiver import LogReceiver
 from app.models.parse_error import ParseErrorQueue
 from app.models.parse_strategy import ParseStrategy
 from app.models.user import User
+from app.models.workflow_ban import WorkflowInstance
 
 logger = logging.getLogger(__name__)
 
@@ -599,22 +602,40 @@ def update_strategy_status(
 
 @router.delete("/strategies/{strategy_id}", status_code=204, dependencies=[Depends(require_permission("strategy", "delete"))])
 def delete_strategy(strategy_id: int, db: Session = Depends(get_db)) -> None:
-    """删除解析策略（有关联告警记录时返回 409 禁止删除）。"""
+    """删除解析策略。
+
+    删除前自动解除所有引用（历史告警、解析错误、入库指标、工作流实例等
+    的 strategy_id 置 NULL），避免产生指向已删策略的孤儿记录。
+    """
     strat = db.query(ParseStrategy).filter(ParseStrategy.id == strategy_id).first()
     if not strat:
         raise HTTPException(status_code=404, detail="策略不存在")
-    alert_count = (
-        db.query(AlertEvent.id).filter(AlertEvent.strategy_id == strategy_id).count()
+
+    # 解除引用：历史告警 / 解析错误 / 入库指标 / 工作流封禁实例 / 日志接收器 / 设备
+    db.query(AlertEvent).filter(AlertEvent.strategy_id == strategy_id).update(
+        {AlertEvent.strategy_id: None}, synchronize_session=False
     )
-    if alert_count > 0:
-        raise HTTPException(
-            status_code=409,
-            detail=f"该策略已关联 {alert_count} 条告警记录，禁止删除。可先停用策略以停止解析。",
-        )
+    db.query(ParseErrorQueue).filter(ParseErrorQueue.strategy_id == strategy_id).update(
+        {ParseErrorQueue.strategy_id: None}, synchronize_session=False
+    )
+    db.query(IngestionMetric).filter(IngestionMetric.strategy_id == strategy_id).update(
+        {IngestionMetric.strategy_id: None, IngestionMetric.strategy_name: ""},
+        synchronize_session=False,
+    )
+    db.query(WorkflowInstance).filter(WorkflowInstance.strategy_id == strategy_id).update(
+        {WorkflowInstance.strategy_id: None}, synchronize_session=False
+    )
+    db.query(LogReceiver).filter(LogReceiver.strategy_id == strategy_id).update(
+        {LogReceiver.strategy_id: None}, synchronize_session=False
+    )
+    db.query(Device).filter(Device.parser_strategy_id == strategy_id).update(
+        {Device.parser_strategy_id: None}, synchronize_session=False
+    )
+
     db.delete(strat)
     db.commit()
     refresh_strategy_cache()
-    logger.info("解析策略删除: id=%s", strategy_id)
+    logger.info("解析策略删除: id=%s（已解除关联引用）", strategy_id)
 
 
 # ======================================================================

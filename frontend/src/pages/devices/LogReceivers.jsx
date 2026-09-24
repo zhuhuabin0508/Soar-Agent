@@ -57,7 +57,12 @@ export function LogReceiverFormModal({ open, initial, devices: devList, strategi
       toast.warning('kafka 需配置 bootstrap 与 topic')
       return
     }
-    const ok = await onSubmit({ ...form, device_id: Number(form.device_id), protocol: form.protocol })
+    const ok = await onSubmit({
+      ...form,
+      device_id: Number(form.device_id),
+      protocol: form.protocol,
+      strategy_id: form.strategy_id ? Number(form.strategy_id) : null,
+    })
     if (ok) onClose()
   }
 
