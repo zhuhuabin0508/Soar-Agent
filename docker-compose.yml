@@ -90,8 +90,8 @@ services:
       - "514:514/udp"
     networks: [soar-net]
     restart: unless-stopped
-    mem_limit: 1g
-    memswap_limit: 1g
+    mem_limit: 5g
+    memswap_limit: 5g
 
   worker-dev:
     image: soar-backend:latest
