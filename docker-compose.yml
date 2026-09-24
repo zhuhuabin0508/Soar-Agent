@@ -86,6 +86,8 @@ services:
         condition: service_healthy
     ports:
       - "127.0.0.1:8001:8000"
+      # 把容器内 514 UDP 发布到宿主机，供上游设备(青藤/防火墙)推送 syslog
+      - "514:514/udp"
     networks: [soar-net]
     restart: unless-stopped
     mem_limit: 1g
