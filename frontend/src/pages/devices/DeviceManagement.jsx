@@ -84,7 +84,8 @@ function DeviceManagement() {
 
   // 选中设备（分栏视图用）
   const [selectedId, setSelectedId] = useState(null)
-  const [actions, setActions] = useState([])
+  // 每台设备的动作列表（key=deviceId），避免多设备展开/切换时动作互相串
+  const [actionsMap, setActionsMap] = useState({})
   const [loadingActions, setLoadingActions] = useState(false)
   // 勾选用于导出的设备 ID 集合
   const [checkIds, setCheckIds] = useState([])
@@ -180,10 +181,11 @@ function DeviceManagement() {
     setLoadingActions(true)
     try {
       const data = await devicesApi.listActions(deviceId)
-      setActions(Array.isArray(data) ? data : [])
+      const arr = Array.isArray(data) ? data : []
+      setActionsMap((m) => ({ ...m, [deviceId]: arr }))
     } catch (err) {
       toast.error(`加载动作失败：${err.message || err}`)
-      setActions([])
+      setActionsMap((m) => ({ ...m, [deviceId]: [] }))
     } finally {
       setLoadingActions(false)
     }
@@ -198,6 +200,14 @@ function DeviceManagement() {
       return [...prev, device.id]
     })
   }
+
+  // 组件挂载后：刷新页面会从 localStorage 恢复 expandedIds，但动作需重新拉取，
+  // 否则已展开设备在刷新后动作列表为空（表现为“动作消失”）。
+  useEffect(() => {
+    expandedIds.forEach((id) => loadActions(id))
+    // 仅挂载时执行一次（此时 expandedIds 已从 localStorage 恢复）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // 切换分栏视图选中
   const handleSelectDevice = (device) => {
@@ -238,7 +248,11 @@ function DeviceManagement() {
       await devicesApi.remove(device.id)
       if (selectedId === device.id) {
         setSelectedId(null)
-        setActions([])
+        setActionsMap((m) => {
+          const c = { ...m }
+          delete c[device.id]
+          return c
+        })
       }
       setExpandedIds((prev) => prev.filter((id) => id !== device.id))
       await loadDevices()
@@ -371,7 +385,9 @@ function DeviceManagement() {
   }
 
   // 打开动作测试抽屉
-  const openActionTestDrawer = (action) => {
+  const openActionTestDrawer = (action, deviceId) => {
+    // 必须同时记录所属设备，否则 handleActionTest 因 actDeviceId 为空而静默无响应
+    setActDeviceId(deviceId || actDeviceId)
     setTestAction(action)
     setTestResult(null)
     setTestDrawerOpen(true)
@@ -871,7 +887,7 @@ function DeviceManagement() {
                         <div className="rounded-lg border border-border bg-card/40 p-4">
                           <div className="mb-3 flex items-center justify-between">
                             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                              设备动作（{loadingActions ? '...' : actions.length} 个）
+                              设备动作（{loadingActions ? '...' : (actionsMap[selectedDevice.id] || []).length} 个）
                             </h3>
                             <button
                               type="button"
@@ -882,11 +898,11 @@ function DeviceManagement() {
                             </button>
                           </div>
                           <ActionTable
-                            actions={actions}
+                            actions={actionsMap[selectedDevice.id] || []}
                             loading={loadingActions}
                             onEdit={(a) => handleEditAction(a, selectedDevice.id)}
                             onDelete={handleActionDelete}
-                            onTest={openActionTestDrawer}
+                            onTest={(a) => openActionTestDrawer(a, selectedDevice.id)}
                             onToggle={handleToggleAction}
                             onHistory={openActionHistory}
                             togglingActionId={togglingActionId}
@@ -1015,14 +1031,14 @@ function DeviceManagement() {
                         onDelete={handleDeviceDelete}
                         onTest={handleTestDevice}
                         testing={testingDeviceId === dev.id}
-                        actions={expandedIds.includes(dev.id) ? actions : []}
+                        actions={expandedIds.includes(dev.id) ? actionsMap[dev.id] || [] : []}
                         loadingActions={loadingActions && expandedIds.includes(dev.id)}
                         onEditAction={(a) => {
                           setActDeviceId(dev.id)
                           handleEditAction(a, dev.id)
                         }}
                         onDeleteAction={handleActionDelete}
-                        onTestAction={openActionTestDrawer}
+                        onTestAction={(a) => openActionTestDrawer(a, dev.id)}
                         onToggleAction={handleToggleAction}
                         onNewAction={() => handleNewAction(dev.id)}
                         onActionHistory={openActionHistory}

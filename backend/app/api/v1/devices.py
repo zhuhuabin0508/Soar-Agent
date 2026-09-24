@@ -635,10 +635,17 @@ def import_devices(
             )
             db.add(device)
             db.flush()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("导入设备失败，跳过设备 %s: %s", dev_data.get("name"), exc)
+            skipped += 1
+            continue
+        created_devices += 1
 
-            for act_data in actions_data:
-                if not isinstance(act_data, dict):
-                    continue
+        # 逐个创建动作；单个动作失败只跳过该动作，不影响设备与其它动作
+        for act_data in actions_data:
+            if not isinstance(act_data, dict):
+                continue
+            try:
                 action = DeviceAction(
                     device_id=device.id,
                     name=act_data.get("name", "") or "未命名动作",
@@ -659,11 +666,11 @@ def import_devices(
                 )
                 db.add(action)
                 created_actions += 1
-            created_devices += 1
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("导入设备失败，跳过: %s", exc)
-            skipped += 1
-            continue
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "导入设备 %s 的动作「%s」失败，已跳过该动作: %s",
+                    device.name, act_data.get("name"), exc,
+                )
 
     db.commit()
     logger.info(
