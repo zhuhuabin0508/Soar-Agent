@@ -932,6 +932,9 @@ def start_receiver_sync(receiver_id: int, timeout: Optional[float] = None) -> Op
     自然退出（避免重启竞态与孤儿线程）。
     """
     rt = _runtime_bucket(receiver_id)
+    # 每次启动前先从 DB 刷新该渠道配置到内存缓存，否则新建/未刷新过的渠道
+    # 会读到空的 protocol，误判为“不支持的接收协议”并进入 unconfigured。
+    _refresh_runtime_receiver(receiver_id)
     protocol = (rt.get("receiver") or {}).get("protocol") or ""
 
     # 上一代线程若还在跑，先停掉（逐代取消）
