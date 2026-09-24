@@ -30,7 +30,6 @@
     {"source": "host_name", "target": "account_name", "type": "string"},
     {"source": "group_name", "target": "src_region_name", "type": "string"},
     {"source": "agent_id", "target": "agent_id", "type": "string"},
-    {"source": "os", "target": "relate_asset_type", "type": "string"},
 
     {"source": "severity", "target": "risk_level", "type": "enum_int", "enum_map": "SEVERITY", "enum_target": "risk_level_name"},
     {"source": "event_level", "target": "risk_tag", "type": "string"},
@@ -71,6 +70,6 @@
     "location", "port", "login_conn_port", "login_con_port",
     "risk_id", "risk_name", "cves", "cvss_score", "serv_impact", "app", "account",
     "acct_type", "acct_status", "category", "event", "id",
-    "platform", "agent_version", "duration", "threshold", "last_offline_time"
+    "platform", "os", "agent_version", "duration", "threshold", "last_offline_time"
   ]
 }
