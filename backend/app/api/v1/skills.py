@@ -410,57 +410,48 @@ async def test_skill(
     alert_data = {"input": user_text}
     has_tools = bool(agent.enabled_tools) or bool(agent.enabled_kbs) or bool(agent.enabled_asset_types) or bool(getattr(agent, "enabled_workflows", None))
 
-    # 纯对话路径
-    if not has_tools:
-        from app.api.v1.agents import _create_llm
-        from langchain_core.messages import HumanMessage, SystemMessage
+    from app.platform.agent_runtime import (
+        OUTPUT_MODE_CHAT,
+        OUTPUT_MODE_SOC_DECISION,
+        invoke_agent,
+        resolve_runtime_user,
+    )
+    from types import SimpleNamespace
 
-        llm, llm_err = _create_llm(agent, db)
-        if llm is None:
-            raise HTTPException(status_code=400, detail=llm_err)
-        messages = [SystemMessage(content=final_prompt), HumanMessage(content=user_text)]
-        try:
-            ai_msg = await llm.ainvoke(messages)
-            reply = ai_msg.content if hasattr(ai_msg, "content") else str(ai_msg)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("技能测试对话调用失败: %s", exc)
-            raise HTTPException(status_code=500, detail=f"LLM 调用失败: {exc}") from exc
-        return {
-            "reply": reply,
-            "injected_prompt": final_prompt,
-            "messages": [
-                {"role": "user", "content": user_text},
-                {"role": "assistant", "content": reply},
-            ],
-            "logs": [{"level": "info", "message": "纯对话模式（无工具调用），已注入测试技能"}],
-        }
-
-    # 有工具：走 LangGraph Agent 决策路径
-    from app.agent.decision import run_agent_decision
+    override = SimpleNamespace(system_prompt=final_prompt)
+    output_mode = OUTPUT_MODE_SOC_DECISION if has_tools else OUTPUT_MODE_CHAT
 
     try:
-        result = await run_agent_decision(
-            alert_data=alert_data,
-            enabled_tools=agent.enabled_tools or [],
-            enabled_kbs=agent.enabled_kbs or [],
-            enabled_asset_types=agent.enabled_asset_types or [],
-            enabled_workflows=agent.enabled_workflows or [],
-            agent_id=agent.id,
-            model_config_id=agent.model_config_id,
-            system_prompt=final_prompt,
-            temperature=agent.temperature,
-            max_tokens=agent.max_tokens,
-            max_iterations=agent.max_iterations,
+        result = await invoke_agent(
+            db=db,
+            agent=agent,
+            input=alert_data if has_tools else user_text,
+            user=resolve_runtime_user(db),
+            channel="skill_test",
+            output_mode=output_mode,
+            override=override,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.exception("技能测试决策调用失败: %s", exc)
+        logger.exception("技能测试调用失败: %s", exc)
         raise HTTPException(status_code=500, detail=f"技能测试失败: {exc}") from exc
 
+    if has_tools and result.decision:
+        decision = result.decision
+        return {
+            "reply": result.response or decision.get("reason") or "",
+            "injected_prompt": final_prompt,
+            "messages": result.messages,
+            "logs": (result.raw or {}).get("logs") or [],
+        }
+
     return {
-        "reply": result.get("response") or result.get("reason") or "",
+        "reply": result.response,
         "injected_prompt": final_prompt,
-        "messages": result.get("messages", []),
-        "logs": result.get("logs", []),
+        "messages": result.messages or [
+            {"role": "user", "content": user_text},
+            {"role": "assistant", "content": result.response},
+        ],
+        "logs": [{"level": "info", "message": "Hermes 技能测试"}],
     }
 
 

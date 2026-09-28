@@ -597,6 +597,7 @@ async def debug_chat(
         raise HTTPException(status_code=400, detail="Tool is disabled")
 
     from app.agent.decision import run_agent_decision
+    from app.config import settings
     from app.models.knowledge_base import KnowledgeBase
 
     system_prompt = (
@@ -606,6 +607,7 @@ async def debug_chat(
         "如果不需要工具，直接回答即可。"
     )
     alert_data = {"input": body.message, "src_ip": "unknown"}
+    soc_agent_id = int(getattr(settings, "WORKFLOW_SOC_AGENT_ID", 0) or 0)
     try:
         result = await run_agent_decision(
             alert_data=alert_data,
@@ -616,6 +618,7 @@ async def debug_chat(
             temperature=0.3,
             max_tokens=1024,
             max_iterations=4,
+            agent_id=soc_agent_id if soc_agent_id > 0 else None,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("工具对话调试失败: %s", exc)
