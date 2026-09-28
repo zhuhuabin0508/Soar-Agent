@@ -230,6 +230,10 @@ def analyze_ip_risk(
                 node_key=node_key,
             )
         )
+    if not getattr(settings, "ENABLE_DEV_CODE", False):
+        raise AgentCallError(
+            "BAN_ANALYST_AGENT_ID 未配置，生产环境禁止 HTTP mock 研判"
+        )
     return _analyze_ip_risk_via_http(
         db, ip, alert_context,
         instance_id=instance_id,

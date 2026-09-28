@@ -188,13 +188,10 @@ async def execute_ai_agent(
     执行流程：
     1. 解析 user_prompt 中的 ``${node.field}`` 变量引用。
     2. 从 DB 加载 Agent。
-    3. 根据 ``agent.engine`` 走对应路径：
-       - ``hermes``：``HermesAgentExecutor.run()`` 收集 done 事件 content
-       - ``langgraph``：无工具走纯对话，有工具走 ``run_agent_decision``
-    4. 返回 ``{"response": <回复文本>, "messages": [...]}``，并合并到 ctx。
+    3. 经 ``invoke_agent_for_workflow`` 执行（``engine=langgraph`` 由 runtime 路由 Hermes）。
+    4. 返回决策/回复并合并到 ctx。
 
-    向后兼容：若 node_data 仍含旧字段（system_prompt/model 等）且无 agent_id，
-    回退到旧的 run_agent_decision 调用，避免存量工作流中断。
+    无 ``agent_id`` 时使用 ``WORKFLOW_SOC_AGENT_ID``；均未配置则 ``need_human_approval``。
     """
     import json
     import re
@@ -215,7 +212,6 @@ async def execute_ai_agent(
 
     user_message = _render(user_prompt_template)
     if not user_message:
-        # user_prompt 留空时，用上游输入作为消息内容
         if isinstance(input_data, str):
             user_message = input_data
         elif isinstance(input_data, dict):
@@ -223,25 +219,33 @@ async def execute_ai_agent(
         else:
             user_message = str(input_data or "")
 
-    # ===== 无 agent_id：回退 run_agent_decision（过渡）或 WORKFLOW_SOC_AGENT_ID =====
-    if not agent_id:
-        log(nid, _WARN, "ai_agent 节点未配置 agent_id，回退到旧决策逻辑（建议选择已创建的智能体）")
-        from app.agent.decision import run_agent_decision
+    from app.config import settings
+    from types import SimpleNamespace
 
-        alert_data = input_data if isinstance(input_data, dict) else {"input": user_message}
-        result = await run_agent_decision(
-            alert_data=alert_data,
-            enabled_tools=node_data.get("enabled_tools"),
-            system_prompt=node_data.get("system_prompt") or None,
-            temperature=node_data.get("temperature"),
-            max_tokens=node_data.get("max_tokens"),
-            max_iterations=node_data.get("max_iterations"),
-            model_name=node_data.get("model") or None,
-        )
-        ctx["decision"] = result.get("decision")
-        ctx["agent_decision"] = result
-        ctx["agent_messages"] = result.get("messages", [])
-        return result
+    if not agent_id:
+        fallback = int(getattr(settings, "WORKFLOW_SOC_AGENT_ID", 0) or 0)
+        if fallback > 0:
+            agent_id = fallback
+            log(
+                nid,
+                _WARN,
+                f"ai_agent 未配置 agent_id，使用 WORKFLOW_SOC_AGENT_ID={fallback}",
+            )
+        else:
+            log(nid, _ERROR, "ai_agent 缺少 agent_id 且未配置 WORKFLOW_SOC_AGENT_ID")
+            src_ip = (
+                input_data.get("src_ip", "unknown")
+                if isinstance(input_data, dict)
+                else "unknown"
+            )
+            return {
+                "decision": "need_human_approval",
+                "target_ip": src_ip,
+                "reason": "未配置 agent_id 或 WORKFLOW_SOC_AGENT_ID",
+                "duration": "24h",
+                "response": "",
+                "messages": [],
+            }
 
     from app.database import SessionLocal
     from app.models.agent import Agent
@@ -260,6 +264,18 @@ async def execute_ai_agent(
             f"调用智能体(runtime): id={agent.id}, name={agent.name}, engine={agent.engine}, msg_len={len(user_message)}",
         )
         wf_input = input_data if isinstance(input_data, dict) else {"input": user_message}
+        override = None
+        if any(
+            node_data.get(k) is not None
+            for k in ("system_prompt", "temperature", "max_tokens", "max_iterations", "model")
+        ):
+            override = SimpleNamespace(
+                system_prompt=node_data.get("system_prompt"),
+                temperature=node_data.get("temperature"),
+                max_tokens=node_data.get("max_tokens"),
+                max_iterations=node_data.get("max_iterations"),
+                model_name=node_data.get("model"),
+            )
         try:
             result = await invoke_agent_for_workflow(
                 db,
@@ -268,6 +284,7 @@ async def execute_ai_agent(
                 wf_input,
                 channel="workflow_ai_agent",
                 session_key=f"wf_node_{nid}_{agent.id}",
+                override=override,
             )
         except Exception as exc:  # noqa: BLE001
             log(nid, _ERROR, f"invoke_agent 失败: {exc}")

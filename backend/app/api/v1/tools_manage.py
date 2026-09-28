@@ -596,9 +596,24 @@ async def debug_chat(
     if not tool.enabled:
         raise HTTPException(status_code=400, detail="Tool is disabled")
 
-    from app.agent.decision import run_agent_decision
     from app.config import settings
-    from app.models.knowledge_base import KnowledgeBase
+    from app.models.agent import Agent
+    from app.platform.agent_runtime import (
+        OUTPUT_MODE_CHAT,
+        invoke_agent,
+        resolve_runtime_user,
+    )
+    from types import SimpleNamespace
+
+    soc_agent_id = int(getattr(settings, "WORKFLOW_SOC_AGENT_ID", 0) or 0)
+    if soc_agent_id <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="请配置 WORKFLOW_SOC_AGENT_ID 并创建对应 Hermes 智能体",
+        )
+    agent = db.query(Agent).filter(Agent.id == soc_agent_id).first()
+    if agent is None:
+        raise HTTPException(status_code=400, detail=f"智能体不存在: id={soc_agent_id}")
 
     system_prompt = (
         "你是一个智能助手，可以调用工具来回答用户问题。"
@@ -607,26 +622,28 @@ async def debug_chat(
         "如果不需要工具，直接回答即可。"
     )
     alert_data = {"input": body.message, "src_ip": "unknown"}
-    soc_agent_id = int(getattr(settings, "WORKFLOW_SOC_AGENT_ID", 0) or 0)
+    override = SimpleNamespace(
+        system_prompt=system_prompt,
+        temperature=0.3,
+        max_tokens=1024,
+        max_iterations=4,
+    )
     try:
-        result = await run_agent_decision(
-            alert_data=alert_data,
-            enabled_tools=[tool.name],
-            enabled_kbs=[row[0] for row in db.query(KnowledgeBase.id).all()] or None,
-            model_config_id=None,
-            system_prompt=system_prompt,
-            temperature=0.3,
-            max_tokens=1024,
-            max_iterations=4,
-            agent_id=soc_agent_id if soc_agent_id > 0 else None,
+        result = await invoke_agent(
+            db=db,
+            agent=agent,
+            input=alert_data,
+            user=resolve_runtime_user(db),
+            channel="tool_debug",
+            output_mode=OUTPUT_MODE_CHAT,
+            override=override,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("工具对话调试失败: %s", exc)
         raise HTTPException(status_code=500, detail=f"对话调试失败: {exc}") from exc
 
-    # run_agent_decision 在自定义 system_prompt 下返回 {"response", "messages", "logs"}
     return {
-        "response": result.get("response", ""),
-        "messages": result.get("messages", []),
-        "logs": result.get("logs", []),
+        "response": result.response or "",
+        "messages": result.messages or [],
+        "logs": [],
     }

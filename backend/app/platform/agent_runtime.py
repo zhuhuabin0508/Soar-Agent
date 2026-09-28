@@ -51,12 +51,6 @@ def resolve_runtime_user(db: Session):
                 return user
         except Exception:  # noqa: BLE001
             pass
-    try:
-        user = db.query(User).first()
-        if user is not None:
-            return user
-    except Exception:  # noqa: BLE001
-        pass
     return SimpleNamespace(id=0, username="runtime-system")
 
 
@@ -97,6 +91,7 @@ async def invoke_agent_for_workflow(
     *,
     channel: str = "workflow",
     session_key: str | None = None,
+    override=None,
 ) -> dict:
     soc = agent_uses_soc_decision(agent)
     if soc:
@@ -124,6 +119,7 @@ async def invoke_agent_for_workflow(
         channel=channel,
         output_mode=output_mode,
         session_id=session_id,
+        override=override,
     )
     return workflow_result_from_invoke(result, soc=soc)
 
