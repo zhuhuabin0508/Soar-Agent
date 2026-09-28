@@ -37,7 +37,7 @@ import {
   SquareStack,
   CircleStop,
 } from 'lucide-react'
-import { NODE_CATEGORIES, nodeCatalog } from '../constants/nodeCatalog'
+import { NODE_CATEGORIES, nodeCatalog, isNodeBackendReady } from '../constants/nodeCatalog'
 import { tools as toolsApi } from '../api/client'
 import { useWorkflowStore } from '../store/workflowStore'
 import { inputCls } from '../components/property/FormControls'
@@ -116,12 +116,21 @@ function loadExpanded() {
 
 // 节点卡片：图标徽章 + 名称 + 描述 + 右上角收藏星标
 function NodeCard({ node, isFavorite, onToggleFavorite, onDragStart }) {
+  const backendReady = isNodeBackendReady(node.type)
   return (
     <div
-      draggable
-      onDragStart={onDragStart}
-      title={node.description || node.label}
-      className="group relative flex w-full cursor-grab items-center gap-2 rounded-md border border-transparent bg-secondary/50 px-2 py-1.5 transition hover:border-border hover:bg-secondary active:cursor-grabbing"
+      draggable={backendReady}
+      onDragStart={backendReady ? onDragStart : undefined}
+      title={
+        backendReady
+          ? node.description || node.label
+          : `${node.label}（后端执行器尚未实现，暂不可拖入画布）`
+      }
+      className={`group relative flex w-full items-center gap-2 rounded-md border border-transparent px-2 py-1.5 transition ${
+        backendReady
+          ? 'cursor-grab bg-secondary/50 hover:border-border hover:bg-secondary active:cursor-grabbing'
+          : 'cursor-not-allowed bg-secondary/20 opacity-50'
+      }`}
     >
       <div
         className="flex h-6 w-6 shrink-0 items-center justify-center rounded"
