@@ -598,7 +598,7 @@ function AgentEditor() {
               tone_style: agent.tone_style || 'professional',
               variables: agent.variables || {},
               tool_configs: agent.tool_configs || {},
-              engine: agent.engine || 'langgraph',
+              engine: agent.engine || 'hermes',
               publish_status: agent.publish_status || (isAgentPublished(agent) ? 'published' : 'draft'),
             })
             // 记录资源级权限标志（用于禁用保存按钮）
@@ -720,7 +720,7 @@ function AgentEditor() {
         tone_style: form.tone_style,
         variables: form.variables,
         tool_configs: form.tool_configs,
-        engine: form.engine || 'langgraph',
+        engine: form.engine || 'hermes',
       }
       let result
       if (isEdit) {
@@ -1352,11 +1352,10 @@ function AgentEditor() {
             <Card title="模型与参数设置" icon={<Settings className="h-4 w-4" />} defaultOpen={false} status={sectionStatus.model} open={sectionOpen('模型与参数设置')} onToggle={toggleCard('模型与参数设置')}>
               <SelectInput
                 label="推理引擎"
-                value={form.engine || 'langgraph'}
+                value={form.engine || 'hermes'}
                 onChange={setField('engine')}
                 options={[
-                  { value: 'hermes', label: 'Hermes 引擎（支持工具调用 / 委派 / 技能触发，推荐）' },
-                  { value: 'langgraph', label: 'LangGraph 引擎（兼容模式，基础对话 + 工具）' },
+                  { value: 'hermes', label: 'Hermes 引擎（工具调用 / 委派 / 技能，推荐）' },
                 ]}
               />
               <SelectInput

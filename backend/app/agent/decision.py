@@ -806,16 +806,6 @@ def _extract_json_object(text: str) -> str | None:
     return None
 
 
-def _messages_to_dict_list(messages: list) -> list:
-    """将 LangChain 消息对象列表转为 ``{"role", "content"}`` 字典列表。"""
-    result: list = []
-    for msg in messages:
-        role = getattr(msg, "type", None) or type(msg).__name__
-        content = getattr(msg, "content", "")
-        result.append({"role": role, "content": content})
-    return result
-
-
 async def _run_agent_decision_via_runtime(
     *,
     db,
@@ -964,7 +954,7 @@ async def run_agent_decision(
     logs.append(
         _new_log(
             "error",
-            "未配置 agent_id 或 WORKFLOW_SOC_AGENT_ID，已拒绝旧 LangGraph 路径",
+            "未配置 agent_id 或 WORKFLOW_SOC_AGENT_ID",
         )
     )
     return {

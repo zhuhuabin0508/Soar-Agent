@@ -2258,7 +2258,7 @@ function PropertyPanel() {
         setAgentOptions(
           arr.map((a) => ({
             value: String(a.id),
-            label: `${a.name || `智能体 ${a.id}`} (${(a.engine || 'langgraph') === 'hermes' ? 'Hermes' : 'LangGraph'})`,
+            label: `${a.name || `智能体 ${a.id}`} (${(a.engine || 'hermes') === 'hermes' ? 'Hermes' : 'Legacy'})`,
           }))
         )
       } catch {

@@ -7,7 +7,6 @@ pydantic-settings==2.5.2
 celery==5.4.0
 redis==5.1.1
 python-dotenv==1.0.1
-langgraph==0.2.39
 langchain==0.3.4
 langchain-anthropic==0.2.3
 langchain-openai==0.2.0

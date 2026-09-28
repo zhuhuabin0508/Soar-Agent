@@ -39,7 +39,7 @@ export default function ChatToolbar({
   if (!agent) return null
 
   const name = agent.name || `智能体 ${agent.id}`
-  const isHermes = (agent.engine || 'langgraph') === 'hermes'
+  const isHermes = (agent.engine || 'hermes') === 'hermes'
   const engineLabel = isHermes ? 'Hermes' : 'LangGraph'
 
   // 当前 override 配置

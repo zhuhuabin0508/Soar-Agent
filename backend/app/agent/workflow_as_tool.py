@@ -60,25 +60,6 @@ def infer_parameters(graph_config: Any) -> dict:
     return schema
 
 
-def _parameters_to_pydantic(model_name: str, parameters: dict):
-    from pydantic import Field, create_model
-
-    props = (parameters or {}).get("properties") or {}
-    required = set((parameters or {}).get("required") or [])
-    fields: dict[str, Any] = {}
-    for key, spec in props.items():
-        if not isinstance(spec, dict):
-            spec = {}
-        desc = spec.get("description") or key
-        if key in required:
-            fields[key] = (Any, Field(..., description=desc))
-        else:
-            fields[key] = (Any, Field(default=None, description=desc))
-    if not fields:
-        fields["input"] = (dict, Field(default_factory=dict, description="工作流输入参数"))
-    return create_model(model_name, **fields)
-
-
 async def invoke_workflow_as_tool(
     *,
     db,
@@ -125,51 +106,3 @@ async def invoke_workflow_as_tool(
     execution.result = result
     db.commit()
     return result
-
-
-def build_langchain_workflow_tools(db, enabled_workflows: list, agent_id: Optional[int] = None) -> list:
-    from langchain_core.tools import StructuredTool
-    from app.models.workflow import Workflow
-
-    tools: list = []
-    for raw_id in enabled_workflows or []:
-        try:
-            wf_id = int(raw_id)
-        except (TypeError, ValueError):
-            continue
-        wf = (
-            db.query(Workflow)
-            .filter(Workflow.id == wf_id, Workflow.enabled.is_(True))
-            .first()
-        )
-        if wf is None:
-            continue
-        tool_name = make_tool_name(wf.id, wf.name)
-        description = (wf.description or "").strip() or f"运行已发布工作流：{wf.name}"
-        parameters = infer_parameters(wf.graph_config)
-        args_model = _parameters_to_pydantic(f"{tool_name}Args", parameters)
-        captured_id = wf.id
-
-        async def _coroutine(_wf_id=captured_id, **kwargs):
-            from app.database import SessionLocal
-
-            session = SessionLocal()
-            try:
-                return await invoke_workflow_as_tool(
-                    db=session,
-                    workflow_id=_wf_id,
-                    agent_id=agent_id,
-                    payload=kwargs,
-                )
-            finally:
-                session.close()
-
-        tools.append(
-            StructuredTool.from_function(
-                name=tool_name,
-                description=description,
-                args_schema=args_model,
-                coroutine=_coroutine,
-            )
-        )
-    return tools

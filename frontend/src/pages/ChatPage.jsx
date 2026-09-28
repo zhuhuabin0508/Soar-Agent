@@ -444,7 +444,7 @@ export default function ChatPage() {
     // 2. 发起 SSE 流式请求
     const controller = new AbortController()
     abortControllerRef.current = controller
-    const isHermes = (agent.engine || 'langgraph') === 'hermes'
+    const isHermes = (agent.engine || 'hermes') === 'hermes'
 
     try {
       const resp = isHermes
