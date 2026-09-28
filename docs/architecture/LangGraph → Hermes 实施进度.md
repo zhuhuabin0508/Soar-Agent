@@ -1,7 +1,7 @@
 # LangGraph → Hermes 收口 · 实施进度
 
 > 类型：**进度跟踪文档**（随代码与站会更新）  
-> 最后更新：2026-09-28（基座收口第二轮）  
+> 最后更新：2026-09-28（基座 Demo 初步测试记录）  
 > **方案与冲突评判标准（定稿，不随进度改）**：[`LangGraph → Hermes 统一.md`](./LangGraph%20→%20Hermes%20统一.md)  
 > **基座 MVP 范围**：[`SOAR Agent 平台基座优化方案.md`](./SOAR%20Agent%20平台基座优化方案.md) §13.2  
 
@@ -82,12 +82,12 @@
 
 | # | 验收条目（摘自方案 §10） | 状态 |
 |---|-------------------------|------|
-| 1 | /chat、/test/stream、test-run、Celery 行为一致 | 🟡 |
+| 1 | /chat、/test/stream、test-run、Celery 行为一致 | 🟡 | Playground + **test-run** 已验 Agent#54；Celery 全路径待补 |
 | 2 | 封禁经 `invoke_agent`，生产不依赖 mock | 🟡 |
 | 3 | 无业务层直建 `HermesAgentExecutor` / `build_agent_graph` | 🟡 | 决策路径已无 `build_agent_graph`；`graph.py` 待 Step 4 物理删除 |
 | 4 | `run_agent_decision` 仅剩转发或为零 | 🟡 | 有 Agent 时转发；无配置非 dev 不执行图 |
 | 5 | `engine=langgraph` 仅 warning，实际 Hermes | ✅ |
-| 6 | `soc_decision` 满足 condition_branch | 🟡 |
+| 6 | `soc_decision` 满足 condition_branch | 🟡 | test-run 输出含 `decision`；画布需配置 `decision == …` 条件 |
 | 7 | 封禁 E2E + mock 降级 | 🟡 |
 | 8 | `ban_risk_analyze` 与 `REQUIRED_FIELDS` 一致 | ✅ |
 
@@ -100,21 +100,7 @@
 | 2026-09-23 | 初版 + Week 1/2 代码 |
 | 2026-09-28 | Week 3 工作流/Celery 收口；C0-6/7/8/9/10 代码；待用户 E2E 验证 |
 | 2026-09-28 | 基座收口第二轮：禁决策 LangGraph、生产禁封禁 mock、SOC/系统用户门禁、tools debug→runtime |
-
----
-
-## 6. 基座「初步完成」关门清单（给你排期用）
-
-| 阶段 | 内容 | 谁做 | 状态 |
-|------|------|------|------|
-| **A** | 运行时单门面（本轮代码） | 研发 | 🟡 代码已合入；**待负责人 B/C E2E 验证** |
-| **B** | D2-1～D2-8：研判 Agent + `BAN_ANALYST_AGENT_ID` + 封禁 E2E | 你 | ⬜ |
-| **C** | 环境变量：`WORKFLOW_SOC_AGENT_ID`、`WORKFLOW_SYSTEM_USER_ID`、工作流 ai_agent 绑 Agent | 你 | ⬜ |
-| **D** | Step 4 物理删 Legacy：删 `graph.py`、`langgraph` 包依赖、`build_langchain_workflow_tools` 等（**Hermes 内 `langchain_core` 消息层暂保留**） | 研发 | ⬜ |
-| **E** | 版本/架构文档出版与 §10 全 ✅ | 你+研发 | ⬜ |
-| **F** | Agent 搭建、Playground/对话/工作流体验测试 | 你 | ⬜（在 A～E 之后） |
-
-**你当前计划顺序**：A→B→C→E 验证基座 → D 删 LangGraph 循环 → F 测 Agent 体验 — **与上表一致**。
+| 2026-09-28 | §7：Demo Agent#54 Playground + 工作流 test-run 初步测试记录 |
 
 ---
 
@@ -123,4 +109,62 @@
 1. 完成任务后：改 §2 对应行「状态」+ 可选「备注 / 证据」（PR 链接、commit）  
 2. 同步更新 §3 总体验收表中相关行  
 3. **不要**为了省事去改 `LangGraph → Hermes 统一.md` 里的状态勾选  
-4. 若发现方案本身有误：先提方案修订（统一.md 升 v1.2+），再改代码与本文
+4. 若发现方案本身有误：先提方案修订（统一.md 升 v1.2+），再改代码与本文  
+
+---
+
+## 6. 基座「初步完成」关门清单（给你排期用）
+
+| 阶段 | 内容 | 谁做 | 状态 |
+|------|------|------|------|
+| **A** | 运行时单门面（本轮代码） | 研发 | 🟡 代码已合入；**Demo test-run 已验调用 Agent** |
+| **B** | D2-1～D2-8：研判 Agent + `BAN_ANALYST_AGENT_ID` + 封禁 E2E | 你 | ⬜ |
+| **C** | 工作流 **节点绑定 Agent**（主路径）；`WORKFLOW_SYSTEM_USER_ID` 可选；`WORKFLOW_SOC_AGENT_ID` **仅兜底** | 你 | 🟡 节点选名即可；env SOC id **非搭建 Agent 必需** |
+| **D** | Step 4 物理删 Legacy：删 `graph.py`、`langgraph` 包依赖等（**Hermes 内 `langchain_core` 暂保留**） | 研发 | ⬜ |
+| **E** | 版本/架构文档出版与 §10 全 ✅ | 你+研发 | ⬜ |
+| **F** | Agent 搭建、Playground/工作流体验测试 | 你 | 🟡 **通用 SOC Demo 初步通过**；封禁 E2E 未做 |
+
+**计划顺序**：A→B→C→E 验证基座 → D 删 LangGraph 循环 → F 持续体验迭代。
+
+---
+
+## 7. 现阶段情况与初步测试结果
+
+### 7.1 现状摘要（2026-09-28）
+
+| 项 | 状态 |
+|----|------|
+| Hermes 单门面 / 工作流 `execute_ai_agent` → `invoke_agent_for_workflow` | 已合入并 **test-run 验证** |
+| 决策路径 LangGraph | 已禁用；无 Agent 配置时 dev Mock 或 `need_human_approval` |
+| 业务人员搭 Agent | 智能体管理创建发布；**工作流节点按名称选 Agent**，保存后为 `agent_id` |
+| `WORKFLOW_SOC_AGENT_ID` | **可选兜底**（空节点、工具 debug）；**节点已选 Agent 时不依赖** |
+| `BAN_ANALYST_AGENT_ID` | 封禁路径用；**与通用 SOC Demo 无关**，D2 未验 |
+| 节点库部分变灰 | **后端 `NODE_EXECUTORS` 未实现** → 前端禁拖，防运行报错（C0-10） |
+| Step 4 删 `graph.py` | 未做，待基座 E2E 与出版后 |
+
+### 7.2 初步测试记录（Demo：IP 白名单快判）
+
+**智能体**：`Demo-SOC-白名单`（库表 **id=54**，Hermes，工具 `check_whitelist`）。
+
+| # | 场景 | 输入 | 结果 | 结论 |
+|---|------|------|------|------|
+| T1 | Playground / 流式测试 | `src_ip=8.8.8.8` 研判 | 调用 `check_whitelist`；`decision=need_human_approval` | ✅ Agent 与工具正常 |
+| T2 | 工作流 **test-run** | 图：手动触发 → ai_agent(**54**) → 条件分支 → 结束；payload 含 `8.8.8.8` | 日志：`调用智能体(runtime): id=54`；output 含 `decision=need_human_approval`、messages 含 tool 调用；`status=success` | ✅ **工作流可调 Agent** |
+| T3 | 条件分支 | 未配或 0 条条件 | `route=false` 走「否」 | 预期行为；配 `decision == need_human_approval` 后走「是」 |
+| T4 | Celery 异步执行 | — | 未在本轮记录中复测 | ⬜ 待补 |
+
+**T2 输出要点（摘录）**：`check_whitelist` → `in_whitelist: false`；结构化 `decision: need_human_approval`。若 payload 嵌套 `payload.src_ip`，可能出现 `target_ip: unknown`（顶层无 `src_ip`）；**试运行建议扁平 JSON**：`{"src_ip":"8.8.8.8","input":"demo"}`。
+
+### 7.3 节点库可用范围（与灰节点）
+
+**可拖（白名单，与 `NODE_EXECUTORS` 对齐）**：Webhook / **手动触发**、AI 智能体、LLM、条件分支、结束、发送通知、工具、人工审批、HTTP、封禁/设备动作、循环/迭代/代码执行等（见 `frontend/src/constants/nodeCatalog.js` → `BACKEND_SUPPORTED_NODE_TYPES`）。
+
+**仍禁拖（示例）**：定时触发、事件触发、意图识别等 — **后端执行器未就绪**，非「测试环境限制」。
+
+### 7.4 未关闭（不影响本次 Demo 结论）
+
+- D2 / **封禁 E2E**、`BAN_ANALYST_AGENT_ID>0`  
+- §10 全 ✅、物理删 LangGraph  
+- 条件分支 + 通知节点 **产品化模板**（可选）
+
+---

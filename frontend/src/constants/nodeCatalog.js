@@ -492,6 +492,7 @@ export const nodeCatalog = [
 
 export const BACKEND_SUPPORTED_NODE_TYPES = new Set([
   'webhook_trigger',
+  'manual_trigger',
   'http_request',
   'ai_agent',
   'llm',

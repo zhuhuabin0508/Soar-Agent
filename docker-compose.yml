@@ -79,6 +79,9 @@ services:
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-admin123}
       # 本地开发调试：OTP 验证码明文回显。生产请勿设置或设为 false。
       ENABLE_DEV_CODE: ${ENABLE_DEV_CODE:-false}
+      WORKFLOW_SOC_AGENT_ID: ${WORKFLOW_SOC_AGENT_ID:-0}
+      WORKFLOW_SYSTEM_USER_ID: ${WORKFLOW_SYSTEM_USER_ID:-0}
+      BAN_ANALYST_AGENT_ID: ${BAN_ANALYST_AGENT_ID:-0}
     depends_on:
       postgres:
         condition: service_healthy
@@ -107,6 +110,9 @@ services:
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-12345678}@redis:6379/0
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-12345678}@redis:6379/1
       TZ: Asia/Shanghai
+      WORKFLOW_SOC_AGENT_ID: ${WORKFLOW_SOC_AGENT_ID:-0}
+      WORKFLOW_SYSTEM_USER_ID: ${WORKFLOW_SYSTEM_USER_ID:-0}
+      BAN_ANALYST_AGENT_ID: ${BAN_ANALYST_AGENT_ID:-0}
     depends_on:
       redis:
         condition: service_healthy
