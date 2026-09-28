@@ -223,13 +223,14 @@ async def execute_ai_agent(
         else:
             user_message = str(input_data or "")
 
-    # ===== 旧逻辑兼容：无 agent_id 时回退到 run_agent_decision =====
+    # ===== 无 agent_id：回退 run_agent_decision（过渡）或 WORKFLOW_SOC_AGENT_ID =====
     if not agent_id:
         log(nid, _WARN, "ai_agent 节点未配置 agent_id，回退到旧决策逻辑（建议选择已创建的智能体）")
         from app.agent.decision import run_agent_decision
 
+        alert_data = input_data if isinstance(input_data, dict) else {"input": user_message}
         result = await run_agent_decision(
-            alert_data=input_data,
+            alert_data=alert_data,
             enabled_tools=node_data.get("enabled_tools"),
             system_prompt=node_data.get("system_prompt") or None,
             temperature=node_data.get("temperature"),
@@ -242,9 +243,9 @@ async def execute_ai_agent(
         ctx["agent_messages"] = result.get("messages", [])
         return result
 
-    # ===== 新逻辑：按 agent_id 加载智能体并执行 =====
     from app.database import SessionLocal
     from app.models.agent import Agent
+    from app.platform.agent_runtime import invoke_agent_for_workflow
 
     db = SessionLocal()
     try:
@@ -253,15 +254,25 @@ async def execute_ai_agent(
             log(nid, _ERROR, f"智能体不存在: agent_id={agent_id}")
             return {"response": "", "error": f"Agent {agent_id} not found"}
 
-        log(nid, _INFO, f"调用智能体: id={agent.id}, name={agent.name}, engine={agent.engine}, msg_len={len(user_message)}")
+        log(
+            nid,
+            _INFO,
+            f"调用智能体(runtime): id={agent.id}, name={agent.name}, engine={agent.engine}, msg_len={len(user_message)}",
+        )
+        wf_input = input_data if isinstance(input_data, dict) else {"input": user_message}
+        try:
+            result = await invoke_agent_for_workflow(
+                db,
+                agent,
+                user_message,
+                wf_input,
+                channel="workflow_ai_agent",
+                session_key=f"wf_node_{nid}_{agent.id}",
+            )
+        except Exception as exc:  # noqa: BLE001
+            log(nid, _ERROR, f"invoke_agent 失败: {exc}")
+            return {"response": "", "error": str(exc)}
 
-        engine = (agent.engine or "langgraph").lower()
-        if engine == "hermes":
-            result = await _run_hermes_agent(db, agent, user_message, nid, log)
-        else:
-            result = await _run_langgraph_agent(db, agent, user_message, nid, log)
-
-        # 合并到 ctx，供下游 condition_branch / block_ip 等节点引用
         ctx["agent_response"] = result.get("response")
         ctx["agent_decision"] = result
         ctx["decision"] = result.get("decision") or result.get("response")
@@ -269,126 +280,6 @@ async def execute_ai_agent(
         return result
     finally:
         db.close()
-
-
-async def _run_hermes_agent(db, agent, user_message: str, nid: str, log) -> dict:
-    """Hermes 引擎：迭代 SSE 事件，提取最终 done 事件的 content 作为回复。
-
-    工作流执行无具体 HTTP 请求上下文，取 DB 中第一个用户作为系统用户
-    （仅用于记忆/权限隔离的分区键），失败则用占位用户。
-    """
-    from types import SimpleNamespace
-
-    from app.agent.hermes import HermesAgentExecutor
-
-    # 取系统用户作为执行主体（工作流无具体用户）
-    try:
-        from app.models.user import User
-
-        sys_user = db.query(User).first()
-    except Exception:  # noqa: BLE001
-        sys_user = None
-    if sys_user is None:
-        sys_user = SimpleNamespace(id=0, username="workflow-system")
-
-    try:
-        executor = HermesAgentExecutor(db=db, agent=agent, user=sys_user)
-    except Exception as exc:  # noqa: BLE001
-        log(nid, _ERROR, f"Hermes 执行器创建失败: {exc}")
-        return {"response": "", "error": str(exc)}
-
-    final_text = ""
-    try:
-        async for event in executor.run(user_message, session_id=f"wf_agent_{agent.id}"):
-            etype = event.get("type")
-            if etype == "done":
-                final_text = event.get("content", "") or final_text
-            elif etype == "error":
-                msg = event.get("message", "hermes error")
-                log(nid, _ERROR, f"Hermes 执行错误: {msg}")
-                return {"response": "", "error": msg}
-    except Exception as exc:  # noqa: BLE001
-        log(nid, _ERROR, f"Hermes 执行异常: {exc}")
-        return {"response": "", "error": str(exc)}
-
-    log(nid, _INFO, f"Hermes 智能体执行完成, response_len={len(final_text)}")
-    return {"response": final_text, "messages": []}
-
-
-async def _run_langgraph_agent(db, agent, user_message: str, nid: str, log) -> dict:
-    """LangGraph 引擎：无工具走纯对话，有工具走 run_agent_decision。
-
-    复用 agents.py 的 ``_create_llm`` 与 ``assemble_system_prompt``，保证与
-    智能体测试/对话端点的行为一致。
-    """
-    from app.agent.decision import run_agent_decision
-    from app.agent.prompt_assembler import assemble_system_prompt
-    from app.api.v1.agents import _create_llm
-    from langchain_core.messages import HumanMessage, SystemMessage
-
-    has_tools = bool(agent.enabled_tools) or bool(agent.enabled_kbs) or bool(getattr(agent, "enabled_workflows", None))
-
-    # ===== 无工具：纯 LLM 对话 =====
-    if not has_tools:
-        llm, err = _create_llm(agent, db)
-        if llm is None:
-            log(nid, _ERROR, f"LLM 创建失败: {err}")
-            return {"response": "", "error": err}
-        system_prompt = assemble_system_prompt(
-            db, agent, fallback_prompt="你是一个智能助手，请根据用户输入给出有帮助的回答。"
-        )
-        messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_message)]
-        try:
-            ai_msg = await llm.ainvoke(messages)
-            reply = ai_msg.content if hasattr(ai_msg, "content") else str(ai_msg)
-        except Exception as exc:  # noqa: BLE001
-            log(nid, _ERROR, f"LLM 调用失败: {exc}")
-            return {"response": "", "error": str(exc)}
-        log(nid, _INFO, f"纯对话完成, response_len={len(reply)}")
-        return {"response": reply, "messages": []}
-
-    # ===== 有工具：Agent 决策 =====
-    import json
-
-    alert_data = {"input": user_message}
-    try:
-        parsed = json.loads(user_message)
-        if isinstance(parsed, dict):
-            alert_data = parsed
-    except (json.JSONDecodeError, TypeError):
-        pass
-
-    log(nid, _INFO, f"Agent 决策模式, tools={agent.enabled_tools}, kbs={agent.enabled_kbs}")
-    try:
-        result = await run_agent_decision(
-            alert_data=alert_data,
-            enabled_tools=agent.enabled_tools or [],
-            enabled_kbs=agent.enabled_kbs or [],
-            enabled_workflows=agent.enabled_workflows or [],
-            agent_id=agent.id,
-            model_config_id=agent.model_config_id,
-            system_prompt=assemble_system_prompt(db, agent, allow_none=True),
-            temperature=agent.temperature,
-            max_tokens=agent.max_tokens,
-            max_iterations=agent.max_iterations,
-        )
-    except Exception as exc:  # noqa: BLE001
-        log(nid, _ERROR, f"Agent 决策失败: {exc}")
-        return {"response": "", "error": str(exc)}
-
-    # 提取回复文本：优先 response，其次 decision，最后从 messages 取 AI 消息
-    response = result.get("response") or result.get("decision") or ""
-    if not response:
-        for m in reversed(result.get("messages", [])):
-            if m.get("role") in ("ai", "assistant") and m.get("content"):
-                response = m["content"]
-                break
-    log(nid, _INFO, f"Agent 决策完成, decision={result.get('decision')}, response_len={len(response)}")
-    return {
-        "response": response,
-        "decision": result.get("decision"),
-        "messages": result.get("messages", []),
-    }
 
 
 async def execute_condition_branch(

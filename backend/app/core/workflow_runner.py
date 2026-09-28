@@ -256,10 +256,14 @@ async def run_workflow(
 
         if node_status == "failed":
             status = "failed"
-            # 失败即终止（与 Celery 任务行为一致）
             break
 
-        # 条件路由：读 ctx["_route"] 选择下游
+        if node_type == "human_review" and isinstance(output, dict):
+            if output.get("status") == "waiting_for_approval":
+                status = "waiting_for_approval"
+                log(node_id, "info", "工作流在人工审批节点暂停")
+                break
+
         route: Optional[str] = ctx.get("_route") if node_type == "condition_branch" else None
         next_ids = find_next_nodes(edges, node_id, route)
         log(node_id, "info", f"下游节点: {next_ids}")
