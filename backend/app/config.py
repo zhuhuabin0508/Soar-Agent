@@ -53,6 +53,8 @@ class Settings(BaseSettings):
     ENABLE_DEV_CODE: bool = False
 
     BAN_ANALYST_AGENT_ID: int = 0
+    WORKFLOW_SYSTEM_USER_ID: int = 0
+    WORKFLOW_SOC_AGENT_ID: int = 0
 
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",

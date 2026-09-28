@@ -40,8 +40,17 @@ class AgentInvokeResult:
 
 
 def resolve_runtime_user(db: Session):
+    from app.config import settings
     from app.models.user import User
 
+    uid = int(getattr(settings, "WORKFLOW_SYSTEM_USER_ID", 0) or 0)
+    if uid > 0:
+        try:
+            user = db.query(User).filter(User.id == uid).first()
+            if user is not None:
+                return user
+        except Exception:  # noqa: BLE001
+            pass
     try:
         user = db.query(User).first()
         if user is not None:
@@ -49,6 +58,74 @@ def resolve_runtime_user(db: Session):
     except Exception:  # noqa: BLE001
         pass
     return SimpleNamespace(id=0, username="runtime-system")
+
+
+def agent_uses_soc_decision(agent: Agent) -> bool:
+    return bool(
+        agent.enabled_tools
+        or agent.enabled_kbs
+        or agent.enabled_asset_types
+        or getattr(agent, "enabled_workflows", None)
+    )
+
+
+def workflow_result_from_invoke(result: AgentInvokeResult, *, soc: bool) -> dict:
+    if soc and result.decision:
+        decision = result.decision
+        response = result.response or decision.get("reason") or decision.get("decision") or ""
+        return {
+            "response": response,
+            "decision": decision.get("decision"),
+            "target_ip": decision.get("target_ip"),
+            "reason": decision.get("reason"),
+            "duration": decision.get("duration"),
+            "messages": result.messages,
+            "logs": (result.raw or {}).get("logs") or [],
+        }
+    return {
+        "response": result.response,
+        "messages": result.messages,
+        "logs": [],
+    }
+
+
+async def invoke_agent_for_workflow(
+    db: Session,
+    agent: Agent,
+    user_message: str,
+    input_data: dict,
+    *,
+    channel: str = "workflow",
+    session_key: str | None = None,
+) -> dict:
+    soc = agent_uses_soc_decision(agent)
+    if soc:
+        alert_data = dict(input_data) if isinstance(input_data, dict) else {"input": input_data}
+        if isinstance(input_data, str):
+            try:
+                parsed = json.loads(input_data)
+                if isinstance(parsed, dict):
+                    alert_data = parsed
+            except (json.JSONDecodeError, TypeError):
+                alert_data = {"input": user_message, **(alert_data if isinstance(alert_data, dict) else {})}
+        if "input" not in alert_data and user_message:
+            alert_data.setdefault("input", user_message)
+        invoke_input = alert_data
+        output_mode = OUTPUT_MODE_SOC_DECISION
+    else:
+        invoke_input = user_message
+        output_mode = OUTPUT_MODE_CHAT
+    session_id = session_key or f"wf_agent_{agent.id}"
+    result = await invoke_agent(
+        db=db,
+        agent=agent,
+        input=invoke_input,
+        user=resolve_runtime_user(db),
+        channel=channel,
+        output_mode=output_mode,
+        session_id=session_id,
+    )
+    return workflow_result_from_invoke(result, soc=soc)
 
 
 def resolve_engine(agent: Agent) -> str:
