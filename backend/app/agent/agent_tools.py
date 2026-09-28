@@ -48,11 +48,10 @@ class CheckSubnetArgs(BaseModel):
 # ---- 工具实现：包装异步函数并补充日志 ----
 
 
-async def _check_whitelist_tool(ip: str) -> bool:
-    """查询 IP 是否命中内网白名单。"""
+async def _check_whitelist_tool(ip: str) -> dict:
     logger.info("[Tool] 调用 check_whitelist, ip=%s", ip)
     result = await check_whitelist(ip)
-    logger.info("[Tool] check_whitelist 结果, ip=%s, hit=%s", ip, result)
+    logger.info("[Tool] check_whitelist 结果, ip=%s, result=%s", ip, result)
     return result
 
 

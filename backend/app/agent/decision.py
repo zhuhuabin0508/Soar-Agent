@@ -672,7 +672,12 @@ async def _mock_decision(alert_data: dict, logs: list[dict[str, str]]) -> dict:
     messages.append({"role": "assistant", "content": f"正在查询 src_ip={src_ip} 的白名单..."})
     logs.append(_new_log("info", f"查询白名单, ip={src_ip}"))
     whitelist_hit = await check_whitelist(src_ip)
-    messages.append({"role": "tool", "content": f"check_whitelist={whitelist_hit}"})
+    in_whitelist = (
+        whitelist_hit.get("in_whitelist")
+        if isinstance(whitelist_hit, dict)
+        else bool(whitelist_hit)
+    )
+    messages.append({"role": "tool", "content": f"check_whitelist={json.dumps(whitelist_hit, ensure_ascii=False)}"})
 
     # 2. 查询资产信息
     messages.append({"role": "assistant", "content": f"正在查询 src_ip={src_ip} 的资产信息..."})
@@ -697,7 +702,7 @@ async def _mock_decision(alert_data: dict, logs: list[dict[str, str]]) -> dict:
     is_critical = bool(asset_info.get("is_critical"))
     tags = threat_intel.get("tags", [])
 
-    if whitelist_hit:
+    if in_whitelist:
         decision = "ignore"
         reason = f"IP {src_ip} 在白名单中，判定为可信内网，无需处置"
         duration = ""
@@ -1012,6 +1017,13 @@ async def run_agent_decision(
     logger.info("=" * 60)
     logger.info("收到告警决策请求, alert_data=%s", alert_data)
     logs: list[dict[str, str]] = []
+
+    if agent_id is None:
+        from app.config import settings
+
+        fallback_agent = int(getattr(settings, "WORKFLOW_SOC_AGENT_ID", 0) or 0)
+        if fallback_agent > 0:
+            agent_id = fallback_agent
 
     if agent_id is not None:
         from app.database import SessionLocal

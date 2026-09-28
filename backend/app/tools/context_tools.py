@@ -40,20 +40,12 @@ def _is_in_whitelist(ip: str) -> bool:
     return any(addr in net for net in _WHITELIST_NETWORKS)
 
 
-async def check_whitelist(ip: str) -> bool:
-    """判断指定 IP 是否命中内网白名单。
-
-    Args:
-        ip: 待查询的 IPv4/IPv6 地址字符串。
-
-    Returns:
-        True 表示命中白名单（可信内网），False 表示外网或非法 IP。
-    """
+async def check_whitelist(ip: str) -> dict:
     logger.info("查询白名单命中情况, ip=%s", ip)
     await asyncio.sleep(random.uniform(0.3, 0.8))
-    result = _is_in_whitelist(ip)
-    logger.debug("白名单查询完成, ip=%s, hit=%s", ip, result)
-    return result
+    hit = _is_in_whitelist(ip)
+    logger.debug("白名单查询完成, ip=%s, hit=%s", ip, hit)
+    return {"ip": ip, "in_whitelist": hit}
 
 
 async def get_asset_info(ip: str) -> dict:
