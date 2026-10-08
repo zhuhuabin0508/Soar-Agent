@@ -1,7 +1,7 @@
 # LangGraph → Hermes 收口 · 实施进度
 
 > 类型：**进度跟踪文档**（随代码与站会更新）  
-> 最后更新：2026-09-28（研发侧基座收口自检 §8）  
+> 最后更新：2026-10-08（Agent 基座冻结 + 遗留文件清理）  
 > **方案与冲突评判标准（定稿，不随进度改）**：[`LangGraph → Hermes 统一.md`](./LangGraph%20→%20Hermes%20统一.md)  
 > **基座 MVP 范围**：[`SOAR Agent 平台基座优化方案.md`](./SOAR%20Agent%20平台基座优化方案.md) §13.2  
 
@@ -101,6 +101,7 @@
 | 2026-09-28 | Week 3 工作流/Celery 收口；C0-6/7/8/9/10 代码；待用户 E2E 验证 |
 | 2026-09-28 | 基座收口第二轮：禁决策 LangGraph、生产禁封禁 mock、SOC/系统用户门禁、tools debug→runtime |
 | 2026-09-28 | 研发收口自检 §8；`asset_tasks` 迁入 `invoke_agent` |
+| 2026-10-08 | 研发冻结 Agent 基座 MVP；删 `state.py`/`agent_tools.py`；文档与过时 LangGraph 表述收尾 |
 
 ---
 
@@ -121,7 +122,7 @@
 | **B** | D2-1～D2-8：研判 Agent + `BAN_ANALYST_AGENT_ID` + 封禁 E2E | 你 | ⬜ **排在基座初步收口之后**；与 §10 #2/#7 同批体验测试 |
 | **C** | 工作流 **节点绑定 Agent**（主路径）；`WORKFLOW_SYSTEM_USER_ID` 可选；`WORKFLOW_SOC_AGENT_ID` **仅兜底** | 你 | 🟡 节点选名即可；env SOC id **非搭建 Agent 必需** |
 | **D** | Step 4 物理删 Legacy：删 `graph.py`、`langgraph` 包依赖等（**Hermes 内 `langchain_core` 暂保留**） | 研发 | ✅ |
-| **E** | 版本/架构文档出版与 §10 全 ✅ | 你+研发 | 🟡 | 研发侧已收口；§10 剩余项随体验测试更新 |
+| **E** | 版本/架构文档出版与 §10 全 ✅ | 你+研发 | 🟡 | **研发侧 Agent 基座已冻结（2026-10-08）**；§10 剩余项随体验测试更新 |
 | **F** | Agent 搭建、Playground/工作流体验测试 | 你 | 🟡 **通用 SOC Demo 初步通过**；封禁 E2E 未做 |
 
 **计划顺序**：A + **D**（研发收口）→ **E 基座初步完成** → **F + B + §10 #1/#6/#2/#7**（你方统一体验测试、问题汇总反馈）→ 再迭代修复。

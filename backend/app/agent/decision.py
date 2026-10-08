@@ -1,14 +1,7 @@
-﻿"""Agent 决策入口模块。
+﻿"""SOC 决策解析、Mock 降级与遗留 ``run_agent_decision`` 转发。
 
-对外暴露 ``run_agent_decision``，作为后端调用 Agent 的唯一入口。
-按以下优先级选择 LLM 配置：传入的 ``model_config_id`` > DB 中 ``is_default`` 的 LLMConfig
-> 环境变量 ``ANTHROPIC_API_KEY``。配置可用时走真实 LangGraph 决策，否则走规则化 Mock 降级。
-
-工具接入：
-- ``enabled_tools`` 中的 DB 工具名，经 ``tool_runner`` 加载为 LangChain ``StructuredTool``。
-- ``enabled_kbs`` 非空时追加一个 ``search_knowledge_base`` 工具（内部调 ``kb_retriever``）。
-
-``run_agent_decision`` 返回结果中包含 ``logs``（``[{level, message}]``）便于排查与回传前端。
+新调用请使用 ``app.platform.agent_runtime.invoke_agent`` / ``invoke_agent_sse``。
+本模块保留 ``_parse_action_decision_from_content``、工具构建与 ``run_agent_decision``（已废弃，转发 runtime）。
 """
 import json
 import logging
@@ -984,7 +977,7 @@ async def run_agent_decision_stream(
 ) -> AsyncGenerator[dict, None]:
     """流式版 Agent 决策，异步生成 SSE 事件。
 
-    与 ``run_agent_decision`` 配置解析逻辑一致，但使用 ``graph.astream_events``
+    已废弃；请使用 ``invoke_agent_sse``。
     实现 token 级流式输出，让前端逐字渲染 LLM 回复。
 
     Yields:

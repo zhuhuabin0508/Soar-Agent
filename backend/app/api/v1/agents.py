@@ -167,8 +167,7 @@ class AgentBase(BaseModel):
     tone_style: str = Field("professional", description="语气风格")
     variables: dict | None = Field(None, description="自定义变量")
     tool_configs: dict | None = Field(None, description="工具配置（key=工具名, value={timeout, retry, require_confirm}）")
-    # 执行引擎：langgraph（默认）| hermes（Hermes 风格 ReAct + 分段并行 + 记忆 + 委派）
-    engine: str = Field("hermes", description="执行引擎：hermes（默认）| langgraph（已废弃）")
+    engine: str = Field("hermes", description="执行引擎：hermes（默认）；langgraph 写入时由 runtime 转 Hermes")
     publish_status: str | None = Field(None, description="draft / published，创建默认草稿，更新未传则保持原值")
 
 
@@ -658,7 +657,7 @@ async def test_agent(
     """测试智能体，返回推理结果与日志。
 
     - 未勾选工具和知识库时：走纯 LLM 对话路径（不使用安全决策流程）
-    - 勾选了工具/知识库时：走 LangGraph Agent 决策路径
+    - 勾选了工具/知识库时：经 invoke_agent（soc_decision 或 chat，由 runtime 判定）
     """
     logger.info("测试智能体: id=%s", agent_id)
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
@@ -966,7 +965,7 @@ async def chat_agent(
         """SSE 流 + Execution 记录追踪。
 
         Hermes 引擎的每次对话都创建一条 Execution 记录，使监控页面能统计
-        对话次数/成功失败率/耗时。LangGraph 的 test/stream 路径已在生成器内
+        对话次数/成功失败率/耗时。test/stream 经 invoke_agent_sse 写入
         创建 Execution，Hermes 路径在此补齐。
 
         DB Session 生命周期优化：不依赖 Depends(get_db) 注入的 session

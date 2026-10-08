@@ -188,7 +188,7 @@ async def execute_ai_agent(
     执行流程：
     1. 解析 user_prompt 中的 ``${node.field}`` 变量引用。
     2. 从 DB 加载 Agent。
-    3. 经 ``invoke_agent_for_workflow`` 执行（``engine=langgraph`` 由 runtime 路由 Hermes）。
+    3. 经 ``invoke_agent_for_workflow`` 执行（统一 Hermes runtime）。
     4. 返回决策/回复并合并到 ctx。
 
     无 ``agent_id`` 时使用 ``WORKFLOW_SOC_AGENT_ID``；均未配置则 ``need_human_approval``。

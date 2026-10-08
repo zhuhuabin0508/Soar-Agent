@@ -586,8 +586,8 @@ async def debug_chat(
 ) -> dict:
     """模拟对话调试：把工具绑定到 LLM，展示 LLM 思考→提取参数→调用工具→最终回答的链路。
 
-    复用 ``run_agent_decision``，以该工具为唯一启用工具，自定义 system_prompt
-    引导通用问答（而非安全决策）。返回 messages 与 logs 供前端展示运行链路。
+    经 ``invoke_agent``（OUTPUT_MODE_CHAT），自定义 system_prompt 引导通用问答。
+    返回 messages 与 logs 供前端展示运行链路。
     """
     logger.info("工具对话调试: id=%s, message=%s", tool_id, body.message[:100])
     tool = db.query(Tool).filter(Tool.id == tool_id).first()
