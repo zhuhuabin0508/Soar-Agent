@@ -490,23 +490,7 @@ export const nodeCatalog = [
   },
 ]
 
-export const BACKEND_SUPPORTED_NODE_TYPES = new Set([
-  'webhook_trigger',
-  'manual_trigger',
-  'http_request',
-  'ai_agent',
-  'llm',
-  'condition_branch',
-  'block_ip',
-  'send_notification',
-  'tool',
-  'human_review',
-  'device_action',
-  'end',
-  'code_execute',
-  'loop',
-  'iteration',
-])
+export const BACKEND_SUPPORTED_NODE_TYPES = new Set(nodeCatalog.map((n) => n.type))
 
 export function isNodeBackendReady(type) {
   return BACKEND_SUPPORTED_NODE_TYPES.has(type)

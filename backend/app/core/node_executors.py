@@ -1218,9 +1218,325 @@ async def execute_llm(
     return {"text": text}
 
 
+_WAIT_MAX_SECONDS = 10
+
+
+def _text_from_input(input_data: Any) -> str:
+    import json
+
+    if isinstance(input_data, str):
+        return input_data
+    if isinstance(input_data, dict):
+        for key in ("text", "user_message", "message", "payload"):
+            val = input_data.get(key)
+            if isinstance(val, str) and val.strip():
+                return val
+        return json.dumps(input_data, ensure_ascii=False, default=str)
+    return str(input_data or "")
+
+
+async def execute_manual_trigger(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    nid = _node_id(node_data)
+    payload = ctx.get("payload") if isinstance(ctx.get("payload"), dict) else {}
+    merged = {**payload, **(input_data if isinstance(input_data, dict) else {"input": input_data})}
+    log(nid, _INFO, "manual_trigger 已启动")
+    ctx["payload"] = merged
+    return {"payload": merged, "trigger": "manual"}
+
+
+async def execute_schedule_trigger(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    nid = _node_id(node_data)
+    cron = node_data.get("cron") or "0 * * * *"
+    tz = node_data.get("timezone") or "Asia/Shanghai"
+    log(nid, _INFO, f"schedule_trigger 配置 cron={cron}, timezone={tz}（测试运行仅记录，实际调度由平台触发）")
+    return {"trigger": "schedule", "cron": cron, "timezone": tz, "payload": ctx.get("payload") or {}}
+
+
+async def execute_event_trigger(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    nid = _node_id(node_data)
+    source = node_data.get("event_source") or "alert"
+    event_type = node_data.get("event_type") or "*"
+    log(nid, _INFO, f"event_trigger source={source}, type={event_type}")
+    return {
+        "trigger": "event",
+        "event_source": source,
+        "event_type": event_type,
+        "payload": ctx.get("payload") or input_data,
+    }
+
+
+async def execute_wait(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    import asyncio
+    from datetime import datetime
+
+    nid = _node_id(node_data)
+    mode = node_data.get("wait_mode") or "duration"
+    slept = 0.0
+    if mode == "until":
+        until_raw = node_data.get("until_time") or ""
+        try:
+            target = datetime.fromisoformat(str(until_raw).replace("Z", "+00:00"))
+            delta = (target - datetime.now(target.tzinfo)).total_seconds()
+            slept = float(max(0.0, min(delta, _WAIT_MAX_SECONDS)))
+        except (TypeError, ValueError):
+            log(nid, _WARN, f"wait until 时间无效: {until_raw!r}，跳过等待")
+            slept = 0.0
+    else:
+        try:
+            duration = float(node_data.get("duration") or 0)
+        except (TypeError, ValueError):
+            duration = 0.0
+        slept = min(max(duration, 0.0), float(_WAIT_MAX_SECONDS))
+    if slept > 0:
+        log(nid, _INFO, f"wait 暂停 {slept:.1f}s（测试运行上限 {_WAIT_MAX_SECONDS}s）")
+        await asyncio.sleep(slept)
+    return {"wait_mode": mode, "slept_seconds": slept}
+
+
+async def execute_parallel(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    nid = _node_id(node_data)
+    branches = int(node_data.get("branches") or 2)
+    wait_all = bool(node_data.get("wait_all", True))
+    log(
+        nid,
+        _INFO,
+        f"parallel 节点: branches={branches}, wait_all={wait_all}（线性执行器将依次遍历所有出边）",
+    )
+    return {"branches": branches, "wait_all": wait_all, "input": input_data}
+
+
+async def execute_sub_workflow(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    import json
+
+    from app.core.workflow_runner import run_workflow
+    from app.database import SessionLocal
+    from app.models.workflow import Workflow
+
+    nid = _node_id(node_data)
+    sub_id = node_data.get("sub_workflow_id")
+    if not sub_id:
+        log(nid, _WARN, "sub_workflow 未配置 sub_workflow_id")
+        return {"error": "sub_workflow_id is required"}
+
+    depth = int(ctx.get("_sub_workflow_depth") or 0)
+    if depth >= 3:
+        log(nid, _ERROR, "子流程嵌套超过 3 层，中止")
+        return {"error": "sub_workflow nesting limit exceeded"}
+
+    mapping = node_data.get("input_mapping") or {}
+    sub_payload: dict[str, Any] = {}
+    if isinstance(mapping, dict):
+        for key, expr in mapping.items():
+            if isinstance(expr, str) and expr.strip():
+                sub_payload[key] = _resolve_variable(ctx, expr.strip()) or expr
+            else:
+                sub_payload[key] = expr
+    else:
+        sub_payload = dict(input_data) if isinstance(input_data, dict) else {"input": input_data}
+
+    db = SessionLocal()
+    try:
+        wf = db.query(Workflow).filter(Workflow.id == int(sub_id)).first()
+        if wf is None:
+            log(nid, _ERROR, f"子流程不存在: id={sub_id}")
+            return {"error": f"workflow {sub_id} not found"}
+        graph_config = wf.graph_config
+        if isinstance(graph_config, str):
+            graph_config = json.loads(graph_config)
+    finally:
+        db.close()
+
+    if not isinstance(graph_config, dict):
+        log(nid, _ERROR, "子流程 graph_config 无效")
+        return {"error": "invalid sub workflow graph_config"}
+
+    log(nid, _INFO, f"sub_workflow 开始执行 workflow_id={sub_id}")
+    result = await run_workflow(
+        graph_config,
+        sub_payload,
+        trigger_type="sub_workflow",
+        workflow_id=sub_id,
+        execution_id=ctx.get("execution_id"),
+        sub_workflow_depth=depth + 1,
+    )
+    status = result.get("status")
+    log(nid, _INFO, f"sub_workflow 结束 status={status}")
+    return {
+        "sub_workflow_id": sub_id,
+        "status": status,
+        "ctx": result.get("ctx"),
+        "traces": result.get("traces"),
+    }
+
+
+async def execute_intent_recognition(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    nid = _node_id(node_data)
+    intents = node_data.get("intents") or []
+    fallback = str(node_data.get("fallback_intent") or "unknown")
+    text = _text_from_input(input_data)
+    if not text.strip() and isinstance(ctx.get("payload"), dict):
+        text = _text_from_input(ctx["payload"])
+
+    matched = fallback
+    lowered = text.lower()
+    for item in intents:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        desc = str(item.get("description") or "").strip()
+        if name and name.lower() in lowered:
+            matched = name
+            break
+        if desc and desc.lower() in lowered:
+            matched = name or desc
+            break
+
+    log(nid, _INFO, f"intent_recognition 命中意图: {matched}")
+    ctx["_route"] = matched
+    return {"intent": matched, "text": text, "_route": matched}
+
+
+async def execute_json_parse(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    import json
+
+    nid = _node_id(node_data)
+    raw = node_data.get("source") or ""
+    if isinstance(raw, str):
+        stripped = raw.strip()
+        if stripped.startswith("${") and stripped.endswith("}"):
+            raw = _resolve_variable(ctx, stripped[2:-1])
+        elif stripped:
+            from_ctx = _resolve_variable(ctx, stripped)
+            if from_ctx is not None:
+                raw = from_ctx
+    if raw is None or raw == "":
+        if isinstance(input_data, dict):
+            raw = input_data.get("body") or input_data.get("text") or input_data
+        else:
+            raw = input_data
+
+    if isinstance(raw, (dict, list)):
+        parsed = raw
+    else:
+        try:
+            parsed = json.loads(str(raw))
+        except (TypeError, json.JSONDecodeError) as exc:
+            log(nid, _ERROR, f"json_parse 失败: {exc}")
+            return {"error": str(exc)}
+
+    extracted: dict[str, Any] = {}
+    for field in node_data.get("extract_fields") or []:
+        if not isinstance(field, dict):
+            continue
+        path = str(field.get("path") or "").strip()
+        alias = str(field.get("alias") or path or "value").strip()
+        if not path:
+            continue
+        cur: Any = parsed
+        for seg in path.split("."):
+            if isinstance(cur, dict):
+                cur = cur.get(seg)
+            elif isinstance(cur, list) and seg.isdigit():
+                idx = int(seg)
+                cur = cur[idx] if 0 <= idx < len(cur) else None
+            else:
+                cur = None
+                break
+        extracted[alias] = cur
+
+    log(nid, _INFO, f"json_parse 完成，提取 {len(extracted)} 个字段")
+    return {"parsed": parsed, "extracted": extracted, **extracted}
+
+
+async def execute_variable_assign(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    nid = _node_id(node_data)
+    variables = ctx.get("variables")
+    if not isinstance(variables, dict):
+        variables = {}
+        ctx["variables"] = variables
+
+    applied: dict[str, Any] = {}
+    for item in node_data.get("assignments") or []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+        value = item.get("value")
+        if isinstance(value, str) and value.strip().startswith("${") and value.strip().endswith("}"):
+            path = value.strip()[2:-1]
+            value = _resolve_variable(ctx, path)
+        variables[name] = value
+        applied[name] = value
+
+    log(nid, _INFO, f"variable_assign 写入 {len(applied)} 个变量")
+    return {"assignments": applied, "variables": dict(variables)}
+
+
+async def execute_ticket_create(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    import uuid
+
+    nid = _node_id(node_data)
+    title = node_data.get("title") or node_data.get("label") or "工单"
+    ticket_id = str(uuid.uuid4())
+    log(nid, _INFO, f"ticket_create 已创建占位工单 ticket_id={ticket_id}")
+    return {
+        "ticket_id": ticket_id,
+        "title": title,
+        "priority": node_data.get("priority") or "normal",
+        "assignee": node_data.get("assignee") or "",
+        "description": node_data.get("description_content") or "",
+        "status": "open",
+    }
+
+
+async def execute_annotation(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    return {"skipped": True, "node_kind": "annotation"}
+
+
+async def execute_group(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    return {"skipped": True, "node_kind": "group"}
+
+
 # 节点类型 -> 执行器映射表，供 workflow_runner 查找
 NODE_EXECUTORS: dict[str, Callable] = {
     "webhook_trigger": execute_webhook_trigger,
+    "manual_trigger": execute_manual_trigger,
+    "schedule_trigger": execute_schedule_trigger,
+    "event_trigger": execute_event_trigger,
+    "wait": execute_wait,
+    "parallel": execute_parallel,
+    "sub_workflow": execute_sub_workflow,
+    "intent_recognition": execute_intent_recognition,
+    "json_parse": execute_json_parse,
+    "variable_assign": execute_variable_assign,
+    "ticket_create": execute_ticket_create,
+    "annotation": execute_annotation,
+    "group": execute_group,
     "http_request": execute_http_request,
     "ai_agent": execute_ai_agent,
     "llm": execute_llm,
