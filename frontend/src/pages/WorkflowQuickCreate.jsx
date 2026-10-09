@@ -337,7 +337,7 @@ function WorkflowQuickCreate() {
                   <label className="mb-2 block text-sm font-medium">描述你的工作流</label>
                   <TextArea
                     value={description}
-                    onChange={(e) => setDescription(e.target.value)}
+                    onChange={setDescription}
                     rows={3}
                     placeholder="例如：收到告警后研判源 IP，若高风险则封禁并通知值班"
                   />
@@ -370,10 +370,10 @@ function WorkflowQuickCreate() {
           {step === 1 && (
             <div className="space-y-6">
               <div className="grid gap-4 sm:grid-cols-2">
-                <TextInput label="工作流名称" value={name} onChange={(e) => setName(e.target.value)} />
-                <TextInput label="分类（可选）" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="告警处置" />
+                <TextInput label="工作流名称" value={name} onChange={setName} />
+                <TextInput label="分类（可选）" value={category} onChange={setCategory} placeholder="告警处置" />
               </div>
-              <TextArea label="描述" value={wfDescription} onChange={(e) => setWfDescription(e.target.value)} rows={2} />
+              <TextArea label="描述" value={wfDescription} onChange={setWfDescription} rows={2} />
 
               <div className="rounded-xl border border-border bg-card/30 p-4">
                 <div className="mb-4 flex items-center justify-between">
