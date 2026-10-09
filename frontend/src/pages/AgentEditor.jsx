@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
+import { useEffect, useState, useRef, useCallback, useMemo, useLayoutEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   FileText, Shield, ClipboardList, Clock, Brain, Monitor,
@@ -384,18 +384,34 @@ function AgentEditor() {
   const [testDuration, setTestDuration] = useState(null)
   const [showHistory, setShowHistory] = useState(false)
   const [copied, setCopied] = useState(false)
-  // 流式输出文本（requestAnimationFrame 节流，避免每个 token 都触发重渲染）
-  const [streamText, setStreamText] = useState('')
+  const streamReplyRef = useRef(null)
+  const streamThinkingRef = useRef(null)
   const rafRef = useRef(null)
+  const thinkingRafRef = useRef(null)
   const pendingTextRef = useRef('')
-  const scheduleStreamUpdate = useCallback((text) => {
-    pendingTextRef.current = text
-    if (rafRef.current) return // 已有调度中的帧，复用
-    rafRef.current = requestAnimationFrame(() => {
-      setStreamText(pendingTextRef.current)
-      rafRef.current = null
+  const pendingThinkingRef = useRef('')
+  const paintText = useCallback((elRef, textRef, slotRef) => {
+    if (slotRef.current) return
+    slotRef.current = requestAnimationFrame(() => {
+      const el = elRef.current
+      if (el) el.textContent = textRef.current
+      slotRef.current = null
     })
   }, [])
+  const scheduleStreamUpdate = useCallback((text) => {
+    pendingTextRef.current = text
+    paintText(streamReplyRef, pendingTextRef, rafRef)
+  }, [paintText])
+  const scheduleThinkingUpdate = useCallback((text) => {
+    pendingThinkingRef.current = text
+    paintText(streamThinkingRef, pendingThinkingRef, thinkingRafRef)
+  }, [paintText])
+
+  useLayoutEffect(() => {
+    if (!testResult?.streaming) return
+    if (streamReplyRef.current) streamReplyRef.current.textContent = pendingTextRef.current
+    if (streamThinkingRef.current) streamThinkingRef.current.textContent = pendingThinkingRef.current
+  }, [testResult])
 
   // JSON 语法校验（仅当输入以 { 或 [ 开头时检测）
   const jsonError = useMemo(() => {
@@ -760,7 +776,10 @@ function AgentEditor() {
     setTesting(true)
     setTestError('')
     setTestResult(null)
-    setStreamText('')
+    pendingTextRef.current = ''
+    pendingThinkingRef.current = ''
+    if (streamReplyRef.current) streamReplyRef.current.textContent = ''
+    if (streamThinkingRef.current) streamThinkingRef.current.textContent = ''
     setTokenUsage(null)
     setTestDuration(null)
     setTestStartTime(Date.now())
@@ -793,11 +812,14 @@ function AgentEditor() {
           mode: 'hermes',
           streaming: true,
           reply: '',
+          thinking: '',
           toolCalls: [],
           delegateGroups: [],
           logs: [],
           statusMsgs: [],
         })
+        const toolResultStore = new Map()
+        let thinkingNoted = false
 
         const flush = (patch) => {
           setTestResult((prev) => prev ? { ...prev, ...patch } : prev)
@@ -819,12 +841,16 @@ function AgentEditor() {
                   // 会话开始
                   break
                 case 'thinking':
-                  setTestResult((prev) => prev ? { ...prev, thinking: (prev.thinking || '') + (data.content || '') } : prev)
+                  pendingThinkingRef.current += data.content || ''
+                  scheduleThinkingUpdate(pendingThinkingRef.current)
+                  if (!thinkingNoted) {
+                    thinkingNoted = true
+                    flush({ thinking: '\u200b' })
+                  }
                   break
                 case 'token':
                   fullText += data.content || ''
                   scheduleStreamUpdate(fullText)
-                  flush({ reply: fullText, streaming: true })
                   break
                 case 'status':
                   statusMsgs.push(data.message || '')
@@ -847,24 +873,28 @@ function AgentEditor() {
                   const idx = toolCalls.findIndex(
                     (tc) => tc.call_id === data.tool_call_id && tc.status === 'running'
                   )
+                  const tcId = data.tool_call_id || ''
+                  if (data.result !== undefined) toolResultStore.set(tcId, data.result)
                   if (idx >= 0) {
                     toolCalls[idx] = {
                       ...toolCalls[idx],
                       status: 'done',
-                      result: data.result,
                       message: data.message || toolCalls[idx].message,
                     }
                   } else {
-                    // 未找到对应的 tool_start，直接追加
                     toolCalls.push({
                       name: data.tool_name || '',
-                      call_id: data.tool_call_id || '',
+                      call_id: tcId,
                       status: 'done',
                       message: data.message || '',
-                      result: data.result,
                     })
                   }
-                  flush({ toolCalls: [...toolCalls] })
+                  flush({
+                    toolCalls: toolCalls.map((tc) => ({
+                      ...tc,
+                      result: null,
+                    })),
+                  })
                   break
                 }
                 case 'delegate': {
@@ -922,7 +952,16 @@ function AgentEditor() {
                   if (data.usage) {
                     setTokenUsage(data.usage)
                   }
-                  flush({ reply: fullText, streaming: false, tokenUsage: data.usage || null })
+                  flush({
+                    reply: fullText,
+                    thinking: pendingThinkingRef.current,
+                    streaming: false,
+                    tokenUsage: data.usage || null,
+                    toolCalls: toolCalls.map((tc) => ({
+                      ...tc,
+                      result: toolResultStore.get(tc.call_id) ?? null,
+                    })),
+                  })
                   break
                 case 'error':
                   setTestError(data.message || '测试失败')
@@ -961,7 +1000,6 @@ function AgentEditor() {
               } else if (data.type === 'token') {
                 fullText += data.content
                 scheduleStreamUpdate(fullText)
-                setTestResult((prev) => prev ? { ...prev, reply: fullText, streaming: true } : prev)
               } else if (data.type === 'status') {
                 logs.push({ level: 'info', message: data.message })
                 setTestResult((prev) => prev ? { ...prev, logs: [...logs] } : prev)
@@ -2534,24 +2572,29 @@ function AgentEditor() {
                               </span>
                             )}
                           </div>
-                          <div className="max-h-[400px] overflow-y-auto whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
-                            {testResult.reply || ''}
-                            {testResult.streaming && (
-                              <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-primary align-middle" />
+                          <div className="max-h-[400px] overflow-y-auto text-sm leading-relaxed text-foreground">
+                            {testResult.streaming ? (
+                              <div ref={streamReplyRef} className="whitespace-pre-wrap break-words" />
+                            ) : (
+                              <div className="whitespace-pre-wrap break-words">{testResult.reply || ''}</div>
                             )}
                           </div>
                         </div>
                       )}
 
                       {/* 思考过程 */}
-                      {testResult.thinking && (
-                        <details className="rounded-lg border border-border bg-card/40" open>
+                      {(testResult.thinking || testResult.streaming) && (
+                        <details className="rounded-lg border border-border bg-card/40" open={!!testResult.streaming}>
                           <summary className="flex cursor-pointer items-center gap-1.5 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground/70 hover:text-muted-foreground">
                             <Brain className="h-4 w-4" />
                             思考过程
                           </summary>
-                          <div className="max-h-[300px] overflow-y-auto whitespace-pre-wrap break-words border-t border-border p-3 text-[12px] leading-relaxed text-muted-foreground">
-                            {testResult.thinking}
+                          <div className="max-h-[300px] overflow-y-auto border-t border-border p-3 text-[12px] leading-relaxed text-muted-foreground">
+                            {testResult.streaming ? (
+                              <div ref={streamThinkingRef} className="whitespace-pre-wrap break-words" />
+                            ) : (
+                              <div className="whitespace-pre-wrap break-words">{testResult.thinking || ''}</div>
+                            )}
                           </div>
                         </details>
                       )}

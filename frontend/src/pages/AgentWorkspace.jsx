@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -306,6 +306,152 @@ async function readSse(resp, handlers) {
   }
 }
 
+function AgentPreviewPane({ agentId, engine, ensureSaved }) {
+  const [previewMsgs, setPreviewMsgs] = useState([])
+  const [previewInput, setPreviewInput] = useState('')
+  const [previewBusy, setPreviewBusy] = useState(false)
+  const replyRef = useRef('')
+  const toolsRef = useRef([])
+  const streamElRef = useRef(null)
+  const rafRef = useRef(0)
+
+  useLayoutEffect(() => {
+    if (previewBusy && streamElRef.current) {
+      streamElRef.current.textContent = replyRef.current
+    }
+  }, [previewMsgs, previewBusy])
+
+  const paintReply = () => {
+    if (rafRef.current) return
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = 0
+      if (streamElRef.current) streamElRef.current.textContent = replyRef.current
+    })
+  }
+
+  const runPreview = async () => {
+    const text = previewInput.trim()
+    if (!text || previewBusy) return
+    const saved = await ensureSaved()
+    const id = saved?.id || agentId
+    if (!id) return
+    replyRef.current = ''
+    toolsRef.current = []
+    setPreviewBusy(true)
+    setPreviewMsgs((m) => [...m, { role: 'user', content: text }, { role: 'assistant', content: '', tools: [] }])
+    setPreviewInput('')
+    try {
+      const isHermes = (engine || 'hermes') === 'hermes'
+      const resp = isHermes
+        ? await agentsApi.chatStream(id, text, undefined, `preview-${id}`, { channel: 'test' })
+        : await agentsApi.testStream(id, text, undefined, { channel: 'test' })
+      if (!resp.ok) throw new Error((await resp.text()) || `HTTP ${resp.status}`)
+      await readSse(resp, {
+        onToken: (c) => {
+          replyRef.current += c
+          paintReply()
+        },
+        onToolStart: (d) => {
+          toolsRef.current.push({ name: d.tool_name || 'tool', status: 'running' })
+          setPreviewMsgs((m) => {
+            const next = [...m]
+            next[next.length - 1] = { role: 'assistant', content: replyRef.current, tools: toolsRef.current.map((t) => ({ ...t })) }
+            return next
+          })
+        },
+        onToolEnd: () => {
+          for (let i = toolsRef.current.length - 1; i >= 0; i--) {
+            if (toolsRef.current[i].status === 'running') {
+              toolsRef.current[i] = { ...toolsRef.current[i], status: 'done' }
+              break
+            }
+          }
+          setPreviewMsgs((m) => {
+            const next = [...m]
+            next[next.length - 1] = { role: 'assistant', content: replyRef.current, tools: toolsRef.current.map((t) => ({ ...t })) }
+            return next
+          })
+        },
+        onDone: (d) => {
+          if (!replyRef.current && d.reply) replyRef.current = d.reply
+          setPreviewMsgs((m) => {
+            const next = [...m]
+            next[next.length - 1] = {
+              role: 'assistant',
+              content: replyRef.current || d.reply || '',
+              tools: toolsRef.current.map((t) => ({ ...t })),
+            }
+            return next
+          })
+        },
+        onError: (msg) => toast.error(msg),
+      })
+    } catch (err) {
+      toast.error(err.message || '预览失败')
+    } finally {
+      setPreviewBusy(false)
+    }
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex-1 overflow-auto px-5 py-4">
+        {previewMsgs.length === 0 ? (
+          <p className="pt-16 text-center text-xs text-muted-foreground">保存配置后，在这里按真实智能体对话预览</p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {previewMsgs.map((m, i) => {
+              const live = previewBusy && i === previewMsgs.length - 1 && m.role === 'assistant'
+              return (
+                <div key={i} className={`rounded-lg px-3 py-2 text-sm ${m.role === 'user' ? 'ml-8 bg-secondary' : 'mr-4 border border-border'}`}>
+                  {m.tools?.length > 0 && (
+                    <div className="mb-1 flex flex-wrap gap-1">
+                      {m.tools.map((t, j) => (
+                        <span key={j} className="inline-flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
+                          <Wrench className="h-3 w-3" />
+                          {t.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {m.role === 'assistant' ? (
+                    live ? (
+                      <div ref={streamElRef} className="whitespace-pre-wrap break-words" />
+                    ) : (
+                      <MarkdownRenderer content={m.content || ''} />
+                    )
+                  ) : m.content}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+      <div className="border-t border-border p-4">
+        <div className="flex items-end gap-2 rounded-xl border border-border bg-secondary px-3 py-2">
+          <textarea
+            value={previewInput}
+            onChange={(e) => setPreviewInput(e.target.value)}
+            placeholder="输入消息预览"
+            rows={2}
+            disabled={previewBusy}
+            className="max-h-28 flex-1 resize-none bg-transparent text-sm outline-none"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                runPreview()
+              }
+            }}
+          />
+          <button type="button" disabled={previewBusy} onClick={runPreview} className="btn-primary btn-sm shrink-0">
+            {previewBusy ? '…' : '发送'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function AgentWorkspace() {
   const { id: routeId } = useParams()
   const navigate = useNavigate()
@@ -326,9 +472,6 @@ export default function AgentWorkspace() {
   const [meta, setMeta] = useState({ can_edit: true, publish_status: 'draft' })
   const [buildInput, setBuildInput] = useState('')
   const [buildLog, setBuildLog] = useState([])
-  const [previewInput, setPreviewInput] = useState('')
-  const [previewMsgs, setPreviewMsgs] = useState([])
-  const [previewBusy, setPreviewBusy] = useState(false)
   const [logs, setLogs] = useState([])
   const [monitor, setMonitor] = useState(null)
   const fileRef = useRef(null)
@@ -567,60 +710,6 @@ export default function AgentWorkspace() {
   const ensureSaved = async () => {
     if (!agentId || dirty) return save(true)
     return { id: agentId }
-  }
-
-  const runPreview = async () => {
-    const text = previewInput.trim()
-    if (!text || previewBusy) return
-    const saved = await ensureSaved()
-    const id = saved?.id || agentId
-    if (!id) return
-    setPreviewBusy(true)
-    setPreviewMsgs((m) => [...m, { role: 'user', content: text }, { role: 'assistant', content: '', tools: [] }])
-    setPreviewInput('')
-    try {
-      const isHermes = (form.engine || 'hermes') === 'hermes'
-      const resp = isHermes
-        ? await agentsApi.chatStream(id, text, undefined, `preview-${id}`, { channel: 'test' })
-        : await agentsApi.testStream(id, text, undefined, { channel: 'test' })
-      if (!resp.ok) throw new Error((await resp.text()) || `HTTP ${resp.status}`)
-      let reply = ''
-      const tools = []
-      await readSse(resp, {
-        onToken: (c) => {
-          reply += c
-          setPreviewMsgs((m) => {
-            const next = [...m]
-            next[next.length - 1] = { role: 'assistant', content: reply, tools: [...tools] }
-            return next
-          })
-        },
-        onToolStart: (d) => {
-          tools.push({ name: d.tool_name || 'tool', status: 'running' })
-        },
-        onToolEnd: () => {
-          for (let i = tools.length - 1; i >= 0; i--) {
-            if (tools[i].status === 'running') {
-              tools[i].status = 'done'
-              break
-            }
-          }
-        },
-        onDone: (d) => {
-          if (!reply && d.reply) reply = d.reply
-          setPreviewMsgs((m) => {
-            const next = [...m]
-            next[next.length - 1] = { role: 'assistant', content: reply || d.reply || '', tools: [...tools] }
-            return next
-          })
-        },
-        onError: (msg) => toast.error(msg),
-      })
-    } catch (err) {
-      toast.error(err.message || '预览失败')
-    } finally {
-      setPreviewBusy(false)
-    }
   }
 
   const onUpload = async (e) => {
@@ -975,52 +1064,7 @@ export default function AgentWorkspace() {
                   </div>
                 </div>
               ) : (
-                <div className="flex min-h-0 flex-1 flex-col">
-                  <div className="flex-1 overflow-auto px-5 py-4">
-                    {previewMsgs.length === 0 ? (
-                      <p className="pt-16 text-center text-xs text-muted-foreground">保存配置后，在这里按真实智能体对话预览</p>
-                    ) : (
-                      <div className="flex flex-col gap-3">
-                        {previewMsgs.map((m, i) => (
-                          <div key={i} className={`rounded-lg px-3 py-2 text-sm ${m.role === 'user' ? 'ml-8 bg-secondary' : 'mr-4 border border-border'}`}>
-                            {m.tools?.length > 0 && (
-                              <div className="mb-1 flex flex-wrap gap-1">
-                                {m.tools.map((t, j) => (
-                                  <span key={j} className="inline-flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
-                                    <Wrench className="h-3 w-3" />
-                                    {t.name}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                            {m.role === 'assistant' ? <MarkdownRenderer content={m.content || (previewBusy && i === previewMsgs.length - 1 ? '…' : '')} /> : m.content}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div className="border-t border-border p-4">
-                    <div className="flex items-end gap-2 rounded-xl border border-border bg-secondary px-3 py-2">
-                      <textarea
-                        value={previewInput}
-                        onChange={(e) => setPreviewInput(e.target.value)}
-                        placeholder="输入消息预览"
-                        rows={2}
-                        disabled={previewBusy}
-                        className="max-h-28 flex-1 resize-none bg-transparent text-sm outline-none"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !e.shiftKey) {
-                            e.preventDefault()
-                            runPreview()
-                          }
-                        }}
-                      />
-                      <button type="button" disabled={previewBusy} onClick={runPreview} className="btn-primary btn-sm shrink-0">
-                        {previewBusy ? '…' : '发送'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                <AgentPreviewPane agentId={agentId} engine={form.engine} ensureSaved={ensureSaved} />
               )}
             </aside>
           </>
