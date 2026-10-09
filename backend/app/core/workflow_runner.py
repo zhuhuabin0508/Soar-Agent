@@ -120,6 +120,7 @@ async def run_workflow(
     execution_id: Optional[Any] = None,
     workflow_id: Optional[Any] = None,
     env_vars: Optional[dict[str, str]] = None,
+    sub_workflow_depth: int = 0,
 ) -> dict:
     """异步执行工作流图。
 
@@ -146,7 +147,7 @@ async def run_workflow(
     traces: list[dict[str, Any]] = []
 
     # 初始化上下文：注入 payload、工作流级变量、内置上下文变量、环境变量
-    ctx: dict[str, Any] = {"payload": payload}
+    ctx: dict[str, Any] = {"payload": payload, "_sub_workflow_depth": sub_workflow_depth}
 
     # 工作流级自定义变量：graph_config.variables = [{ name, description, default_value }]
     variables_list = graph_config.get("variables", []) or []
@@ -256,11 +257,19 @@ async def run_workflow(
 
         if node_status == "failed":
             status = "failed"
-            # 失败即终止（与 Celery 任务行为一致）
             break
 
-        # 条件路由：读 ctx["_route"] 选择下游
-        route: Optional[str] = ctx.get("_route") if node_type == "condition_branch" else None
+        if node_type == "human_review" and isinstance(output, dict):
+            if output.get("status") == "waiting_for_approval":
+                status = "waiting_for_approval"
+                log(node_id, "info", "工作流在人工审批节点暂停")
+                break
+
+        route: Optional[str] = None
+        if node_type == "condition_branch":
+            route = ctx.get("_route")
+        elif node_type == "intent_recognition" and isinstance(output, dict):
+            route = output.get("_route")
         next_ids = find_next_nodes(edges, node_id, route)
         log(node_id, "info", f"下游节点: {next_ids}")
         for nid in next_ids:

@@ -201,13 +201,10 @@ async def execute_ai_agent(
     执行流程：
     1. 解析 user_prompt 中的 ``${node.field}`` 变量引用。
     2. 从 DB 加载 Agent。
-    3. 根据 ``agent.engine`` 走对应路径：
-       - ``hermes``：``HermesAgentExecutor.run()`` 收集 done 事件 content
-       - ``langgraph``：无工具走纯对话，有工具走 ``run_agent_decision``
-    4. 返回 ``{"response": <回复文本>, "messages": [...]}``，并合并到 ctx。
+    3. 经 ``invoke_agent_for_workflow`` 执行（统一 Hermes runtime）。
+    4. 返回决策/回复并合并到 ctx。
 
-    向后兼容：若 node_data 仍含旧字段（system_prompt/model 等）且无 agent_id，
-    回退到旧的 run_agent_decision 调用，避免存量工作流中断。
+    无 ``agent_id`` 时使用 ``WORKFLOW_SOC_AGENT_ID``；均未配置则 ``need_human_approval``。
     """
     import json
     import re
@@ -228,7 +225,6 @@ async def execute_ai_agent(
 
     user_message = _render(user_prompt_template)
     if not user_message:
-        # user_prompt 留空时，用上游输入作为消息内容
         if isinstance(input_data, str):
             user_message = input_data
         elif isinstance(input_data, dict):
@@ -236,28 +232,37 @@ async def execute_ai_agent(
         else:
             user_message = str(input_data or "")
 
-    # ===== 旧逻辑兼容：无 agent_id 时回退到 run_agent_decision =====
+    from app.config import settings
+    from types import SimpleNamespace
+
     if not agent_id:
-        log(nid, _WARN, "ai_agent 节点未配置 agent_id，回退到旧决策逻辑（建议选择已创建的智能体）")
-        from app.agent.decision import run_agent_decision
+        fallback = int(getattr(settings, "WORKFLOW_SOC_AGENT_ID", 0) or 0)
+        if fallback > 0:
+            agent_id = fallback
+            log(
+                nid,
+                _WARN,
+                f"ai_agent 未配置 agent_id，使用 WORKFLOW_SOC_AGENT_ID={fallback}",
+            )
+        else:
+            log(nid, _ERROR, "ai_agent 缺少 agent_id 且未配置 WORKFLOW_SOC_AGENT_ID")
+            src_ip = (
+                input_data.get("src_ip", "unknown")
+                if isinstance(input_data, dict)
+                else "unknown"
+            )
+            return {
+                "decision": "need_human_approval",
+                "target_ip": src_ip,
+                "reason": "未配置 agent_id 或 WORKFLOW_SOC_AGENT_ID",
+                "duration": "24h",
+                "response": "",
+                "messages": [],
+            }
 
-        result = await run_agent_decision(
-            alert_data=input_data,
-            enabled_tools=node_data.get("enabled_tools"),
-            system_prompt=node_data.get("system_prompt") or None,
-            temperature=node_data.get("temperature"),
-            max_tokens=node_data.get("max_tokens"),
-            max_iterations=node_data.get("max_iterations"),
-            model_name=node_data.get("model") or None,
-        )
-        ctx["decision"] = result.get("decision")
-        ctx["agent_decision"] = result
-        ctx["agent_messages"] = result.get("messages", [])
-        return result
-
-    # ===== 新逻辑：按 agent_id 加载智能体并执行 =====
     from app.database import SessionLocal
     from app.models.agent import Agent
+    from app.platform.agent_runtime import invoke_agent_for_workflow
 
     db = SessionLocal()
     try:
@@ -266,15 +271,38 @@ async def execute_ai_agent(
             log(nid, _ERROR, f"智能体不存在: agent_id={agent_id}")
             return {"response": "", "error": f"Agent {agent_id} not found"}
 
-        log(nid, _INFO, f"调用智能体: id={agent.id}, name={agent.name}, engine={agent.engine}, msg_len={len(user_message)}")
+        log(
+            nid,
+            _INFO,
+            f"调用智能体(runtime): id={agent.id}, name={agent.name}, engine={agent.engine}, msg_len={len(user_message)}",
+        )
+        wf_input = input_data if isinstance(input_data, dict) else {"input": user_message}
+        override = None
+        if any(
+            node_data.get(k) is not None
+            for k in ("system_prompt", "temperature", "max_tokens", "max_iterations", "model")
+        ):
+            override = SimpleNamespace(
+                system_prompt=node_data.get("system_prompt"),
+                temperature=node_data.get("temperature"),
+                max_tokens=node_data.get("max_tokens"),
+                max_iterations=node_data.get("max_iterations"),
+                model_name=node_data.get("model"),
+            )
+        try:
+            result = await invoke_agent_for_workflow(
+                db,
+                agent,
+                user_message,
+                wf_input,
+                channel="workflow_ai_agent",
+                session_key=f"wf_node_{nid}_{agent.id}",
+                override=override,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log(nid, _ERROR, f"invoke_agent 失败: {exc}")
+            return {"response": "", "error": str(exc)}
 
-        engine = (agent.engine or "langgraph").lower()
-        if engine == "hermes":
-            result = await _run_hermes_agent(db, agent, user_message, nid, log)
-        else:
-            result = await _run_langgraph_agent(db, agent, user_message, nid, log)
-
-        # 合并到 ctx，供下游 condition_branch / block_ip 等节点引用
         ctx["agent_response"] = result.get("response")
         ctx["agent_decision"] = result
         ctx["decision"] = result.get("decision") or result.get("response")
@@ -282,124 +310,6 @@ async def execute_ai_agent(
         return result
     finally:
         db.close()
-
-
-async def _run_hermes_agent(db, agent, user_message: str, nid: str, log) -> dict:
-    """Hermes 引擎：迭代 SSE 事件，提取最终 done 事件的 content 作为回复。
-
-    工作流执行无具体 HTTP 请求上下文，取 DB 中第一个用户作为系统用户
-    （仅用于记忆/权限隔离的分区键），失败则用占位用户。
-    """
-    from types import SimpleNamespace
-
-    from app.agent.hermes import HermesAgentExecutor
-
-    # 取系统用户作为执行主体（工作流无具体用户）
-    try:
-        from app.models.user import User
-
-        sys_user = db.query(User).first()
-    except Exception:  # noqa: BLE001
-        sys_user = None
-    if sys_user is None:
-        sys_user = SimpleNamespace(id=0, username="workflow-system")
-
-    try:
-        executor = HermesAgentExecutor(db=db, agent=agent, user=sys_user)
-    except Exception as exc:  # noqa: BLE001
-        log(nid, _ERROR, f"Hermes 执行器创建失败: {exc}")
-        return {"response": "", "error": str(exc)}
-
-    final_text = ""
-    try:
-        async for event in executor.run(user_message, session_id=f"wf_agent_{agent.id}"):
-            etype = event.get("type")
-            if etype == "done":
-                final_text = event.get("content", "") or final_text
-            elif etype == "error":
-                msg = event.get("message", "hermes error")
-                log(nid, _ERROR, f"Hermes 执行错误: {msg}")
-                return {"response": "", "error": msg}
-    except Exception as exc:  # noqa: BLE001
-        log(nid, _ERROR, f"Hermes 执行异常: {exc}")
-        return {"response": "", "error": str(exc)}
-
-    log(nid, _INFO, f"Hermes 智能体执行完成, response_len={len(final_text)}")
-    return {"response": final_text, "messages": []}
-
-
-async def _run_langgraph_agent(db, agent, user_message: str, nid: str, log) -> dict:
-    """LangGraph 引擎：无工具走纯对话，有工具走 run_agent_decision。
-
-    复用 agents.py 的 ``_create_llm`` 与 ``assemble_system_prompt``，保证与
-    智能体测试/对话端点的行为一致。
-    """
-    from app.agent.decision import run_agent_decision
-    from app.agent.prompt_assembler import assemble_system_prompt
-    from app.api.v1.agents import _create_llm
-    from langchain_core.messages import HumanMessage, SystemMessage
-
-    has_tools = bool(agent.enabled_tools) or bool(agent.enabled_kbs)
-
-    # ===== 无工具：纯 LLM 对话 =====
-    if not has_tools:
-        llm, err = _create_llm(agent, db)
-        if llm is None:
-            log(nid, _ERROR, f"LLM 创建失败: {err}")
-            return {"response": "", "error": err}
-        system_prompt = assemble_system_prompt(
-            db, agent, fallback_prompt="你是一个智能助手，请根据用户输入给出有帮助的回答。"
-        )
-        messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_message)]
-        try:
-            ai_msg = await llm.ainvoke(messages)
-            reply = ai_msg.content if hasattr(ai_msg, "content") else str(ai_msg)
-        except Exception as exc:  # noqa: BLE001
-            log(nid, _ERROR, f"LLM 调用失败: {exc}")
-            return {"response": "", "error": str(exc)}
-        log(nid, _INFO, f"纯对话完成, response_len={len(reply)}")
-        return {"response": reply, "messages": []}
-
-    # ===== 有工具：Agent 决策 =====
-    import json
-
-    alert_data = {"input": user_message}
-    try:
-        parsed = json.loads(user_message)
-        if isinstance(parsed, dict):
-            alert_data = parsed
-    except (json.JSONDecodeError, TypeError):
-        pass
-
-    log(nid, _INFO, f"Agent 决策模式, tools={agent.enabled_tools}, kbs={agent.enabled_kbs}")
-    try:
-        result = await run_agent_decision(
-            alert_data=alert_data,
-            enabled_tools=agent.enabled_tools or [],
-            enabled_kbs=agent.enabled_kbs or [],
-            model_config_id=agent.model_config_id,
-            system_prompt=assemble_system_prompt(db, agent, allow_none=True),
-            temperature=agent.temperature,
-            max_tokens=agent.max_tokens,
-            max_iterations=agent.max_iterations,
-        )
-    except Exception as exc:  # noqa: BLE001
-        log(nid, _ERROR, f"Agent 决策失败: {exc}")
-        return {"response": "", "error": str(exc)}
-
-    # 提取回复文本：优先 response，其次 decision，最后从 messages 取 AI 消息
-    response = result.get("response") or result.get("decision") or ""
-    if not response:
-        for m in reversed(result.get("messages", [])):
-            if m.get("role") in ("ai", "assistant") and m.get("content"):
-                response = m["content"]
-                break
-    log(nid, _INFO, f"Agent 决策完成, decision={result.get('decision')}, response_len={len(response)}")
-    return {
-        "response": response,
-        "decision": result.get("decision"),
-        "messages": result.get("messages", []),
-    }
 
 
 async def execute_condition_branch(
@@ -1279,9 +1189,325 @@ async def execute_llm(
     return {"text": text}
 
 
+_WAIT_MAX_SECONDS = 10
+
+
+def _text_from_input(input_data: Any) -> str:
+    import json
+
+    if isinstance(input_data, str):
+        return input_data
+    if isinstance(input_data, dict):
+        for key in ("text", "user_message", "message", "payload"):
+            val = input_data.get(key)
+            if isinstance(val, str) and val.strip():
+                return val
+        return json.dumps(input_data, ensure_ascii=False, default=str)
+    return str(input_data or "")
+
+
+async def execute_manual_trigger(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    nid = _node_id(node_data)
+    payload = ctx.get("payload") if isinstance(ctx.get("payload"), dict) else {}
+    merged = {**payload, **(input_data if isinstance(input_data, dict) else {"input": input_data})}
+    log(nid, _INFO, "manual_trigger 已启动")
+    ctx["payload"] = merged
+    return {"payload": merged, "trigger": "manual"}
+
+
+async def execute_schedule_trigger(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    nid = _node_id(node_data)
+    cron = node_data.get("cron") or "0 * * * *"
+    tz = node_data.get("timezone") or "Asia/Shanghai"
+    log(nid, _INFO, f"schedule_trigger 配置 cron={cron}, timezone={tz}（测试运行仅记录，实际调度由平台触发）")
+    return {"trigger": "schedule", "cron": cron, "timezone": tz, "payload": ctx.get("payload") or {}}
+
+
+async def execute_event_trigger(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    nid = _node_id(node_data)
+    source = node_data.get("event_source") or "alert"
+    event_type = node_data.get("event_type") or "*"
+    log(nid, _INFO, f"event_trigger source={source}, type={event_type}")
+    return {
+        "trigger": "event",
+        "event_source": source,
+        "event_type": event_type,
+        "payload": ctx.get("payload") or input_data,
+    }
+
+
+async def execute_wait(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    import asyncio
+    from datetime import datetime
+
+    nid = _node_id(node_data)
+    mode = node_data.get("wait_mode") or "duration"
+    slept = 0.0
+    if mode == "until":
+        until_raw = node_data.get("until_time") or ""
+        try:
+            target = datetime.fromisoformat(str(until_raw).replace("Z", "+00:00"))
+            delta = (target - datetime.now(target.tzinfo)).total_seconds()
+            slept = float(max(0.0, min(delta, _WAIT_MAX_SECONDS)))
+        except (TypeError, ValueError):
+            log(nid, _WARN, f"wait until 时间无效: {until_raw!r}，跳过等待")
+            slept = 0.0
+    else:
+        try:
+            duration = float(node_data.get("duration") or 0)
+        except (TypeError, ValueError):
+            duration = 0.0
+        slept = min(max(duration, 0.0), float(_WAIT_MAX_SECONDS))
+    if slept > 0:
+        log(nid, _INFO, f"wait 暂停 {slept:.1f}s（测试运行上限 {_WAIT_MAX_SECONDS}s）")
+        await asyncio.sleep(slept)
+    return {"wait_mode": mode, "slept_seconds": slept}
+
+
+async def execute_parallel(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    nid = _node_id(node_data)
+    branches = int(node_data.get("branches") or 2)
+    wait_all = bool(node_data.get("wait_all", True))
+    log(
+        nid,
+        _INFO,
+        f"parallel 节点: branches={branches}, wait_all={wait_all}（线性执行器将依次遍历所有出边）",
+    )
+    return {"branches": branches, "wait_all": wait_all, "input": input_data}
+
+
+async def execute_sub_workflow(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    import json
+
+    from app.core.workflow_runner import run_workflow
+    from app.database import SessionLocal
+    from app.models.workflow import Workflow
+
+    nid = _node_id(node_data)
+    sub_id = node_data.get("sub_workflow_id")
+    if not sub_id:
+        log(nid, _WARN, "sub_workflow 未配置 sub_workflow_id")
+        return {"error": "sub_workflow_id is required"}
+
+    depth = int(ctx.get("_sub_workflow_depth") or 0)
+    if depth >= 3:
+        log(nid, _ERROR, "子流程嵌套超过 3 层，中止")
+        return {"error": "sub_workflow nesting limit exceeded"}
+
+    mapping = node_data.get("input_mapping") or {}
+    sub_payload: dict[str, Any] = {}
+    if isinstance(mapping, dict):
+        for key, expr in mapping.items():
+            if isinstance(expr, str) and expr.strip():
+                sub_payload[key] = _resolve_variable(ctx, expr.strip()) or expr
+            else:
+                sub_payload[key] = expr
+    else:
+        sub_payload = dict(input_data) if isinstance(input_data, dict) else {"input": input_data}
+
+    db = SessionLocal()
+    try:
+        wf = db.query(Workflow).filter(Workflow.id == int(sub_id)).first()
+        if wf is None:
+            log(nid, _ERROR, f"子流程不存在: id={sub_id}")
+            return {"error": f"workflow {sub_id} not found"}
+        graph_config = wf.graph_config
+        if isinstance(graph_config, str):
+            graph_config = json.loads(graph_config)
+    finally:
+        db.close()
+
+    if not isinstance(graph_config, dict):
+        log(nid, _ERROR, "子流程 graph_config 无效")
+        return {"error": "invalid sub workflow graph_config"}
+
+    log(nid, _INFO, f"sub_workflow 开始执行 workflow_id={sub_id}")
+    result = await run_workflow(
+        graph_config,
+        sub_payload,
+        trigger_type="sub_workflow",
+        workflow_id=sub_id,
+        execution_id=ctx.get("execution_id"),
+        sub_workflow_depth=depth + 1,
+    )
+    status = result.get("status")
+    log(nid, _INFO, f"sub_workflow 结束 status={status}")
+    return {
+        "sub_workflow_id": sub_id,
+        "status": status,
+        "ctx": result.get("ctx"),
+        "traces": result.get("traces"),
+    }
+
+
+async def execute_intent_recognition(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    nid = _node_id(node_data)
+    intents = node_data.get("intents") or []
+    fallback = str(node_data.get("fallback_intent") or "unknown")
+    text = _text_from_input(input_data)
+    if not text.strip() and isinstance(ctx.get("payload"), dict):
+        text = _text_from_input(ctx["payload"])
+
+    matched = fallback
+    lowered = text.lower()
+    for item in intents:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        desc = str(item.get("description") or "").strip()
+        if name and name.lower() in lowered:
+            matched = name
+            break
+        if desc and desc.lower() in lowered:
+            matched = name or desc
+            break
+
+    log(nid, _INFO, f"intent_recognition 命中意图: {matched}")
+    ctx["_route"] = matched
+    return {"intent": matched, "text": text, "_route": matched}
+
+
+async def execute_json_parse(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    import json
+
+    nid = _node_id(node_data)
+    raw = node_data.get("source") or ""
+    if isinstance(raw, str):
+        stripped = raw.strip()
+        if stripped.startswith("${") and stripped.endswith("}"):
+            raw = _resolve_variable(ctx, stripped[2:-1])
+        elif stripped:
+            from_ctx = _resolve_variable(ctx, stripped)
+            if from_ctx is not None:
+                raw = from_ctx
+    if raw is None or raw == "":
+        if isinstance(input_data, dict):
+            raw = input_data.get("body") or input_data.get("text") or input_data
+        else:
+            raw = input_data
+
+    if isinstance(raw, (dict, list)):
+        parsed = raw
+    else:
+        try:
+            parsed = json.loads(str(raw))
+        except (TypeError, json.JSONDecodeError) as exc:
+            log(nid, _ERROR, f"json_parse 失败: {exc}")
+            return {"error": str(exc)}
+
+    extracted: dict[str, Any] = {}
+    for field in node_data.get("extract_fields") or []:
+        if not isinstance(field, dict):
+            continue
+        path = str(field.get("path") or "").strip()
+        alias = str(field.get("alias") or path or "value").strip()
+        if not path:
+            continue
+        cur: Any = parsed
+        for seg in path.split("."):
+            if isinstance(cur, dict):
+                cur = cur.get(seg)
+            elif isinstance(cur, list) and seg.isdigit():
+                idx = int(seg)
+                cur = cur[idx] if 0 <= idx < len(cur) else None
+            else:
+                cur = None
+                break
+        extracted[alias] = cur
+
+    log(nid, _INFO, f"json_parse 完成，提取 {len(extracted)} 个字段")
+    return {"parsed": parsed, "extracted": extracted, **extracted}
+
+
+async def execute_variable_assign(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    nid = _node_id(node_data)
+    variables = ctx.get("variables")
+    if not isinstance(variables, dict):
+        variables = {}
+        ctx["variables"] = variables
+
+    applied: dict[str, Any] = {}
+    for item in node_data.get("assignments") or []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+        value = item.get("value")
+        if isinstance(value, str) and value.strip().startswith("${") and value.strip().endswith("}"):
+            path = value.strip()[2:-1]
+            value = _resolve_variable(ctx, path)
+        variables[name] = value
+        applied[name] = value
+
+    log(nid, _INFO, f"variable_assign 写入 {len(applied)} 个变量")
+    return {"assignments": applied, "variables": dict(variables)}
+
+
+async def execute_ticket_create(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    import uuid
+
+    nid = _node_id(node_data)
+    title = node_data.get("title") or node_data.get("label") or "工单"
+    ticket_id = str(uuid.uuid4())
+    log(nid, _INFO, f"ticket_create 已创建占位工单 ticket_id={ticket_id}")
+    return {
+        "ticket_id": ticket_id,
+        "title": title,
+        "priority": node_data.get("priority") or "normal",
+        "assignee": node_data.get("assignee") or "",
+        "description": node_data.get("description_content") or "",
+        "status": "open",
+    }
+
+
+async def execute_annotation(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    return {"skipped": True, "node_kind": "annotation"}
+
+
+async def execute_group(
+    node_data: dict, input_data: dict, ctx: dict, log: Callable[[str, str, str], None]
+) -> dict:
+    return {"skipped": True, "node_kind": "group"}
+
+
 # 节点类型 -> 执行器映射表，供 workflow_runner 查找
 NODE_EXECUTORS: dict[str, Callable] = {
     "webhook_trigger": execute_webhook_trigger,
+    "manual_trigger": execute_manual_trigger,
+    "schedule_trigger": execute_schedule_trigger,
+    "event_trigger": execute_event_trigger,
+    "wait": execute_wait,
+    "parallel": execute_parallel,
+    "sub_workflow": execute_sub_workflow,
+    "intent_recognition": execute_intent_recognition,
+    "json_parse": execute_json_parse,
+    "variable_assign": execute_variable_assign,
+    "ticket_create": execute_ticket_create,
+    "annotation": execute_annotation,
+    "group": execute_group,
     "http_request": execute_http_request,
     "ai_agent": execute_ai_agent,
     "llm": execute_llm,

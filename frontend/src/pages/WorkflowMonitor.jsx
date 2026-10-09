@@ -249,7 +249,7 @@ function WorkflowMonitor() {
         <div className="flex items-center gap-4">
           <button
             type="button"
-            onClick={() => navigate('/workflows')}
+            onClick={() => navigate('/studio?tab=workflow')}
             className="text-sm text-muted-foreground hover:text-foreground"
           >
             ← 返回

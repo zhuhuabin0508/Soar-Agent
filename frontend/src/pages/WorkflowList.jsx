@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import {
   AlertTriangle, Trash2, Star, MoreHorizontal, Copy, Download, Key, FileText,
   Tag, Play, Edit, Eye, Upload, Plus, Rocket, Power, RotateCcw, Share2,
-  Activity,
+  Activity, MessageSquare, Pencil,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { workflows as workflowsApi } from '../api/client'
@@ -22,6 +22,7 @@ import { inputCls } from '../components/property/FormControls'
 import { hasPermission, canEditResource, canManageShare } from '../utils/permissions'
 import ShareDialog from '../components/ShareDialog'
 import BatchShareDialog from '../components/BatchShareDialog'
+import { WORKFLOW_TEMPLATES } from '../constants/workflowTemplates'
 
 // 格式化时间
 function fmtTime(t) {
@@ -252,6 +253,11 @@ function WorkflowList() {
 
   // 导入工作流弹窗
   const [importOpen, setImportOpen] = useState(false)
+
+  // 新建方式选择（模板 / 一句话 / 从零）
+  const [createOpen, setCreateOpen] = useState(false)
+  const [aiPrompt, setAiPrompt] = useState('')
+  const [generatingDraft, setGeneratingDraft] = useState(false)
   const [importText, setImportText] = useState('')
   const [importMeta, setImportMeta] = useState({ name: '', trigger_type: 'manual', category: '', tags: '', description: '' })
   const [importErr, setImportErr] = useState('')
@@ -787,7 +793,7 @@ function WorkflowList() {
           {canCreate && (
             <button
               type="button"
-              onClick={() => navigate('/editor')}
+              onClick={() => { setAiPrompt(''); setCreateOpen(true) }}
               className="btn-primary btn-sm inline-flex items-center gap-1"
             >
               <Plus className="h-3.5 w-3.5" />新建工作流
@@ -1135,6 +1141,84 @@ function WorkflowList() {
             />
           </div>
         </div>
+      </Modal>
+
+      {/* 新建工作流：模板 / 一句话 / 从零（借鉴 n8n AI Workflow Builder + Shuffle 模板库） */}
+      <Modal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        title="新建工作流 — 选择方式"
+        size="lg"
+      >
+        <div className="mb-4 rounded-lg border border-border bg-muted/30 p-3">
+          <div className="mb-2 flex items-center gap-2 text-sm font-medium text-foreground">
+            <MessageSquare className="h-4 w-4 text-primary" />
+            用一句话描述流程（AI 草稿 PoC）
+          </div>
+          <textarea
+            className={`${inputCls} resize-y`}
+            rows={2}
+            placeholder="例如：收到告警后研判源 IP，若高风险则封禁并通知值班"
+            value={aiPrompt}
+            onChange={(e) => setAiPrompt(e.target.value)}
+          />
+          <button
+            type="button"
+            disabled={!aiPrompt.trim() || generatingDraft}
+            onClick={async () => {
+              setGeneratingDraft(true)
+              try {
+                setCreateOpen(false)
+                setAiPrompt('')
+                navigate(`/workflows/new?mode=describe&q=${encodeURIComponent(aiPrompt.trim())}`)
+              } catch (err) {
+                toast.error(err.message || '生成草稿失败')
+              } finally {
+                setGeneratingDraft(false)
+              }
+            }}
+            className="btn-primary btn-sm mt-2"
+          >
+            {generatingDraft ? '生成中…' : '生成草稿并打开画布'}
+          </button>
+          <p className="mt-1 text-[10px] text-muted-foreground">草稿保存到服务端（status=draft）；当前为规则化骨架生成，后续可接入 LLM。</p>
+        </div>
+
+        <p className="mb-3 text-sm text-muted-foreground">或从内置模板开始：</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {WORKFLOW_TEMPLATES.map((tpl) => (
+            <button
+              key={tpl.key}
+              type="button"
+              onClick={() => {
+                setCreateOpen(false)
+                navigate(`/workflows/new?template=${tpl.key}`)
+              }}
+              className="flex flex-col gap-1.5 rounded-lg border border-border bg-card/40 p-3 text-left transition hover:border-primary/50 hover:bg-primary/5"
+            >
+              <span className="text-sm font-medium text-foreground">{tpl.name}</span>
+              <span className="text-xs text-muted-foreground">{tpl.description}</span>
+              {tpl.tags?.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {tpl.tags.map((tag) => (
+                    <span key={tag} className="rounded bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">{tag}</span>
+                  ))}
+                </div>
+              )}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setCreateOpen(false)
+            navigate('/workflows/new')
+          }}
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-border py-3 text-sm text-muted-foreground transition hover:border-primary/50 hover:text-foreground"
+        >
+          <Pencil className="h-4 w-4" />
+          打开快速创建向导
+        </button>
       </Modal>
 
       {/* 资源共享设置弹窗 */}

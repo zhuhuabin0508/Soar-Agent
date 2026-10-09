@@ -14,6 +14,7 @@ from sqlalchemy import func, case, extract
 from sqlalchemy.orm import Session
 
 from app.core.node_executors import execute_node
+from app.core.workflow_draft import generate_workflow_skeleton_from_text
 from app.core.security import (
     decrypt_env_value,
     encrypt_env_value,
@@ -22,7 +23,7 @@ from app.core.security import (
 from app.core.workflow_runner import run_workflow
 from app.core.workflow_validator import validate_workflow
 from app.database import get_db
-from app.dependencies import check_resource_ownership, compute_can_edit_ids, get_current_user, require_permission, resource_can_edit
+from app.dependencies import check_resource_ownership, compute_can_edit_ids, get_current_user, is_admin, require_permission, resource_can_edit
 from app.models import Execution, ExecutionLog, ExecutionTrace, Workflow
 from app.models.user import User
 from app.schemas.workflow import (
@@ -362,6 +363,112 @@ def validate_workflow_endpoint(body: ValidateRequest) -> dict:
     """
     logger.info("校验工作流图配置")
     return validate_workflow(body.graph_config)
+
+
+class DraftGenerateRequest(BaseModel):
+    description: str = Field(..., min_length=1, description="自然语言描述")
+
+
+class DraftUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    graph_config: Optional[dict[str, Any]] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    tags: Optional[list[str]] = None
+
+
+def _get_draft_or_404(db: Session, draft_id: int, current_user: User) -> Workflow:
+    wf = db.query(Workflow).filter(Workflow.id == draft_id, Workflow.status == "draft").first()
+    if wf is None:
+        raise HTTPException(status_code=404, detail="草稿不存在")
+    if not is_admin(current_user, db) and wf.created_by != current_user.id:
+        raise HTTPException(status_code=403, detail="无权访问此草稿")
+    return wf
+
+
+@router.post("/drafts/generate", response_model=WorkflowOut, status_code=201)
+def generate_workflow_draft(
+    body: DraftGenerateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Workflow:
+    skeleton = generate_workflow_skeleton_from_text(body.description.strip())
+    db_workflow = Workflow(
+        name=skeleton["name"],
+        graph_config=skeleton["graph_config"],
+        enabled=False,
+        webhook_secret=generate_webhook_secret(),
+        trigger_type="webhook",
+        category="告警处置",
+        tags=["AI草稿"],
+        favorite=False,
+        status="draft",
+        description=body.description.strip()[:500],
+        created_by=current_user.id,
+    )
+    db.add(db_workflow)
+    db.commit()
+    db.refresh(db_workflow)
+    logger.info("Workflow draft generated: id=%s", db_workflow.id)
+    return db_workflow
+
+
+@router.get("/drafts", response_model=list[WorkflowListItem])
+def list_workflow_drafts(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[Workflow]:
+    q = db.query(Workflow).filter(Workflow.status == "draft")
+    if not is_admin(current_user, db):
+        q = q.filter(Workflow.created_by == current_user.id)
+    return q.order_by(Workflow.updated_at.desc()).all()
+
+
+@router.get("/drafts/{draft_id}", response_model=WorkflowOut)
+def get_workflow_draft(
+    draft_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Workflow:
+    return _get_draft_or_404(db, draft_id, current_user)
+
+
+@router.put("/drafts/{draft_id}", response_model=WorkflowOut)
+def update_workflow_draft(
+    draft_id: int,
+    body: DraftUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Workflow:
+    wf = _get_draft_or_404(db, draft_id, current_user)
+    if body.name is not None:
+        wf.name = body.name
+    if body.graph_config is not None:
+        wf.graph_config = body.graph_config
+    if body.description is not None:
+        wf.description = body.description
+    if body.category is not None:
+        wf.category = body.category
+    if body.tags is not None:
+        wf.tags = body.tags
+    db.commit()
+    db.refresh(wf)
+    return wf
+
+
+@router.post("/drafts/{draft_id}/publish", response_model=WorkflowOut)
+def publish_workflow_draft(
+    draft_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Workflow:
+    wf = _get_draft_or_404(db, draft_id, current_user)
+    wf.status = "published"
+    wf.enabled = True
+    db.commit()
+    db.refresh(wf)
+    logger.info("Workflow draft published: id=%s", wf.id)
+    return wf
 
 
 @router.get("/{workflow_id}", response_model=WorkflowOut)

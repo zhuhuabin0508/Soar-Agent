@@ -429,7 +429,10 @@ def run_lightweight_migrations(engine) -> None:
         ensure_columns(
             engine,
             "resource_shares",
-            {"permission": "VARCHAR(16) NOT NULL DEFAULT 'edit'"},
+            {
+                "permission": "VARCHAR(16) NOT NULL DEFAULT 'edit'",
+                "shared_with_role": "INTEGER",
+            },
         )
         # executions 表新增 agent_id 列（智能体测试执行记录关联）
         ensure_columns(
@@ -490,6 +493,9 @@ def run_lightweight_migrations(engine) -> None:
                 "status": "VARCHAR(32) NOT NULL DEFAULT 'available'",
                 "retrieval_weight": "INTEGER NOT NULL DEFAULT 1",
                 "file_path": "VARCHAR(512)",
+                "progress": "INTEGER NOT NULL DEFAULT 0",
+                "enabled": "BOOLEAN NOT NULL DEFAULT TRUE",
+                "error_message": "TEXT",
             },
         )
         # agents 表新增基础形象 / 模型参数扩展 / 记忆与高级机制字段
@@ -507,10 +513,12 @@ def run_lightweight_migrations(engine) -> None:
                 "tool_configs": "JSON",
                 # 启用的技能 id 列表（注入到 system prompt，见 app/agent/prompt_assembler.py）
                 "enabled_skills": "JSON",
+                "enabled_workflows": "JSON",
                 # 启用的资产类型 code 列表（关联 AssetTypeTemplate.code）
                 "enabled_asset_types": "JSON",
-                # 执行引擎选择：langgraph（默认）| hermes
-                "engine": "VARCHAR(16) NOT NULL DEFAULT 'langgraph'",
+                # 执行引擎：hermes（默认）；历史库可能仍为 langgraph 字符串
+                "engine": "VARCHAR(16) NOT NULL DEFAULT 'hermes'",
+                "publish_status": "VARCHAR(16) NOT NULL DEFAULT 'published'",
             },
         )
         # tools 表新增声明式 HTTP 工具支持：tool_type + http_config + category + is_preset + tags
@@ -526,6 +534,8 @@ def run_lightweight_migrations(engine) -> None:
                 "is_preset": "BOOLEAN NOT NULL DEFAULT FALSE",
                 # 多标签：JSON 数组，如 ["安全运营", "网络资产"]，支持自定义
                 "tags": "JSON",
+                # 工具来源：builtin | framework | security | custom
+                "tool_source": "VARCHAR(32)",
             },
         )
         # llm_configs 表新增 model_type 列（chat / embedding），区分对话模型与向量化模型

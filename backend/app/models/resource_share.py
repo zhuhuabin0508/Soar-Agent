@@ -22,8 +22,10 @@ class ResourceShare(Base):
     resource_type = Column(String(32), nullable=False)
     # 资源ID（对应资源表主键）
     resource_id = Column(Integer, nullable=False)
-    # 被授权用户ID
-    shared_with = Column(Integer, nullable=False)
+    # 被授权用户ID（按用户共享时填写；按角色共享时为 null）
+    shared_with = Column(Integer, nullable=True)
+    # 被授权角色ID（按角色共享时填写；按用户共享时为 null）
+    shared_with_role = Column(Integer, nullable=True)
     # 授权人（owner）用户ID
     granted_by = Column(Integer, nullable=False)
     # 授权权限级别：view（仅查看）/ edit（编辑）

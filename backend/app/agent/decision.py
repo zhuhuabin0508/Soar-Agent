@@ -1,14 +1,7 @@
-﻿"""Agent 决策入口模块。
+﻿"""SOC 决策解析、Mock 降级与遗留 ``run_agent_decision`` 转发。
 
-对外暴露 ``run_agent_decision``，作为后端调用 Agent 的唯一入口。
-按以下优先级选择 LLM 配置：传入的 ``model_config_id`` > DB 中 ``is_default`` 的 LLMConfig
-> 环境变量 ``ANTHROPIC_API_KEY``。配置可用时走真实 LangGraph 决策，否则走规则化 Mock 降级。
-
-工具接入：
-- ``enabled_tools`` 中的 DB 工具名，经 ``tool_runner`` 加载为 LangChain ``StructuredTool``。
-- ``enabled_kbs`` 非空时追加一个 ``search_knowledge_base`` 工具（内部调 ``kb_retriever``）。
-
-``run_agent_decision`` 返回结果中包含 ``logs``（``[{level, message}]``）便于排查与回传前端。
+新调用请使用 ``app.platform.agent_runtime.invoke_agent`` / ``invoke_agent_sse``。
+本模块保留 ``_parse_action_decision_from_content``、工具构建与 ``run_agent_decision``（已废弃，转发 runtime）。
 """
 import json
 import logging
@@ -672,7 +665,12 @@ async def _mock_decision(alert_data: dict, logs: list[dict[str, str]]) -> dict:
     messages.append({"role": "assistant", "content": f"正在查询 src_ip={src_ip} 的白名单..."})
     logs.append(_new_log("info", f"查询白名单, ip={src_ip}"))
     whitelist_hit = await check_whitelist(src_ip)
-    messages.append({"role": "tool", "content": f"check_whitelist={whitelist_hit}"})
+    in_whitelist = (
+        whitelist_hit.get("in_whitelist")
+        if isinstance(whitelist_hit, dict)
+        else bool(whitelist_hit)
+    )
+    messages.append({"role": "tool", "content": f"check_whitelist={json.dumps(whitelist_hit, ensure_ascii=False)}"})
 
     # 2. 查询资产信息
     messages.append({"role": "assistant", "content": f"正在查询 src_ip={src_ip} 的资产信息..."})
@@ -697,7 +695,7 @@ async def _mock_decision(alert_data: dict, logs: list[dict[str, str]]) -> dict:
     is_critical = bool(asset_info.get("is_critical"))
     tags = threat_intel.get("tags", [])
 
-    if whitelist_hit:
+    if in_whitelist:
         decision = "ignore"
         reason = f"IP {src_ip} 在白名单中，判定为可信内网，无需处置"
         duration = ""
@@ -801,117 +799,50 @@ def _extract_json_object(text: str) -> str | None:
     return None
 
 
-def _messages_to_dict_list(messages: list) -> list:
-    """将 LangChain 消息对象列表转为 ``{"role", "content"}`` 字典列表。"""
-    result: list = []
-    for msg in messages:
-        role = getattr(msg, "type", None) or type(msg).__name__
-        content = getattr(msg, "content", "")
-        result.append({"role": role, "content": content})
-    return result
-
-
-async def _real_langgraph_decision(
+async def _run_agent_decision_via_runtime(
+    *,
+    db,
+    agent_id: int,
     alert_data: dict,
-    logs: list[dict[str, str]],
-    api_key: str,
-    base_url: str = "",
-    model_name: str = "",
-    tools: Optional[list] = None,
     system_prompt: Optional[str] = None,
-    max_iterations: Optional[int] = None,
-    temperature: float = 0,
-    max_tokens: int = 1024,
-    provider: str = "anthropic",
+    override=None,
+    logs: Optional[list] = None,
 ) -> dict:
-    """真实 LangGraph 决策路径（按 DB 配置动态构建图）。
+    from app.models.agent import Agent
+    from app.platform.agent_runtime import (
+        OUTPUT_MODE_CHAT,
+        OUTPUT_MODE_SOC_DECISION,
+        invoke_agent,
+        resolve_runtime_user,
+    )
 
-    Args:
-        alert_data: 告警数据。
-        logs: 日志收集列表。
-        api_key: LLM API Key。
-        base_url: 自定义 Base URL。
-        model_name: 模型名。
-        tools: 绑定工具列表。
-        system_prompt: 系统提示词。
-        max_iterations: 最大迭代轮数。
-        temperature: 采样温度。
-        max_tokens: 最大 token 数。
-        provider: LLM 供应商（anthropic/openai 等）。
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if agent is None:
+        out_logs = list(logs or [])
+        out_logs.append(_new_log("error", f"Agent not found: {agent_id}"))
+        return await _mock_decision(alert_data, out_logs)
 
-    Returns:
-        结构化决策结果；图构建或执行失败时回退到 Mock 路径。
-    """
-    from langchain_core.messages import HumanMessage, SystemMessage
-
-    from app.agent.graph import SYSTEM_PROMPT, build_agent_graph
-
-    src_ip = alert_data.get("src_ip", "unknown")
-    logs.append(_new_log("info", f"[Real] 启动 LangGraph 决策, src_ip={src_ip}"))
-    logger.info("[Real] 启动 LangGraph 决策, src_ip=%s, alert_data=%s", src_ip, alert_data)
-
-    prompt = system_prompt or SYSTEM_PROMPT
-    try:
-        graph = build_agent_graph(
-            api_key=api_key,
-            base_url=base_url,
-            model_name=model_name,
-            tools=tools,
-            system_prompt=prompt,
-            max_iterations=max_iterations,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            provider=provider,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("[Real] Agent 图构建失败，回退 Mock: %s", exc)
-        logs.append(_new_log("warning", f"Agent 图构建失败，回退 Mock: {exc}"))
-        return await _mock_decision(alert_data, logs)
-
-    initial_messages = [
-        SystemMessage(content=prompt),
-        HumanMessage(content=f"告警数据：{json.dumps(alert_data, ensure_ascii=False)}"),
-    ]
-    initial_state = {
-        "alert_data": alert_data,
-        "messages": initial_messages,
-        "action_decision": {},
-        "iteration": 0,
-    }
-
-    logs.append(_new_log("info", "调用 agent_graph.ainvoke"))
-    try:
-        final_state = await graph.ainvoke(initial_state, config={"recursion_limit": 12})
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("[Real] agent_graph.ainvoke 执行失败: %s", exc)
-        logs.append(_new_log("warning", f"LangGraph 执行异常，回退 Mock: {exc}"))
-        return await _mock_decision(alert_data, logs)
-
-    final_messages = final_state.get("messages", [])
-    logs.append(_new_log("info", f"LangGraph 完成, 消息数={len(final_messages)}, 迭代={final_state.get('iteration')}"))
-
-    # 取最后一条 AIMessage 的文本内容用于解析
-    last_content = ""
-    for msg in reversed(final_messages):
-        msg_type = getattr(msg, "type", None) or type(msg).__name__
-        if msg_type in ("ai", "AIMessage"):
-            last_content = getattr(msg, "content", "") or ""
-            break
-
-    messages_dict = _messages_to_dict_list(final_messages)
-
-    # 自定义 system_prompt 时，不强制 block_ip/ignore/need_human_approval 决策格式，
-    # 直接返回 LLM 原始文本作为 response，由调用方自行解释。
-    if system_prompt is not None:
-        logs.append(_new_log("info", "自定义提示词，跳过决策解析，返回原始响应"))
-        logger.info("[Real] 自定义提示词，返回原始响应: %s", last_content[:200])
-        return {"response": last_content, "messages": messages_dict, "logs": logs}
-
-    action_decision = _parse_action_decision_from_content(last_content, src_ip)
-
-    logs.append(_new_log("info", f"决策解析完成: {action_decision.get('decision')}"))
-    logger.info("[Real] 决策完成, action_decision=%s", action_decision)
-    return {**action_decision, "messages": messages_dict, "logs": logs}
+    output_mode = OUTPUT_MODE_CHAT if system_prompt is not None else OUTPUT_MODE_SOC_DECISION
+    result = await invoke_agent(
+        db=db,
+        agent=agent,
+        input=alert_data,
+        user=resolve_runtime_user(db),
+        channel="decision",
+        output_mode=output_mode,
+        override=override,
+    )
+    out_logs = list(logs or [])
+    if output_mode == OUTPUT_MODE_CHAT:
+        return {
+            "response": result.response,
+            "messages": result.messages,
+            "logs": out_logs,
+        }
+    raw = dict(result.raw or {})
+    raw["messages"] = result.messages
+    raw["logs"] = out_logs + list(raw.get("logs") or [])
+    return raw
 
 
 async def run_agent_decision(
@@ -919,6 +850,8 @@ async def run_agent_decision(
     enabled_tools: Optional[list[str]] = None,
     enabled_kbs: Optional[list[int]] = None,
     enabled_asset_types: Optional[list[str]] = None,
+    enabled_workflows: Optional[list[int]] = None,
+    agent_id: Optional[int] = None,
     model_config_id: Optional[int] = None,
     system_prompt: Optional[str] = None,
     temperature: Optional[float] = None,
@@ -929,7 +862,8 @@ async def run_agent_decision(
     """Agent 决策入口。
 
     按优先级确定 LLM 配置：``model_config_id`` > DB 默认 LLMConfig > 环境变量
-    ``ANTHROPIC_API_KEY``。配置可用走真实 LangGraph 路径，否则走 Mock 降级。
+    配置可用且指定 ``agent_id`` / ``WORKFLOW_SOC_AGENT_ID`` 时走 ``invoke_agent``；
+    开发模式 ``ENABLE_DEV_CODE`` 可 Mock；否则返回 ``need_human_approval``。
 
     Args:
         alert_data: 告警数据。
@@ -954,77 +888,76 @@ async def run_agent_decision(
                 "logs": [{"level", "message"}, ...]
             }
     """
+    import warnings
+
+    warnings.warn(
+        "run_agent_decision is deprecated; use invoke_agent",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     logger.info("=" * 60)
     logger.info("收到告警决策请求, alert_data=%s", alert_data)
     logs: list[dict[str, str]] = []
 
-    # DB 会话用于读取 LLMConfig / Tool / 知识库
-    from app.database import SessionLocal
+    if agent_id is None:
+        from app.config import settings
 
-    db = SessionLocal()
-    try:
-        llm_config = _load_llm_config(db, model_config_id)
-        # 加载 DB 工具与知识库工具
-        tools: list = []
-        if enabled_tools:
-            tools = _build_db_tools(db, enabled_tools)
-            logs.append(_new_log("info", f"已加载 {len(tools)} 个 DB 工具"))
-        kb_tool = _build_kb_tool(enabled_kbs or [])
-        if kb_tool is not None:
-            tools.append(kb_tool)
-            logs.append(_new_log("info", f"已追加知识库检索工具(kbs={enabled_kbs})"))
-        file_query_tool = _build_file_query_tool(enabled_kbs or [])
-        if file_query_tool is not None:
-            tools.append(file_query_tool)
-            logs.append(_new_log("info", f"已追加文件查询工具(Excel/CSV精确查询)"))
-        if _should_attach_search_assets(enabled_tools, enabled_asset_types):
-            asset_tool = _build_asset_tool(enabled_asset_types or [])
-            if asset_tool is not None:
-                tools.append(asset_tool)
-                logs.append(_new_log("info", f"已追加资产检索工具(types={enabled_asset_types or 'all'})"))
-    finally:
-        db.close()
+        fallback_agent = int(getattr(settings, "WORKFLOW_SOC_AGENT_ID", 0) or 0)
+        if fallback_agent > 0:
+            agent_id = fallback_agent
 
-    # 确定 API Key 与模型配置
-    # 显式传入的 model_name 优先于 LLMConfig.model_name
-    override_model_name = model_name
-    api_key: str = ""
-    base_url: str = ""
-    cfg_model_name: str = ""
-    cfg_provider: str = "anthropic"
-    if llm_config is not None and (llm_config.api_key or llm_config.base_url):
-        api_key = llm_config.api_key or ""
-        base_url = llm_config.base_url or ""
-        cfg_model_name = llm_config.model_name or ""
-        cfg_provider = (llm_config.provider or "anthropic").lower()
-        logs.append(_new_log("info", f"使用 DB LLMConfig: provider={cfg_provider}, model={cfg_model_name or '(default)'}"))
-    elif settings.ANTHROPIC_API_KEY:
-        api_key = settings.ANTHROPIC_API_KEY
-        logs.append(_new_log("info", "使用环境变量 ANTHROPIC_API_KEY"))
+    if agent_id is not None:
+        from app.database import SessionLocal
 
-    # 显式传入的 model_name 优先；否则用 LLMConfig 的 model_name
-    effective_model_name = override_model_name or cfg_model_name
-    if override_model_name:
-        logs.append(_new_log("info", f"使用显式传入模型名: {override_model_name}"))
+        db = SessionLocal()
+        try:
+            override = None
+            if any(
+                v is not None
+                for v in (system_prompt, temperature, max_tokens, max_iterations, model_config_id, model_name)
+            ):
+                from types import SimpleNamespace
 
-    if api_key:
-        logs.append(_new_log("info", "走真实 LangGraph 决策路径"))
-        return await _real_langgraph_decision(
-            alert_data=alert_data,
-            logs=logs,
-            api_key=api_key,
-            base_url=base_url,
-            model_name=effective_model_name,
-            tools=tools or None,
-            system_prompt=system_prompt,
-            max_iterations=max_iterations,
-            temperature=temperature if temperature is not None else 0,
-            max_tokens=max_tokens if max_tokens is not None else 1024,
-            provider=cfg_provider,
+                override = SimpleNamespace(
+                    system_prompt=system_prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    max_iterations=max_iterations,
+                    model_config_id=model_config_id,
+                    model_name=model_name,
+                )
+            return await _run_agent_decision_via_runtime(
+                db=db,
+                agent_id=agent_id,
+                alert_data=alert_data,
+                system_prompt=system_prompt,
+                override=override,
+                logs=logs,
+            )
+        finally:
+            db.close()
+
+    from app.config import settings
+
+    if getattr(settings, "ENABLE_DEV_CODE", False):
+        logs.append(_new_log("info", "未配置 Agent，开发模式 Mock 降级"))
+        return await _mock_decision(alert_data, logs)
+
+    src_ip = alert_data.get("src_ip", "unknown")
+    logs.append(
+        _new_log(
+            "error",
+            "未配置 agent_id 或 WORKFLOW_SOC_AGENT_ID",
         )
-
-    logs.append(_new_log("info", "未配置 LLM，走 Mock 降级决策路径"))
-    return await _mock_decision(alert_data, logs)
+    )
+    return {
+        "decision": "need_human_approval",
+        "target_ip": src_ip,
+        "reason": "未配置 WORKFLOW_SOC_AGENT_ID 或 agent_id",
+        "duration": "24h",
+        "messages": [],
+        "logs": logs,
+    }
 
 
 async def run_agent_decision_stream(
@@ -1032,6 +965,8 @@ async def run_agent_decision_stream(
     enabled_tools: Optional[list[str]] = None,
     enabled_kbs: Optional[list[int]] = None,
     enabled_asset_types: Optional[list[str]] = None,
+    enabled_workflows: Optional[list[int]] = None,
+    agent_id: Optional[int] = None,
     model_config_id: Optional[int] = None,
     system_prompt: Optional[str] = None,
     temperature: Optional[float] = None,
@@ -1042,7 +977,7 @@ async def run_agent_decision_stream(
 ) -> AsyncGenerator[dict, None]:
     """流式版 Agent 决策，异步生成 SSE 事件。
 
-    与 ``run_agent_decision`` 配置解析逻辑一致，但使用 ``graph.astream_events``
+    已废弃；请使用 ``invoke_agent_sse``。
     实现 token 级流式输出，让前端逐字渲染 LLM 回复。
 
     Yields:
@@ -1054,179 +989,83 @@ async def run_agent_decision_stream(
         - ``done``: 最终结果（``result`` 字段）
         - ``error``: 错误（``message`` 字段）
     """
+    import warnings
+
+    warnings.warn(
+        "run_agent_decision_stream is deprecated; use invoke_agent_sse",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     logger.info("=" * 60)
     logger.info("收到流式告警决策请求, alert_data=%s", alert_data)
+
+    if agent_id is None:
+        from app.config import settings as _settings
+
+        fallback_agent = int(getattr(_settings, "WORKFLOW_SOC_AGENT_ID", 0) or 0)
+        if fallback_agent > 0:
+            agent_id = fallback_agent
+
+    if agent_id is not None:
+        from app.database import SessionLocal
+        from app.models.agent import Agent
+        from app.platform.agent_runtime import invoke_agent_sse, resolve_runtime_user
+
+        db = SessionLocal()
+        try:
+            agent = db.query(Agent).filter(Agent.id == agent_id).first()
+            if agent is None:
+                yield {"type": "error", "message": f"Agent not found: {agent_id}"}
+                return
+            override = None
+            if any(
+                v is not None
+                for v in (system_prompt, temperature, max_tokens, max_iterations, model_config_id, model_name)
+            ):
+                from types import SimpleNamespace
+
+                override = SimpleNamespace(
+                    system_prompt=system_prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    max_iterations=max_iterations,
+                    model_config_id=model_config_id,
+                    model_name=model_name,
+                )
+            user_input = json.dumps(alert_data, ensure_ascii=False)
+            async for chunk in invoke_agent_sse(
+                db=db,
+                agent=agent,
+                input=user_input,
+                user=resolve_runtime_user(db),
+                channel="decision",
+                override=override,
+            ):
+                if not chunk.startswith("data: "):
+                    continue
+                try:
+                    data = json.loads(chunk[6:].strip())
+                except (json.JSONDecodeError, ValueError):
+                    continue
+                yield data
+        finally:
+            db.close()
+        return
+
+    from app.config import settings as _settings
+
     logs: list[dict[str, str]] = []
-
-    from app.database import SessionLocal
-
-    db = SessionLocal()
-    try:
-        llm_config = _load_llm_config(db, model_config_id)
-        tools: list = []
-        if enabled_tools:
-            tools = _build_db_tools(db, enabled_tools)
-            logs.append(_new_log("info", f"已加载 {len(tools)} 个 DB 工具"))
-        kb_tool = _build_kb_tool(enabled_kbs or [])
-        if kb_tool is not None:
-            tools.append(kb_tool)
-            logs.append(_new_log("info", f"已追加知识库检索工具(kbs={enabled_kbs})"))
-        file_query_tool = _build_file_query_tool(enabled_kbs or [])
-        if file_query_tool is not None:
-            tools.append(file_query_tool)
-            logs.append(_new_log("info", f"已追加文件查询工具(Excel/CSV精确查询)"))
-        if _should_attach_search_assets(enabled_tools, enabled_asset_types):
-            asset_tool = _build_asset_tool(enabled_asset_types or [])
-            if asset_tool is not None:
-                tools.append(asset_tool)
-                logs.append(_new_log("info", f"已追加资产检索工具(types={enabled_asset_types or 'all'})"))
-    finally:
-        db.close()
-
-    # 确定 API Key 与模型配置（与 run_agent_decision 逻辑一致）
-    override_model_name = model_name
-    api_key: str = ""
-    base_url: str = ""
-    cfg_model_name: str = ""
-    cfg_provider: str = "anthropic"
-    if llm_config is not None and (llm_config.api_key or llm_config.base_url):
-        api_key = llm_config.api_key or ""
-        base_url = llm_config.base_url or ""
-        cfg_model_name = llm_config.model_name or ""
-        cfg_provider = (llm_config.provider or "anthropic").lower()
-        logs.append(_new_log("info", f"使用 DB LLMConfig: provider={cfg_provider}, model={cfg_model_name or '(default)'}"))
-    elif settings.ANTHROPIC_API_KEY:
-        api_key = settings.ANTHROPIC_API_KEY
-        logs.append(_new_log("info", "使用环境变量 ANTHROPIC_API_KEY"))
-
-    effective_model_name = override_model_name or cfg_model_name
-    if override_model_name:
-        logs.append(_new_log("info", f"使用显式传入模型名: {override_model_name}"))
-
-    # 推送初始日志
-    for log in logs:
-        yield {"type": "log", "log": log}
-
-    if not api_key:
-        logs.append(_new_log("info", "未配置 LLM，走 Mock 降级决策路径"))
-        yield {"type": "log", "log": logs[-1]}
+    if getattr(_settings, "ENABLE_DEV_CODE", False):
+        logs.append(_new_log("info", "未配置 Agent，开发模式 Mock 降级"))
+        for log in logs:
+            yield {"type": "log", "log": log}
         result = await _mock_decision(alert_data, logs)
         yield {"type": "done", "result": result}
         return
 
-    # 构建图
-    from langchain_core.messages import HumanMessage, SystemMessage
-
-    from app.agent.graph import SYSTEM_PROMPT, build_agent_graph
-
-    src_ip = alert_data.get("src_ip", "unknown")
-    prompt = system_prompt or SYSTEM_PROMPT
-    try:
-        graph = build_agent_graph(
-            api_key=api_key,
-            base_url=base_url,
-            model_name=effective_model_name,
-            tools=tools or None,
-            system_prompt=prompt,
-            max_iterations=max_iterations,
-            temperature=temperature if temperature is not None else 0,
-            max_tokens=max_tokens if max_tokens is not None else 1024,
-            provider=cfg_provider,
-            extra_llm_kwargs=extra_llm_kwargs,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("[Stream] Agent 图构建失败，回退 Mock: %s", exc)
-        yield {"type": "log", "log": _new_log("warning", f"Agent 图构建失败，回退 Mock: {exc}")}
-        result = await _mock_decision(alert_data, logs)
-        yield {"type": "done", "result": result}
-        return
-
-    initial_messages = [
-        SystemMessage(content=prompt),
-        HumanMessage(content=f"告警数据：{json.dumps(alert_data, ensure_ascii=False)}"),
-    ]
-    initial_state = {
-        "alert_data": alert_data,
-        "messages": initial_messages,
-        "action_decision": {},
-        "iteration": 0,
+    yield {
+        "type": "error",
+        "message": "未配置 agent_id 或 WORKFLOW_SOC_AGENT_ID，请使用 invoke_agent_sse",
     }
-
-    yield {"type": "status", "message": "正在调用工具进行推理..."}
-
-    # 使用 astream_events 实现 token 级流式
-    full_text = ""
-    final_state: dict | None = None
-
-    try:
-        async for event in graph.astream_events(
-            initial_state, config={"recursion_limit": 12}, version="v2"
-        ):
-            kind = event.get("event", "")
-
-            # LLM token 流式输出
-            if kind == "on_chat_model_stream":
-                chunk = event.get("data", {}).get("chunk")
-                if chunk:
-                    token = getattr(chunk, "content", "") or ""
-                    if token:
-                        full_text += token
-                        yield {"type": "token", "content": token}
-
-            # 工具调用事件
-            elif kind == "on_tool_start":
-                tool_name = event.get("name", "")
-                yield {"type": "tool_start", "tool_name": tool_name, "message": f"调用工具: {tool_name}"}
-
-            elif kind == "on_tool_end":
-                tool_name = event.get("name", "")
-                tool_output = event.get("data", {}).get("output")
-                output_str = str(tool_output)[:300] if tool_output else ""
-                yield {
-                    "type": "tool_end",
-                    "tool_name": tool_name,
-                    "result": output_str,
-                    "message": f"✓ {tool_name} 完成",
-                }
-                # 工具生成的输出文件（如 expand_risk_detail 的展开表）：推送文件事件，
-                # 前端在消息气泡内渲染下载卡片
-                file_info = _extract_generated_file(tool_output)
-                if file_info:
-                    yield {"type": "file", **file_info}
-
-            # 捕获根图的最终状态
-            elif kind == "on_chain_end":
-                output = event.get("data", {}).get("output")
-                if isinstance(output, dict) and "messages" in output:
-                    final_state = output
-
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("[Stream] astream_events 执行失败: %s", exc)
-        yield {"type": "error", "message": str(exc)}
-        return
-
-    # 构建最终结果
-    final_messages = (final_state or {}).get("messages", [])
-    messages_dict = _messages_to_dict_list(final_messages) if final_messages else []
-
-    # 优先使用流式收集的文本；为空时从 final_state 取最后一条 AIMessage
-    last_content = full_text
-    if not last_content and final_messages:
-        for msg in reversed(final_messages):
-            msg_type = getattr(msg, "type", None) or type(msg).__name__
-            if msg_type in ("ai", "AIMessage"):
-                last_content = getattr(msg, "content", "") or ""
-                break
-
-    logs.append(_new_log("info", f"流式决策完成, 回复长度={len(last_content)}"))
-
-    if system_prompt is not None:
-        result = {"response": last_content, "messages": messages_dict, "logs": logs}
-    else:
-        action_decision = _parse_action_decision_from_content(last_content, src_ip)
-        # 同时包含 response（流式文本）和 decision 字段，前端优先用 response 展示
-        result = {"response": last_content, **action_decision, "messages": messages_dict, "logs": logs}
-
-    yield {"type": "done", "result": result}
 
 

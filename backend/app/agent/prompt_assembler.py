@@ -1,8 +1,7 @@
 """system prompt 组装器：技能加载 + 变量替换 + 分段注入。
 
 集中处理 Agent 最终 system prompt 的组装，把"基础提示词 + 启用技能正文"
-合并为一段完整的 system prompt，供 ``agents.py`` 的纯对话 / LangGraph
-两条路径统一调用。
+合并为一段完整的 system prompt，供 Playground / ``invoke_agent`` 统一调用。
 
 设计要点：
 - ``render_variables`` 补齐 ``models/agent.py`` 注释中承诺但未实现的 ``{{key}}``
@@ -113,8 +112,7 @@ def assemble_system_prompt(
        ``--- 技能: {name} 结束 ---`` / ``=== 启用技能结束 ===``
     6. ``base`` 为空但有技能：以技能段作为完整 prompt
     7. ``base`` 为空且无技能：
-       - ``allow_none=True`` 时返回 ``None``（供 LangGraph 路径透传给 ``run_agent_decision``，
-         由 ``decision.py`` 走默认安全专家提示词 + 决策 JSON 解析）
+       - ``allow_none=True`` 时返回 ``None``（供 soc_decision 路径使用默认安全专家提示词）
        - ``allow_none=False`` 时返回 ``fallback_prompt``（默认兜底文案），保证纯对话路径
          永远拿到非 None 的 system prompt
     8. 总长度 > 阈值时 ``logger.warning``（不阻断）
@@ -125,7 +123,7 @@ def assemble_system_prompt(
         fallback_prompt: ``agent.system_prompt`` 为空且无技能且 ``allow_none=False`` 时的兜底提示词。
             为 None 时使用默认兜底文案。
         allow_none: 是否允许在「无 base 且无技能」时返回 None。
-            纯对话路径应传 False（默认），LangGraph 决策路径应传 True。
+            纯对话路径应传 False（默认），soc_decision 路径应传 True。
 
     Returns:
         组装后的 system prompt 字符串；``allow_none=True`` 且无内容时可能返回 None。
@@ -143,7 +141,7 @@ def assemble_system_prompt(
             # 有技能但无 base：技能段作为完整 prompt（不拼 fallback）
             base = ""
         elif allow_none:
-            # 无技能且无 base：LangGraph 路径透传 None，由 decision.py 走默认流程
+            # 无技能且无 base：soc_decision 路径透传 None
             logger.info(
                 "组装 system prompt: agent_id=%s, 无 base 且无技能，allow_none=True → 返回 None",
                 getattr(agent, "id", None),

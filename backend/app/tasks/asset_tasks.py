@@ -10,7 +10,7 @@
 
 设计要点：
 - 先用轻量 DB 查询检查是否有新知识库（避免无谓地启动 LLM）
-- 仅在有新知识库时才实例化 HermesAgentExecutor（重量级：构建 LLM + 工具引擎）
+- 仅在有新知识库时才经 ``invoke_agent`` 触发扫描（避免无谓 LLM 调用）
 - 每个智能体在独立 DB session + 独立 asyncio 事件循环中运行，互不干扰
 - 系统用户取第一个 active admin（Celery 无 HTTP 请求上下文）
 """
@@ -96,21 +96,8 @@ def _get_system_user(db) -> Optional[User]:
 
 
 async def _run_agent_scan(agent_id: int, user_id: int) -> dict[str, Any]:
-    """异步运行资产管理智能体扫描新知识库。
+    from app.platform.agent_runtime import OUTPUT_MODE_CHAT, invoke_agent
 
-    实例化 HermesAgentExecutor 并发送扫描提示词，
-    消费 SSE 事件流直到完成，返回扫描结果摘要。
-
-    Args:
-        agent_id: 智能体 ID（在独立 session 中重新查询，避免 detached 实例）
-        user_id: 系统用户 ID
-
-    Returns:
-        扫描结果摘要 dict。
-    """
-    from app.agent.hermes import HermesAgentExecutor
-
-    # 为每次扫描创建独立 DB session（避免长事务占用连接）
     db = SessionLocal()
     try:
         agent = db.query(Agent).filter(Agent.id == agent_id).first()
@@ -120,28 +107,23 @@ async def _run_agent_scan(agent_id: int, user_id: int) -> dict[str, Any]:
         if user is None:
             return {"ok": False, "error": f"User {user_id} 不存在"}
 
-        executor = HermesAgentExecutor(
+        result = await invoke_agent(
             db=db,
             agent=agent,
+            input=_SCAN_PROMPT,
             user=user,
-            log_handler=lambda level, msg: logger.log(
-                getattr(logging, level.upper(), logging.INFO),
-                f"[asset-scan agent={agent.id}] {msg}",
-            ),
+            channel="asset_scan",
+            output_mode=OUTPUT_MODE_CHAT,
+            session_id=f"asset-scan-{agent_id}",
         )
-
-        final_reply = ""
-        tool_calls = 0
+        messages = result.messages or []
+        tool_calls = sum(
+            1 for m in messages if isinstance(m, dict) and m.get("role") in ("tool", "ToolMessage")
+        )
+        final_reply = result.response or ""
         errors: list[str] = []
-        session_id = f"asset-scan-{agent_id}"
-
-        async for event in executor.run(_SCAN_PROMPT, session_id=session_id):
-            if event.type == "token":
-                final_reply += event.content
-            elif event.type == "tool_end":
-                tool_calls += 1
-            elif event.type == "error":
-                errors.append(event.message)
+        if not final_reply and not tool_calls:
+            errors.append("empty agent response")
 
         return {
             "ok": len(errors) == 0,

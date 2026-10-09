@@ -71,6 +71,38 @@ const TOOL_TYPE_OPTIONS = [
   { value: 'framework', label: '框架内置' },
 ]
 
+// 工具来源：内置种子 / 框架内置 / 用户自建
+function resolveToolSource(row) {
+  if (row?.tool_type === 'framework') return 'framework'
+  if (row?.is_preset) return 'builtin'
+  return 'custom'
+}
+
+const SOURCE_META = {
+  builtin: {
+    label: '内置',
+    cls: 'border-amber-500/40 bg-warning/10 text-warning',
+    title: '系统种子工具，不可删除',
+  },
+  framework: {
+    label: '框架',
+    cls: 'border-purple-500/40 bg-purple-500/10 text-purple-500',
+    title: 'Hermes 框架工具，由引擎拦截执行',
+  },
+  custom: {
+    label: '自建',
+    cls: 'border-border bg-secondary text-muted-foreground',
+    title: '用户创建或导入的工具',
+  },
+}
+
+const SOURCE_OPTIONS = [
+  { value: '', label: '全部来源' },
+  { value: 'builtin', label: '内置' },
+  { value: 'custom', label: '自建' },
+  { value: 'framework', label: '框架' },
+]
+
 // 格式化时间
 function fmtTime(t) {
   if (!t) return '-'
@@ -264,6 +296,7 @@ function ToolList() {
   const setSearch = (v) => setFilters({ search: v })
   const [categoryFilter, setCategoryFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
+  const [sourceFilter, setSourceFilter] = useState('')
   const [agentFilter, setAgentFilter] = useState('') // 按关联智能体筛选（显示该智能体在用的工具）
   const [tabFilter, setTabFilter] = useState('all') // all | custom | framework
   const [statusFilter, setStatusFilter] = useState('') // '' | enabled | disabled
@@ -286,6 +319,7 @@ function ToolList() {
     if (tabFilter === 'framework' && r.tool_type !== 'framework') return false
     if (categoryFilter && (r.category || '_uncategorized') !== categoryFilter) return false
     if (typeFilter && r.tool_type !== typeFilter) return false
+    if (sourceFilter && resolveToolSource(r) !== sourceFilter) return false
     if (agentFilter && !(r.referenced_by || []).includes(agentFilter)) return false
     if (statusFilter === 'enabled' && !r.enabled) return false
     if (statusFilter === 'disabled' && r.enabled) return false
@@ -437,12 +471,13 @@ function ToolList() {
       ),
     },
     {
-      key: 'tool_type', header: '类型', width: '130px',
+      key: 'tool_type', header: '类型 / 来源', width: '160px',
       render: (r) => {
         const meta = TOOL_TYPE_META[r.tool_type] || TOOL_TYPE_META.code
         const Icon = meta.icon
+        const src = SOURCE_META[resolveToolSource(r)] || SOURCE_META.custom
         return (
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1">
             <span
               className={`inline-flex shrink-0 items-center whitespace-nowrap rounded border px-2 py-0.5 text-[11px] font-medium ${meta.cls}`}
               title={meta.title}
@@ -450,14 +485,12 @@ function ToolList() {
               <Icon className="h-3 w-3 shrink-0" />
               {meta.label}
             </span>
-            {r.is_preset && r.tool_type !== 'framework' && (
-              <span
-                className="inline-flex shrink-0 items-center whitespace-nowrap rounded border border-amber-500/40 bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-warning"
-                title="系统内置工具，不可删除，可编辑后禁用"
-              >
-                内置
-              </span>
-            )}
+            <span
+              className={`inline-flex shrink-0 items-center whitespace-nowrap rounded border px-1.5 py-0.5 text-[10px] font-medium ${src.cls}`}
+              title={src.title}
+            >
+              {src.label}
+            </span>
           </div>
         )
       },
@@ -649,6 +682,7 @@ function ToolList() {
           filters={[
             { key: 'agent', label: '智能体', value: agentFilter, onChange: (v) => { setAgentFilter(v); setPage(1) }, options: agentOptions },
             { key: 'type', label: '类型', value: typeFilter, onChange: (v) => { setTypeFilter(v); setPage(1) }, options: TOOL_TYPE_OPTIONS },
+            { key: 'source', label: '来源', value: sourceFilter, onChange: (v) => { setSourceFilter(v); setPage(1) }, options: SOURCE_OPTIONS },
             { key: 'category', label: '分类', value: categoryFilter, onChange: (v) => { setCategoryFilter(v); setPage(1) }, options: CATEGORY_OPTIONS },
             { key: 'status', label: '状态', value: statusFilter, onChange: (v) => { setStatusFilter(v); setPage(1) }, options: [
               { value: '', label: '全部状态' },

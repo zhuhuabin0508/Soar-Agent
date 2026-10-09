@@ -211,8 +211,23 @@ export const tools = {
 }
 
 // ============ 智能体 ============
+export function isAgentPublished(agent) {
+  if (!agent) return false
+  if ((agent.variables || {})._publish_status === 'draft') return false
+  const name = agent.name || ''
+  const desc = agent.description || ''
+  if (name.startsWith('（草稿）') || String(desc).startsWith('[草稿]')) return false
+  if (agent.publish_status === 'draft') return false
+  return true
+}
+
 export const agents = {
-  list: () => request('/agents'),
+  list: (params) => {
+    const qs = new URLSearchParams()
+    if (params?.usable) qs.set('usable', 'true')
+    const query = qs.toString()
+    return request(`/agents${query ? `?${query}` : ''}`)
+  },
   get: (id) => request(`/agents/${id}`),
   create: (body) => request('/agents', { method: 'POST', body }),
   update: (id, body) => request(`/agents/${id}`, { method: 'PUT', body }),
@@ -227,8 +242,10 @@ export const agents = {
   // 仅启用的字段写入 body.override，实现"按需启用"模式（避免覆盖模型默认值）
   testStream: async (id, input, signal, options = {}) => {
     const token = localStorage.getItem('soar_token')
+    const { channel, ...override } = options || {}
     const body = { input }
-    if (options && Object.keys(options).length > 0) body.override = options
+    if (override && Object.keys(override).length > 0) body.override = override
+    if (channel) body.channel = channel
     const resp = await fetch(`${BASE_URL}/agents/${id}/test/stream`, {
       method: 'POST',
       headers: {
@@ -247,8 +264,10 @@ export const agents = {
   // options 可选：会话级参数覆盖（同 testStream）
   chatStream: async (id, input, signal, sessionId, options = {}) => {
     const token = localStorage.getItem('soar_token')
+    const { channel, ...override } = options || {}
     const body = { input, session_id: sessionId || 'default' }
-    if (options && Object.keys(options).length > 0) body.override = options
+    if (override && Object.keys(override).length > 0) body.override = override
+    if (channel) body.channel = channel
     const resp = await fetch(`${BASE_URL}/agents/${id}/chat`, {
       method: 'POST',
       headers: {
@@ -265,6 +284,12 @@ export const agents = {
   monitor: (id) => request(`/agents/${id}/monitor`),
   // 工具搜索状态（tool_search 渐进式披露）：返回分类详情 + 装配预览
   toolSearchStatus: (id) => request(`/agents/${id}/tool-search-status`),
+  templates: () => request('/agents/templates'),
+  exportDsl: (id) => request(`/agents/${id}/dsl`),
+  createFromDsl: (dsl) => request('/agents/from-dsl', { method: 'POST', body: { dsl } }),
+  publish: (id) => request(`/agents/${id}/publish`, { method: 'POST' }),
+  publishTemplate: (id, body = {}) =>
+    request(`/agents/${id}/publish-template`, { method: 'POST', body }),
 }
 
 // ============ 知识库 ============
@@ -275,6 +300,7 @@ export const knowledgeBases = {
   update: (id, body) => request(`/knowledge-bases/${id}`, { method: 'PUT', body }),
   remove: (id) => request(`/knowledge-bases/${id}`, { method: 'DELETE' }),
   documents: (kbId) => request(`/knowledge-bases/${kbId}/documents`),
+  getDocument: (kbId, docId) => request(`/knowledge-bases/${kbId}/documents/${docId}`),
   addDocument: (kbId, body) =>
     request(`/knowledge-bases/${kbId}/documents`, { method: 'POST', body }),
   updateDocument: (kbId, docId, body) =>
@@ -295,6 +321,34 @@ export const knowledgeBases = {
       body: fd,
     })
   },
+  uploadDocuments: (kbId, files) => {
+    const fd = new FormData()
+    Array.from(files || []).forEach((file) => fd.append('files', file))
+    return request(`/knowledge-bases/${kbId}/documents/upload-batch`, {
+      method: 'POST',
+      body: fd,
+    })
+  },
+  downloadDocumentFile: async (kbId, docId, filename) => {
+    const token = localStorage.getItem('soar_token')
+    const res = await fetch(`${BASE_URL}/knowledge-bases/${kbId}/documents/${docId}/file`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!res.ok) {
+      let detail = '下载失败'
+      try {
+        const d = await res.json()
+        detail = d.detail || d.message || detail
+      } catch { /* ignore */ }
+      throw new Error(detail)
+    }
+    const blob = await res.blob()
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = filename || 'file'
+    a.click()
+    URL.revokeObjectURL(a.href)
+  },
   // 网页抓取：从 URL 抓取内容存入知识库
   fetchUrlDocument: (kbId, body) =>
     request(`/knowledge-bases/${kbId}/documents/fetch-url`, { method: 'POST', body }),
@@ -310,6 +364,24 @@ export const knowledgeBases = {
   // 文件查询（读取原始 Excel/CSV 按条件查询）
   fileQuery: (kbId, body) =>
     request(`/knowledge-bases/${kbId}/file-query`, { method: 'POST', body }),
+  setDocumentEnabled: (kbId, docId, enabled) =>
+    request(`/knowledge-bases/${kbId}/documents/${docId}/enabled`, {
+      method: 'PATCH',
+      body: { enabled },
+    }),
+  batchDocuments: (kbId, action, ids) =>
+    request(`/knowledge-bases/${kbId}/documents/batch`, {
+      method: 'POST',
+      body: { action, ids },
+    }),
+  replaceDocumentFile: (kbId, docId, file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return request(`/knowledge-bases/${kbId}/documents/${docId}/replace`, {
+      method: 'POST',
+      body: fd,
+    })
+  },
 }
 
 // ============ 技能（纯文本指令，注入 Agent system prompt） ============
@@ -414,6 +486,12 @@ export const workflows = {
     request(`/workflows/${workflowId}/versions/${versionId}/rollback`, { method: 'POST' }),
   // 收藏切换
   toggleFavorite: (id) => request(`/workflows/${id}/favorite`, { method: 'PATCH' }),
+  generateDraft: (description) =>
+    request('/workflows/drafts/generate', { method: 'POST', body: { description } }),
+  listDrafts: () => request('/workflows/drafts'),
+  getDraft: (id) => request(`/workflows/drafts/${id}`),
+  updateDraft: (id, body) => request(`/workflows/drafts/${id}`, { method: 'PUT', body }),
+  publishDraft: (id) => request(`/workflows/drafts/${id}/publish`, { method: 'POST' }),
   // 状态变更（draft / published / disabled）
   updateStatus: (id, status) =>
     request(`/workflows/${id}/status`, { method: 'PATCH', body: { status } }),
@@ -440,15 +518,22 @@ export const resourceShares = {
   // 查看资源的共享授权列表（仅 owner/admin）
   list: (resourceType, resourceId) =>
     request(`/resource-shares/${resourceType}/${resourceId}`),
-  // 添加共享授权（body: { user_id, permission }，permission: view/edit，仅 owner/admin）
   add: (resourceType, resourceId, userId, permission = 'edit') =>
     request(`/resource-shares/${resourceType}/${resourceId}`, {
       method: 'POST',
       body: { user_id: userId, permission },
     }),
-  // 撤销共享授权（仅 owner/admin）
+  addRole: (resourceType, resourceId, roleId, permission = 'edit') =>
+    request(`/resource-shares/${resourceType}/${resourceId}`, {
+      method: 'POST',
+      body: { role_id: roleId, permission },
+    }),
   revoke: (resourceType, resourceId, userId) =>
     request(`/resource-shares/${resourceType}/${resourceId}/${userId}`, {
+      method: 'DELETE',
+    }),
+  revokeRole: (resourceType, resourceId, roleId) =>
+    request(`/resource-shares/${resourceType}/${resourceId}/role/${roleId}`, {
       method: 'DELETE',
     }),
 }

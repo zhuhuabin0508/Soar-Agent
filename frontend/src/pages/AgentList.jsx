@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
-import { BookOpen, Trash2, Share2, Pencil, Eye } from 'lucide-react'
+import { BookOpen, Trash2, Share2, Pencil, Eye, Shield, ShieldBan, Package, Sparkles } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { agents as agentsApi } from '../api/client'
+import { agents as agentsApi, isAgentPublished } from '../api/client'
 import { Modal } from '../components/Dialog'
 import { inputCls } from '../components/property/FormControls'
 import { toast } from '../store/toastStore'
@@ -15,6 +15,13 @@ import { usePersistedFilters } from '../hooks/usePersistedFilters'
 import { hasPermission, canEditResource, canManageShare } from '../utils/permissions'
 import ShareDialog from '../components/ShareDialog'
 import BatchShareDialog from '../components/BatchShareDialog'
+import { AGENT_TEMPLATES, stashAgentTemplate, stashAgentDsl, teamAgentToPlanInput } from '../constants/agentTemplates'
+
+const TEMPLATE_ICONS = {
+  shield: Shield,
+  ban: ShieldBan,
+  package: Package,
+}
 
 // 格式化时间
 function fmtTime(t) {
@@ -49,6 +56,11 @@ function AgentList() {
   const [batchShareOpen, setBatchShareOpen] = useState(false)
   const [shareResource, setShareResource] = useState(null)
 
+  // 从模板创建
+  const [templateOpen, setTemplateOpen] = useState(false)
+  const [teamTemplates, setTeamTemplates] = useState([])
+  const [teamLoading, setTeamLoading] = useState(false)
+
   // 列表搜索关键字
   const [{ search }, setFilters] = usePersistedFilters('agent_list', { search: '' })
   const setSearch = (v) => setFilters({ search: v })
@@ -79,6 +91,17 @@ function AgentList() {
   useEffect(() => {
     load()
   }, [load])
+
+  useEffect(() => {
+    if (!templateOpen) return
+    let alive = true
+    setTeamLoading(true)
+    agentsApi.templates()
+      .then((data) => { if (alive) setTeamTemplates(Array.isArray(data) ? data : []) })
+      .catch(() => { if (alive) setTeamTemplates([]) })
+      .finally(() => { if (alive) setTeamLoading(false) })
+    return () => { alive = false }
+  }, [templateOpen])
 
   const handleDelete = async (id, name) => {
     const _ok = await confirm({ message: `确定删除智能体「${name || id}」吗？`, variant: 'danger', confirmText: '确定删除' })
@@ -138,7 +161,14 @@ function AgentList() {
   // 表格列定义
   const columns = [
     { key: 'id', header: 'ID', width: '70px', render: (r) => <span className="font-mono text-primary">#{r.id}</span> },
-    { key: 'name', header: '名称', render: (r) => <span className="truncate text-foreground">{r.name || '-'}</span> },
+    { key: 'name', header: '名称', render: (r) => (
+      <span className="inline-flex min-w-0 items-center gap-1.5">
+        <span className="truncate text-foreground">{r.name || '-'}</span>
+        {!isAgentPublished(r) && (
+          <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-600">草稿</span>
+        )}
+      </span>
+    ) },
     {
       key: 'description', header: '描述',
       render: (r) => <span className="truncate text-muted-foreground" title={r.description || ''}>{r.description || '-'}</span>,
@@ -162,6 +192,23 @@ function AgentList() {
             {canShare && (
               <button type="button" onClick={() => { setShareResource(r); setShareOpen(true) }} className="btn-secondary btn-sm inline-flex items-center gap-1" title="共享给其他用户">
                 <Share2 className="h-3.5 w-3.5" />共享
+              </button>
+            )}
+            {canEdit && !isAgentPublished(r) && (
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await agentsApi.publish(r.id)
+                    toast.success('已发布')
+                    await load()
+                  } catch (err) {
+                    toast.error(err.message || '发布失败')
+                  }
+                }}
+                className="btn-primary btn-sm"
+              >
+                发布
               </button>
             )}
             {canEdit && (
@@ -202,9 +249,10 @@ function AgentList() {
           {canCreate && (
             <button
               type="button"
-              onClick={() => navigate('/agents/new')}
-              className="btn-primary btn-sm"
+              onClick={() => setTemplateOpen(true)}
+              className="btn-primary btn-sm inline-flex items-center gap-1.5"
             >
+              <Sparkles className="h-4 w-4" />
               + 新建智能体
             </button>
           )}
@@ -377,6 +425,153 @@ function AgentList() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* 从模板创建 */}
+      <Modal
+        open={templateOpen}
+        onClose={() => setTemplateOpen(false)}
+        title="新建智能体 — 选择方式"
+        size="lg"
+      >
+        <p className="mb-4 text-sm text-muted-foreground">
+          推荐像 <strong className="font-medium text-foreground">Coze</strong> 一样：先描述需求，系统自动选配工具 → 测试 → 发布或暂存。
+        </p>
+        <button
+          type="button"
+          onClick={() => { setTemplateOpen(false); navigate('/agents/quick') }}
+          className="mb-4 flex w-full items-center justify-center gap-2 rounded-lg border border-primary/40 bg-primary/5 py-3 text-sm font-medium text-primary transition hover:bg-primary/10"
+        >
+          <Sparkles className="h-4 w-4" />
+          用自然语言描述创建（推荐）
+        </button>
+        {teamLoading ? (
+          <p className="mb-4 text-xs text-muted-foreground">正在加载团队模板…</p>
+        ) : teamTemplates.length > 0 && (
+          <div className="mb-5">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">团队模板</h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {teamTemplates.map((agent) => (
+                <div
+                  key={agent.id}
+                  className="flex flex-col gap-2 rounded-lg border border-primary/30 bg-primary/5 p-4"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/15 text-primary">
+                      <Sparkles className="h-4 w-4" />
+                    </span>
+                    <span className="font-medium text-foreground">{agent.name}</span>
+                  </div>
+                  <span className="text-xs leading-relaxed text-muted-foreground">
+                    {agent.template_scenario || agent.description || '团队共享模板'}
+                  </span>
+                  {(agent.template_tags || []).length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {agent.template_tags.map((tag) => (
+                        <span key={tag} className="rounded bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">{tag}</span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-1 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const input = teamAgentToPlanInput(agent)
+                        stashAgentDsl(input)
+                        setTemplateOpen(false)
+                        navigate('/agents/quick')
+                      }}
+                      className="btn-primary btn-sm flex-1"
+                    >
+                      描述创建
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        stashAgentDsl(teamAgentToPlanInput(agent).dsl)
+                        setTemplateOpen(false)
+                        navigate('/agents/new')
+                      }}
+                      className="btn-secondary btn-sm flex-1"
+                    >
+                      进编辑器
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">内置场景模板</h3>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {AGENT_TEMPLATES.map((tpl) => {
+            const Icon = TEMPLATE_ICONS[tpl.icon] || Sparkles
+            return (
+              <div
+                key={tpl.id}
+                className="flex flex-col gap-2 rounded-lg border border-border bg-card/40 p-4"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <span className="font-medium text-foreground">{tpl.name}</span>
+                </div>
+                <span className="text-xs leading-relaxed text-muted-foreground">{tpl.description}</span>
+                {tpl.scenario && (
+                  <span className="text-[10px] text-muted-foreground/70">适用：{tpl.scenario}</span>
+                )}
+                {tpl.tags?.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {tpl.tags.map((tag) => (
+                      <span key={tag} className="rounded bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">{tag}</span>
+                    ))}
+                  </div>
+                )}
+                <div className="mt-1 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTemplateOpen(false)
+                      navigate(`/agents/quick?template=${tpl.id}`)
+                    }}
+                    className="btn-primary btn-sm flex-1"
+                  >
+                    描述创建
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      stashAgentTemplate(tpl)
+                      setTemplateOpen(false)
+                      navigate('/agents/new')
+                    }}
+                    className="btn-secondary btn-sm flex-1"
+                  >
+                    进编辑器
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+          <button
+            type="button"
+            onClick={() => {
+              setTemplateOpen(false)
+              navigate('/agents/new')
+            }}
+            className="flex flex-col gap-2 rounded-lg border border-dashed border-border bg-card/20 p-4 text-left transition hover:border-primary/50 hover:bg-secondary/40 sm:col-span-2"
+          >
+            <div className="flex items-center gap-2">
+              <span className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary text-muted-foreground">
+                <Pencil className="h-4 w-4" />
+              </span>
+              <span className="font-medium text-foreground">从零开始（高级）</span>
+            </div>
+            <span className="text-xs leading-relaxed text-muted-foreground">直接进入完整编辑器，适合开发者精细配置</span>
+          </button>
+        </div>
       </Modal>
 
       {/* 资源共享设置弹窗 */}

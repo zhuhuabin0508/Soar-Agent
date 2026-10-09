@@ -17,7 +17,7 @@
 - 委派实时日志
 
 设计原则：
-- 对 ``engine=langgraph``（默认）的 Agent 零侵入
+- ``engine=langgraph`` / ``legacy`` 由 runtime 告警并路由 Hermes
 - 所有对 ``app.agent.decision`` / ``app.core.*`` 的引用用延迟导入避免循环依赖
 - 多用户隔离：所有记忆/中间件按 (user_id, agent_id) 分区
 """

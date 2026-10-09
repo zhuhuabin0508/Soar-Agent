@@ -12,7 +12,6 @@ from datetime import datetime
 from app.core.timezone import beijing_now, beijing_now_iso
 from typing import Any, Callable, Optional
 
-from app.agent.decision import run_agent_decision
 from app.core.celery_app import celery_app
 from app.core.dag import find_next_nodes
 from app.core.redis_client import get_redis
@@ -377,15 +376,20 @@ def _execute_node(
     if node_type == "ai_agent":
         logger.info("ai_agent: 调用 AI 决策, payload=%s", payload)
         _emit("info", "ai_agent: 调用 AI 决策")
-        # P0-5：AI 决策加 60s 超时，防止 LLM 调用卡住整个工作流
+
+        from app.core.node_executors import execute_ai_agent
+
+        async def _run_ai_agent():
+            def log_cb(nid: str, level: str, message: str) -> None:
+                _emit(level, message)
+
+            return await execute_ai_agent(node_data, payload, context, log_cb)
+
         try:
-            agent_result = asyncio.run(
-                asyncio.wait_for(run_agent_decision(payload), timeout=60)
-            )
+            agent_result = asyncio.run(asyncio.wait_for(_run_ai_agent(), timeout=120))
         except asyncio.TimeoutError:
-            logger.error("ai_agent: AI 决策超时（60s）")
-            _emit("error", "ai_agent: AI 决策超时（60s），使用降级决策")
-            # 超时降级：返回 need_human_approval，转人工处理
+            logger.error("ai_agent: AI 决策超时（120s）")
+            _emit("error", "ai_agent: AI 决策超时（120s），使用降级决策")
             agent_result = {
                 "decision": "need_human_approval",
                 "target_ip": payload.get("src_ip", "unknown"),
@@ -396,7 +400,6 @@ def _execute_node(
             }
         logger.info("ai_agent: 决策结果=%s", agent_result)
         _emit("info", f"ai_agent: 决策结果={agent_result.get('decision')}")
-        # 将决策结果写入上下文，供 condition_branch 与 block_ip 使用
         context["decision"] = agent_result.get("decision")
         context["agent_decision"] = agent_result
         context["agent_messages"] = agent_result.get("messages", [])
@@ -441,15 +444,15 @@ def _execute_node(
         return {"status": "ended", "end_type": node_data.get("end_type", "success")}
 
     if node_type == "human_review":
-        # 同步执行路径（test-run）下不阻塞，仅标记需人工审批
-        logger.info("human_review: 人工介入节点（同步模式不阻塞）")
-        _emit("info", "human_review: 已生成工单，等待工作人员审批")
-        return {
-            "status": "waiting_for_approval",
-            "message": "人工审批节点，等待工作人员处理",
-            "title": node_data.get("title") or node_data.get("label") or "",
-            "instructions": node_data.get("instructions") or "",
-        }
+        from app.core.node_executors import execute_human_review_node
+
+        async def _run_human_review():
+            def log_cb(nid: str, level: str, message: str) -> None:
+                _emit(level, message)
+
+            return await execute_human_review_node(node_data, payload, context, log_cb)
+
+        return asyncio.run(_run_human_review())
 
     logger.warning("未知节点类型，返回默认结果: type=%s", node_type)
     _emit("warning", f"未知节点类型，返回默认结果: type={node_type}")

@@ -67,8 +67,13 @@ class HermesSkillEngine:
             .filter(Workflow.enabled.is_(True))
             .all()
         )
+        enabled_raw = getattr(self.agent, "enabled_workflows", None)
         result: list[dict] = []
         for wf in workflows:
+            if enabled_raw is not None:
+                enabled_ids = set(enabled_raw or [])
+                if wf.id not in enabled_ids:
+                    continue
             input_schema = self._infer_input_schema(wf.graph_config)
             # Workflow 模型没有 description 列：从 graph_config 推导，兜底用名称
             gc = wf.graph_config if isinstance(wf.graph_config, dict) else {}
@@ -195,6 +200,14 @@ class HermesSkillEngine:
         ).first()
         if wf is None:
             raise ValueError(f"工作流 {workflow_id} 不存在或未启用")
+
+        enabled_raw = getattr(self.agent, "enabled_workflows", None)
+        if enabled_raw is not None:
+            enabled_ids = set(enabled_raw or [])
+            if workflow_id not in enabled_ids:
+                raise ValueError(
+                    f"工作流 {workflow_id} 未在该 Agent 的 enabled_workflows 白名单中"
+                )
 
         # 2. 创建执行记录
         skill_run_id = uuid4().hex

@@ -26,10 +26,11 @@ class Agent(Base):
     # 启用的知识库 id 列表
     enabled_kbs = Column(JSON, nullable=True, default=list)
     # 启用的资产类型 code 列表（关联 AssetTypeTemplate.code，如 ["host_asset"]）
-    # 非空时在 LangGraph / Hermes 决策路径追加 search_assets 工具，LLM 按需检索关联类型的资产
+    # 非空时 Hermes 路径追加 search_assets 工具，LLM 按需检索关联类型的资产
     enabled_asset_types = Column(JSON, nullable=True, default=list)
     # 启用的技能 id 列表（注入到 system prompt，见 app/agent/prompt_assembler.py）
     enabled_skills = Column(JSON, nullable=True, default=list)
+    enabled_workflows = Column(JSON, nullable=True, default=list)
     max_iterations = Column(Integer, nullable=False, default=5)
     # 创建者用户ID（资源级 owner 权限控制），null 表示历史数据/系统创建
     created_by = Column(Integer, nullable=True)
@@ -59,8 +60,9 @@ class Agent(Base):
     tool_configs = Column(JSON, nullable=True, default=dict)
 
     # ===== 引擎选择 =====
-    # 执行引擎：langgraph（默认，零侵入）| hermes（Hermes 风格 ReAct + 分段并行 + 记忆 + 委派）
-    engine = Column(String(16), nullable=False, default="langgraph")
+    # 执行引擎：hermes（默认）；langgraph 仅兼容字段，runtime 统一走 Hermes
+    engine = Column(String(16), nullable=False, default="hermes")
+    publish_status = Column(String(16), nullable=False, default="published")
 
     def __repr__(self) -> str:
         return f"<Agent id={self.id} name={self.name!r} engine={self.engine!r}>"

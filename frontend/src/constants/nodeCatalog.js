@@ -490,6 +490,12 @@ export const nodeCatalog = [
   },
 ]
 
+export const BACKEND_SUPPORTED_NODE_TYPES = new Set(nodeCatalog.map((n) => n.type))
+
+export function isNodeBackendReady(type) {
+  return BACKEND_SUPPORTED_NODE_TYPES.has(type)
+}
+
 // 根据 type 获取节点定义
 export function getNodeDefinition(type) {
   return nodeCatalog.find((n) => n.type === type)

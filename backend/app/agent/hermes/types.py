@@ -81,6 +81,7 @@ class ToolEntry:
     source: str = "builtin"
     parallel_safe: bool = False  # 见 tool_dispatch 分类
     untrusted: bool = False  # 结果是否需要不可信包装
+    parameters: Optional[dict] = None
 
 
 # ============================================================================

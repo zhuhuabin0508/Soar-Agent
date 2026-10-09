@@ -191,6 +191,19 @@ _EXPLICIT_CORE_NAMES = frozenset({
     "list_workflow_skills",    # 技能列表
 })
 
+# 研判/封禁链路核心工具：即使 source=db_code 也永不延迟
+_JUDGMENT_CORE_TOOL_NAMES = frozenset({
+    "search_assets",
+    "get_asset_info",
+    "get_threat_intel",
+    "check_whitelist",
+    "check_subnet",
+    "query_banned_ip",
+    "record_ban",
+    "calculate_ban_duration",
+    "block_ip_on_firewall",
+})
+
 
 def is_deferrable_by_source(name: str, source: Optional[str]) -> bool:
     """按 Soar 的 source 分类判断工具是否可延迟。
@@ -204,7 +217,7 @@ def is_deferrable_by_source(name: str, source: Optional[str]) -> bool:
     """
     if not name or name in BRIDGE_TOOL_NAMES:
         return False
-    if name in _EXPLICIT_CORE_NAMES:
+    if name in _EXPLICIT_CORE_NAMES or name in _JUDGMENT_CORE_TOOL_NAMES:
         return False
     if source is None:
         # 未知 source：保守视为核心（不延迟），避免误延迟关键工具

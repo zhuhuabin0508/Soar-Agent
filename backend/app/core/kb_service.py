@@ -55,10 +55,19 @@ async def ingest_document(db: Session, doc: KnowledgeDocument, kb: KnowledgeBase
     kb_id = kb.id
     logger.info("===== 文档入库开始: doc_id=%s, kb_id=%s, content_len=%s =====", doc_id, kb_id, len(content))
 
-    # 1. 状态标记为"解析中"
     doc.status = "parsing"
     doc.progress = 10
+    doc.error_message = None
     db.commit()
+
+    if not content.strip():
+        logger.warning("分段结果为空: doc_id=%s（content 可能为空）", doc_id)
+        doc.segment_count = 0
+        doc.status = "failed"
+        doc.progress = 0
+        doc.error_message = "解析结果为空，请检查文件格式或解析依赖"
+        db.commit()
+        return 0
 
     # 2. 删除旧分段（重新入库场景）
     old_count = db.query(KnowledgeSegment).filter(KnowledgeSegment.doc_id == doc_id).count()
@@ -74,14 +83,16 @@ async def ingest_document(db: Session, doc: KnowledgeDocument, kb: KnowledgeBase
         logger.exception("分段失败: doc_id=%s, err=%s", doc_id, exc)
         doc.status = "failed"
         doc.progress = 0
+        doc.error_message = str(exc)[:1000]
         db.commit()
         return 0
 
     if not segments_text:
         logger.warning("分段结果为空: doc_id=%s（content 可能为空）", doc_id)
         doc.segment_count = 0
-        doc.status = "available"
-        doc.progress = 100
+        doc.status = "failed"
+        doc.progress = 0
+        doc.error_message = "未能切出有效分段"
         db.commit()
         return 0
 
@@ -144,6 +155,7 @@ async def ingest_document(db: Session, doc: KnowledgeDocument, kb: KnowledgeBase
     doc.segment_count = len(segments_text)
     doc.status = "available"
     doc.progress = 100
+    doc.error_message = None
     db.commit()
     logger.info(
         "===== 文档入库完成: doc_id=%s, 段数=%d, 向量=%s, 状态=available =====",
@@ -265,6 +277,7 @@ async def ingest_document_bg(doc_id: int, kb_id: int) -> None:
             if doc:
                 doc.status = "failed"
                 doc.progress = 0
+                doc.error_message = str(exc)[:1000]
                 db.commit()
         except Exception:  # noqa: BLE001
             pass
@@ -287,6 +300,7 @@ async def reingest_document_bg(doc_id: int, kb_id: int) -> None:
             if doc:
                 doc.status = "failed"
                 doc.progress = 0
+                doc.error_message = str(exc)[:1000]
                 db.commit()
         except Exception:  # noqa: BLE001
             pass

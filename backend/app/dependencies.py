@@ -269,7 +269,6 @@ def check_resource_ownership(
     # owner
     if getattr(resource_obj, "created_by", None) == user.id:
         return
-    # 被授权用户
     share = db.query(ResourceShare).filter(
         ResourceShare.resource_type == resource_type,
         ResourceShare.resource_id == resource_id,
@@ -277,6 +276,15 @@ def check_resource_ownership(
     ).first()
     if share:
         return
+    role_id = getattr(user, "role_id", None)
+    if role_id is not None:
+        role_share = db.query(ResourceShare).filter(
+            ResourceShare.resource_type == resource_type,
+            ResourceShare.resource_id == resource_id,
+            ResourceShare.shared_with_role == role_id,
+        ).first()
+        if role_share:
+            return
     logger.warning(
         "资源编辑权限不足: uid=%s, username=%s, type=%s, resource_id=%s, owner=%s",
         user.id, user.username, resource_type, resource_id,
@@ -313,7 +321,7 @@ def compute_can_edit_ids(
     if not resource_ids:
         return set()
 
-    rows = (
+    user_rows = (
         db.query(ResourceShare.resource_id)
         .filter(
             ResourceShare.resource_type == resource_type,
@@ -323,7 +331,21 @@ def compute_can_edit_ids(
         )
         .all()
     )
-    return {r[0] for r in rows}
+    ids = {r[0] for r in user_rows}
+    role_id = getattr(user, "role_id", None)
+    if role_id is not None:
+        role_rows = (
+            db.query(ResourceShare.resource_id)
+            .filter(
+                ResourceShare.resource_type == resource_type,
+                ResourceShare.resource_id.in_(resource_ids),
+                ResourceShare.shared_with_role == role_id,
+                ResourceShare.permission == "edit",
+            )
+            .all()
+        )
+        ids.update(r[0] for r in role_rows)
+    return ids
 
 
 def resource_can_edit(user: User, db: Session, resource_obj, shared_ids: set[int]) -> bool:
