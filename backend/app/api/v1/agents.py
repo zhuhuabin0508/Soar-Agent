@@ -168,6 +168,7 @@ class AgentBase(BaseModel):
     variables: dict | None = Field(None, description="自定义变量")
     tool_configs: dict | None = Field(None, description="工具配置（key=工具名, value={timeout, retry, require_confirm}）")
     engine: str = Field("hermes", description="执行引擎：hermes（默认）；langgraph 写入时由 runtime 转 Hermes")
+    output_mode: str | None = Field(None, description="chat / soc_decision / ban_risk_analyze，不传则创建为 chat、更新保持原值")
     publish_status: str | None = Field(None, description="draft / published，创建默认草稿，更新未传则保持原值")
 
 
@@ -193,6 +194,14 @@ def _resolve_publish_status(agent: Agent) -> str:
     if name.startswith("（草稿）") or str(desc).startswith("[草稿]"):
         return "draft"
     return "published"
+
+
+def _normalize_output_mode(raw: str | None, *, default: str) -> str:
+    if raw in ("chat", "soc_decision", "ban_risk_analyze"):
+        return raw
+    if default in ("chat", "soc_decision", "ban_risk_analyze"):
+        return default
+    return "chat"
 
 
 def _incoming_publish_status(body: AgentBase, *, default: str) -> str:
@@ -261,6 +270,7 @@ def _agent_to_dsl(agent: Agent) -> dict[str, Any]:
         "variables": variables,
         "tool_configs": agent.tool_configs or {},
         "engine": agent.engine or "hermes",
+        "output_mode": getattr(agent, "output_mode", None) or "chat",
         "template_meta": {
             "is_public_template": bool((agent.variables or {}).get("is_public_template")),
             "scenario": (agent.variables or {}).get("template_scenario") or "",
@@ -306,6 +316,7 @@ def _dsl_to_agent_base(dsl: dict[str, Any]) -> AgentBase:
         variables=variables,
         tool_configs=dsl.get("tool_configs") or {},
         engine=dsl.get("engine") or "hermes",
+        output_mode=dsl.get("output_mode") or "chat",
     )
 
 
@@ -496,6 +507,7 @@ def create_agent(
         variables=body.variables or {},
         tool_configs=body.tool_configs or {},
         engine=body.engine or "hermes",
+        output_mode=_normalize_output_mode(body.output_mode, default="chat"),
         publish_status=_incoming_publish_status(body, default="draft"),
         created_by=current_user.id,
     )
@@ -543,6 +555,8 @@ def update_agent(
     # engine：前端 body 未传 engine 时保留原值（避免误覆盖为 langgraph）
     if body.engine:
         agent.engine = body.engine
+    if body.output_mode:
+        agent.output_mode = _normalize_output_mode(body.output_mode, default=agent.output_mode or "chat")
     incoming = _incoming_publish_status(body, default="")
     if incoming in ("draft", "published"):
         agent.publish_status = incoming
@@ -656,8 +670,7 @@ async def test_agent(
 ) -> dict:
     """测试智能体，返回推理结果与日志。
 
-    - 未勾选工具和知识库时：走纯 LLM 对话路径（不使用安全决策流程）
-    - 勾选了工具/知识库时：经 invoke_agent（soc_decision 或 chat，由 runtime 判定）
+    输出字段由智能体 output_mode 决定，不再根据是否勾选工具推断。
     """
     logger.info("测试智能体: id=%s", agent_id)
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
@@ -678,21 +691,19 @@ async def test_agent(
         alert_data = {"input": user_input}
         user_text = user_input
 
-    has_tools = bool(agent.enabled_tools) or bool(agent.enabled_kbs) or bool(agent.enabled_asset_types) or bool(agent.enabled_workflows)
-
     from app.platform.agent_runtime import (
         OUTPUT_MODE_CHAT,
-        OUTPUT_MODE_SOC_DECISION,
         invoke_agent,
+        resolve_output_mode,
         resolve_runtime_user,
     )
 
-    output_mode = OUTPUT_MODE_SOC_DECISION if has_tools else OUTPUT_MODE_CHAT
+    output_mode = resolve_output_mode(agent)
     try:
         result = await invoke_agent(
             db=db,
             agent=agent,
-            input=alert_data if has_tools else user_text,
+            input=alert_data if output_mode != OUTPUT_MODE_CHAT else user_text,
             user=resolve_runtime_user(db),
             channel="test",
             output_mode=output_mode,
@@ -703,7 +714,7 @@ async def test_agent(
         logger.exception("智能体测试失败: %s", exc)
         raise HTTPException(status_code=500, detail=f"Agent 测试失败: {exc}") from exc
 
-    if not has_tools:
+    if output_mode == OUTPUT_MODE_CHAT:
         try:
             exec_record = Execution(
                 agent_id=agent.id,

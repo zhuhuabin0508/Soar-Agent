@@ -326,6 +326,35 @@ def _reset_govcloud_split_schema(engine) -> None:
             logger.info("轻量迁移: 新表为空，已清空旧导入批次避免误报未对齐")
 
 
+def _backfill_agent_output_mode(engine) -> None:
+    insp = inspect(engine)
+    if not insp.has_table("agents"):
+        return
+    cols = {c["name"] for c in insp.get_columns("agents")}
+    if "output_mode" not in cols:
+        return
+    with engine.begin() as conn:
+        if engine.dialect.name != "postgresql":
+            conn.execute(text("UPDATE agents SET output_mode = 'chat' WHERE output_mode IS NULL"))
+            return
+        conn.execute(text(
+            """
+            UPDATE agents
+            SET output_mode = 'soc_decision'
+            WHERE output_mode IS NULL
+              AND (
+                COALESCE(enabled_tools::text, '[]') NOT IN ('[]', 'null', '')
+                OR COALESCE(enabled_kbs::text, '[]') NOT IN ('[]', 'null', '')
+                OR COALESCE(enabled_asset_types::text, '[]') NOT IN ('[]', 'null', '')
+                OR COALESCE(enabled_workflows::text, '[]') NOT IN ('[]', 'null', '')
+              )
+            """
+        ))
+        conn.execute(text(
+            "UPDATE agents SET output_mode = 'chat' WHERE output_mode IS NULL"
+        ))
+
+
 def run_lightweight_migrations(engine) -> None:
     """运行所有轻量迁移（启动时调用）。
 
@@ -519,8 +548,10 @@ def run_lightweight_migrations(engine) -> None:
                 # 执行引擎：hermes（默认）；历史库可能仍为 langgraph 字符串
                 "engine": "VARCHAR(16) NOT NULL DEFAULT 'hermes'",
                 "publish_status": "VARCHAR(16) NOT NULL DEFAULT 'published'",
+                "output_mode": "VARCHAR(32)",
             },
         )
+        _backfill_agent_output_mode(engine)
         # tools 表新增声明式 HTTP 工具支持：tool_type + http_config + category + is_preset + tags
         ensure_columns(
             engine,

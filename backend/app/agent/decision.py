@@ -197,8 +197,8 @@ async def _run_agent_decision_via_runtime(
     from app.models.agent import Agent
     from app.platform.agent_runtime import (
         OUTPUT_MODE_CHAT,
-        OUTPUT_MODE_SOC_DECISION,
         invoke_agent,
+        resolve_output_mode,
         resolve_runtime_user,
     )
 
@@ -208,7 +208,7 @@ async def _run_agent_decision_via_runtime(
         out_logs.append(_new_log("error", f"Agent not found: {agent_id}"))
         return await _mock_decision(alert_data, out_logs)
 
-    output_mode = OUTPUT_MODE_CHAT if system_prompt is not None else OUTPUT_MODE_SOC_DECISION
+    output_mode = resolve_output_mode(agent)
     result = await invoke_agent(
         db=db,
         agent=agent,

@@ -54,18 +54,20 @@ def resolve_runtime_user(db: Session):
     return SimpleNamespace(id=0, username="runtime-system")
 
 
+def resolve_output_mode(agent: Agent) -> str:
+    raw = (getattr(agent, "output_mode", None) or OUTPUT_MODE_CHAT).strip()
+    if raw in (OUTPUT_MODE_CHAT, OUTPUT_MODE_SOC_DECISION, OUTPUT_MODE_BAN_RISK_ANALYZE):
+        return raw
+    return OUTPUT_MODE_CHAT
+
+
 def agent_uses_soc_decision(agent: Agent) -> bool:
-    return bool(
-        agent.enabled_tools
-        or agent.enabled_kbs
-        or agent.enabled_asset_types
-        or getattr(agent, "enabled_workflows", None)
-    )
+    return resolve_output_mode(agent) == OUTPUT_MODE_SOC_DECISION
 
 
-def workflow_result_from_invoke(result: AgentInvokeResult, *, soc: bool) -> dict:
-    if soc and result.decision:
-        decision = result.decision
+def workflow_result_from_invoke(result: AgentInvokeResult, *, output_mode: str) -> dict:
+    decision = result.decision or {}
+    if output_mode == OUTPUT_MODE_SOC_DECISION and decision:
         response = result.response or decision.get("reason") or decision.get("decision") or ""
         return {
             "response": response,
@@ -75,6 +77,13 @@ def workflow_result_from_invoke(result: AgentInvokeResult, *, soc: bool) -> dict
             "duration": decision.get("duration"),
             "messages": result.messages,
             "logs": (result.raw or {}).get("logs") or [],
+        }
+    if output_mode == OUTPUT_MODE_BAN_RISK_ANALYZE and decision:
+        return {
+            "response": result.response,
+            "messages": result.messages,
+            "logs": [],
+            **decision,
         }
     return {
         "response": result.response,
@@ -93,8 +102,8 @@ async def invoke_agent_for_workflow(
     session_key: str | None = None,
     override=None,
 ) -> dict:
-    soc = agent_uses_soc_decision(agent)
-    if soc:
+    output_mode = resolve_output_mode(agent)
+    if output_mode == OUTPUT_MODE_SOC_DECISION:
         alert_data = dict(input_data) if isinstance(input_data, dict) else {"input": input_data}
         if isinstance(input_data, str):
             try:
@@ -106,7 +115,9 @@ async def invoke_agent_for_workflow(
         if "input" not in alert_data and user_message:
             alert_data.setdefault("input", user_message)
         invoke_input = alert_data
-        output_mode = OUTPUT_MODE_SOC_DECISION
+    elif output_mode == OUTPUT_MODE_BAN_RISK_ANALYZE:
+        alert_data = dict(input_data) if isinstance(input_data, dict) else {"input": input_data}
+        invoke_input = alert_data
     else:
         invoke_input = user_message
         output_mode = OUTPUT_MODE_CHAT
@@ -121,7 +132,7 @@ async def invoke_agent_for_workflow(
         session_id=session_id,
         override=override,
     )
-    return workflow_result_from_invoke(result, soc=soc)
+    return workflow_result_from_invoke(result, output_mode=output_mode)
 
 
 def resolve_engine(agent: Agent) -> str:

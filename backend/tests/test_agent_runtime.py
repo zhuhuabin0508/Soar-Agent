@@ -7,14 +7,16 @@ from app.platform.agent_runtime import (
     adapt_ban_risk_analyze,
     adapt_soc_decision,
     resolve_engine,
+    resolve_output_mode,
 )
 from app.workflow.agent_client import AgentCallError
 
 
 class _FakeAgent:
-    def __init__(self, agent_id: int, engine: str):
+    def __init__(self, agent_id: int, engine: str, output_mode: str = "chat"):
         self.id = agent_id
         self.engine = engine
+        self.output_mode = output_mode
 
 
 class TestResolveEngine:
@@ -26,6 +28,15 @@ class TestResolveEngine:
 
     def test_legacy_maps_to_hermes(self):
         assert resolve_engine(_FakeAgent(3, "legacy")) == "hermes"
+
+
+class TestOutputMode:
+    def test_explicit_modes(self):
+        assert resolve_output_mode(_FakeAgent(1, "hermes", "soc_decision")) == "soc_decision"
+        assert resolve_output_mode(_FakeAgent(1, "hermes", "ban_risk_analyze")) == "ban_risk_analyze"
+
+    def test_unknown_falls_back_to_chat(self):
+        assert resolve_output_mode(_FakeAgent(1, "hermes", "other")) == "chat"
 
 
 class TestAdaptSocDecision:

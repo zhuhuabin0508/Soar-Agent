@@ -62,6 +62,7 @@ class Agent(Base):
     # ===== 引擎选择 =====
     # 执行引擎：hermes（默认）；langgraph 仅兼容字段，runtime 统一走 Hermes
     engine = Column(String(16), nullable=False, default="hermes")
+    output_mode = Column(String(32), nullable=False, default="chat")
     publish_status = Column(String(16), nullable=False, default="published")
 
     def __repr__(self) -> str:

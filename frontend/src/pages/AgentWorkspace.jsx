@@ -62,6 +62,7 @@ function emptyForm() {
     variables: {},
     tool_configs: {},
     engine: 'hermes',
+    output_mode: 'chat',
   }
 }
 
@@ -810,6 +811,7 @@ export default function AgentWorkspace() {
           variables: agent.variables || {},
           tool_configs: agent.tool_configs || {},
           engine: agent.engine || 'hermes',
+          output_mode: agent.output_mode || 'chat',
         })
         setMeta({
           can_edit: typeof agent.can_edit === 'boolean' ? agent.can_edit : true,
@@ -871,6 +873,7 @@ export default function AgentWorkspace() {
         variables: form.variables,
         tool_configs: form.tool_configs,
         engine: form.engine || 'hermes',
+        output_mode: form.output_mode || 'chat',
       }
       const result = agentId ? await agentsApi.update(agentId, body) : await agentsApi.create(body)
       setDirty(false)
@@ -1079,6 +1082,22 @@ export default function AgentWorkspace() {
                     </option>
                   ))}
                 </select>
+              </div>
+              <div className="mb-6">
+                <div className="mb-1.5 text-xs font-medium text-muted-foreground">输出模式</div>
+                <select
+                  value={form.output_mode || 'chat'}
+                  onChange={(e) => setField('output_mode')(e.target.value)}
+                  disabled={!canEdit}
+                  className="h-9 w-full max-w-md rounded-md border border-border bg-secondary px-2 text-sm"
+                >
+                  <option value="chat">对话</option>
+                  <option value="soc_decision">研判决策</option>
+                  <option value="ban_risk_analyze">封禁研判</option>
+                </select>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  工作流和同步测试按这里取值。对话页始终返回对话流。
+                </p>
               </div>
               <div className="mb-6">
                 <div className="mb-1.5 text-xs font-medium text-muted-foreground">提示词</div>
