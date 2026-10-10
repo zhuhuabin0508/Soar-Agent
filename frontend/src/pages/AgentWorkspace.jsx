@@ -330,7 +330,7 @@ function DebugTrace({ tools, statuses, logs, files, thinking, live }) {
     <div className="mb-2 flex flex-col gap-1.5 rounded-md border border-dashed border-primary/30 bg-primary/5 p-2">
       <div className="text-[10px] font-semibold uppercase tracking-wide text-primary/80">调试明细</div>
       {(thinking || live) && (
-        <details open className="rounded border border-border bg-card/70">
+        <details className="rounded border border-border bg-card/70">
           <summary className="cursor-pointer px-2 py-1 text-[11px] text-muted-foreground">思考过程</summary>
           {live ? (
             <div ref={live.thinkingEl} className="max-h-48 overflow-auto whitespace-pre-wrap border-t border-border px-2 py-1.5 font-mono text-[11px] leading-relaxed text-muted-foreground" />
@@ -350,7 +350,7 @@ function DebugTrace({ tools, statuses, logs, files, thinking, live }) {
         </div>
       )}
       {tools?.map((t, i) => (
-        <details key={t.call_id || i} open className="rounded border border-border bg-card/80">
+        <details key={t.call_id || i} className="rounded border border-border bg-card/80">
           <summary className="flex cursor-pointer items-center gap-1.5 px-2 py-1 text-[11px]">
             <Wrench className="h-3 w-3 text-primary" />
             <span className="font-mono text-primary">{t.name}</span>

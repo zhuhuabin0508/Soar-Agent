@@ -942,7 +942,6 @@ function AgentEditor() {
                 }
                 case 'log':
                   logs.push(data.log)
-                  flush({ logs: [...logs] })
                   break
                 case 'done':
                   if (data.content) {
@@ -957,6 +956,7 @@ function AgentEditor() {
                     thinking: pendingThinkingRef.current,
                     streaming: false,
                     tokenUsage: data.usage || null,
+                    logs: [...logs],
                     toolCalls: toolCalls.map((tc) => ({
                       ...tc,
                       result: toolResultStore.get(tc.call_id) ?? null,
@@ -965,7 +965,7 @@ function AgentEditor() {
                   break
                 case 'error':
                   setTestError(data.message || '测试失败')
-                  flush({ streaming: false })
+                  flush({ streaming: false, logs: [...logs] })
                   break
                 default:
                   // 忽略未知事件类型（skill_interrupt 等暂不专门处理）
