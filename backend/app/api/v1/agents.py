@@ -1,11 +1,8 @@
 """智能体 CRUD 与测试路由。"""
 import json
 import logging
-import asyncio
-import time
 import os
-from datetime import datetime
-from app.core.timezone import beijing_now, beijing_now_iso
+from app.core.timezone import beijing_now
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -202,6 +199,13 @@ def _normalize_output_mode(raw: str | None, *, default: str) -> str:
     if default in ("chat", "soc_decision", "ban_risk_analyze"):
         return default
     return "chat"
+
+
+def _normalize_session_id(session_id: str | None) -> str:
+    sid = (session_id or "default").strip() or "default"
+    if len(sid) > 64:
+        raise HTTPException(status_code=400, detail="session_id 超过 64 字符")
+    return sid
 
 
 def _incoming_publish_status(body: AgentBase, *, default: str) -> str:
@@ -709,7 +713,7 @@ async def test_agent(
             channel="test",
             output_mode=output_mode,
             override=sanitize_override(body.override, channel="test"),
-            session_id=body.session_id or "default",
+            session_id=_normalize_session_id(body.session_id),
         )
     except Exception as exc:
         logger.exception("智能体测试失败: %s", exc)
@@ -789,155 +793,23 @@ async def test_agent_stream(
     if (body.channel or "") == "conversation":
         _require_published(agent)
 
-    from app.platform.agent_runtime import invoke_agent_sse, sanitize_override
+    from app.platform.agent_run import AgentRun
+    from app.platform.agent_runtime import sanitize_override
 
-    user_input = body.input or ""
-    session_id = body.session_id or "default"
-    test_channel = body.channel or "test"
-
-    async def sse_stream():
-        from app.database import SessionLocal
-
-        exec_id: int | None = None
-        exec_status = "success"
-        final_reply = ""
-        error_msg = ""
-
-        try:
-            with SessionLocal() as s:
-                rec = Execution(
-                    agent_id=agent.id,
-                    status="running",
-                    trigger_type="agent_test",
-                    result={"input": user_input, "engine": "hermes", "mode": "test_stream"},
-                )
-                s.add(rec)
-                s.commit()
-                s.refresh(rec)
-                exec_id = rec.id
-        except Exception:  # noqa: BLE001
-            logger.exception("创建 Execution 记录失败，继续流式输出")
-
-        try:
-            async for chunk in invoke_agent_sse(
-                db=db,
-                agent=agent,
-                input=user_input,
-                user=current_user,
-                channel=test_channel,
-                override=sanitize_override(body.override, channel=test_channel),
-                session_id=session_id,
-            ):
-                if chunk.startswith("data: "):
-                    try:
-                        data = json.loads(chunk[6:].strip())
-                        etype = data.get("type", "")
-                        if etype == "done":
-                            final_reply = data.get("content", "") or data.get("reply", "")
-                        elif etype == "error":
-                            exec_status = "failed"
-                            error_msg = data.get("message", "")
-                    except (json.JSONDecodeError, ValueError):
-                        pass
-                yield chunk
-                await asyncio.sleep(0)
-        except Exception as exc:
-            logger.exception("Agent SSE 失败: %s", exc)
-            exec_status = "failed"
-            error_msg = str(exc)
-            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)}, ensure_ascii=False)}\n\n"
-        finally:
-            if exec_id is not None:
-                try:
-                    with SessionLocal() as s:
-                        rec = s.query(Execution).filter(Execution.id == exec_id).first()
-                        if rec is not None:
-                            rec.status = exec_status
-                            rec.finished_at = beijing_now()
-                            result = {
-                                "input": user_input,
-                                "engine": "hermes",
-                                "mode": "test_stream",
-                                "reply": final_reply,
-                            }
-                            if error_msg:
-                                result["error"] = error_msg
-                            rec.result = result
-                            s.commit()
-                except Exception:  # noqa: BLE001
-                    logger.exception("更新 Execution 记录失败: exec_id=%s", exec_id)
-
-    return StreamingResponse(sse_stream(), media_type="text/event-stream")
-
-
-# ============================================================================
-# Hermes 引擎专用端点（仅 engine=hermes 的 Agent 走此路径）
-# ============================================================================
-
-
-def _load_chat_history(db, agent_id: int, session_id: str, context_turns: int) -> list[dict]:
-    """加载最近 N 轮对话历史（OpenAI 格式），保持 tool_call/tool_result 配对。
-
-    Hermes 引擎每个 HTTP 请求是无状态的，多轮对话（如封禁确认）需跨请求保留
-    上下文。本函数从 chat_messages 表按 (agent_id, session_id) 取最近若干条，
-    反转为正序后返回，供 executor.load_history 注入。
-
-    修剪规则：若开头是孤立的 tool 消息（其配对的 assistant tool_calls 被截断掉），
-    逐条丢弃直到开头为 user/assistant，避免 OpenAI API 报 tool message 无配对。
-
-    排序稳定性：同一轮持久化的多条消息（assistant + tool + tool）created_at 可能
-    完全相同（微秒级并发写入）。仅按 created_at 排序时，PostgreSQL 对相等键的返回
-    顺序不确定，可能把 tool 排到 assistant 之前，导致 OpenAPI 报 "tool must be a
-    response to a preceding message with tool_calls"。追加 id 作为次级排序键
-    （id 为自增主键，反映插入顺序：assistant 永远先于其 tool 结果插入）保证稳定。
-    """
-    from app.models.chat_message import ChatMessage
-
-    # 每轮约 4-6 条（user + assistant + tool + ...），按 context_turns 估算条数
-    limit = max(context_turns * 8, 20)
-    records = (
-        db.query(ChatMessage)
-        .filter(ChatMessage.agent_id == agent_id, ChatMessage.session_id == session_id)
-        .order_by(ChatMessage.created_at.desc(), ChatMessage.id.desc())
-        .limit(limit)
-        .all()
+    channel = body.channel or "test"
+    session_id = _normalize_session_id(body.session_id)
+    run = AgentRun(
+        db=db,
+        agent=agent,
+        user=current_user,
+        channel=channel,
+        session_id=session_id,
+        user_input=body.input or "",
+        override=sanitize_override(body.override, channel=channel),
+        load_history=False,
+        persist_history=False,
     )
-    if not records:
-        return []
-    records = list(reversed(records))  # 旧 → 新
-    history: list[dict] = []
-    for r in records:
-        msg: dict = {"role": r.role, "content": r.content or ""}
-        if r.role == "assistant" and r.tool_calls:
-            msg["tool_calls"] = r.tool_calls
-        if r.role == "tool":
-            msg["tool_call_id"] = r.tool_call_id or ""
-            msg["name"] = r.name or ""
-        history.append(msg)
-    # 修剪开头的孤立 tool 消息
-    while history and history[0].get("role") == "tool":
-        history.pop(0)
-    return history
-
-
-def _persist_new_messages(db, agent_id: int, session_id: str, new_messages: list[dict]) -> None:
-    """持久化本轮新增消息（user/assistant/tool）到 chat_messages 表。"""
-    from app.models.chat_message import ChatMessage
-
-    for m in new_messages:
-        role = m.get("role", "user")
-        if role not in ("user", "assistant", "tool"):
-            continue
-        db.add(ChatMessage(
-            agent_id=agent_id,
-            session_id=session_id,
-            role=role,
-            content=m.get("content", "") or "",
-            tool_calls=m.get("tool_calls") if role == "assistant" else None,
-            tool_call_id=m.get("tool_call_id", "") or "" if role == "tool" else "",
-            name=m.get("name", "") or "" if role == "tool" else "",
-        ))
-    db.commit()
+    return StreamingResponse(run.stream(), media_type="text/event-stream")
 
 
 @router.post("/{agent_id}/chat")
@@ -947,176 +819,32 @@ async def chat_agent(
     db: Session = Depends(get_db),
     current_user=Depends(require_permission("agent", "execute")),
 ):
-    """Hermes 引擎 SSE 对话端点（经 invoke_agent_sse 统一入口）。
-
-    ``engine=langgraph`` 会告警并路由到 Hermes；Playground 调试请用 ``/{agent_id}/test/stream``。
-    """
+    """Hermes 引擎 SSE 对话端点。历史、执行记录和错误事件由 AgentRun 统一处理。"""
     logger.info("Agent 对话(SSE): agent_id=%s", agent_id)
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
-    if (body.channel or "conversation") != "test":
+    channel = body.channel or "conversation"
+    if channel != "test":
         _require_published(agent)
 
-    from app.platform.agent_runtime import invoke_agent_sse, sanitize_override
+    from app.platform.agent_run import AgentRun
+    from app.platform.agent_runtime import sanitize_override
 
-    session_id = body.session_id or "default"
-    chat_channel = body.channel or "conversation"
-    history: list[dict] = []
-    try:
-        history = _load_chat_history(db, agent.id, session_id, agent.context_turns or 10)
-        if history:
-            logger.info(
-                "Hermes 历史注入: agent_id=%s session=%s 历史消息数=%d",
-                agent.id, session_id, len(history),
-            )
-    except Exception:  # noqa: BLE001
-        logger.exception("加载对话历史失败，将以无历史模式继续")
-
-    executor_holder: list = []
-
-    async def sse_stream_with_execution():
-        """SSE 流 + Execution 记录追踪。
-
-        Hermes 引擎的每次对话都创建一条 Execution 记录，使监控页面能统计
-        对话次数/成功失败率/耗时。test/stream 经 invoke_agent_sse 写入
-        创建 Execution，Hermes 路径在此补齐。
-
-        DB Session 生命周期优化：不依赖 Depends(get_db) 注入的 session
-        （会在整个流式响应期间持有连接，多轮 ReAct 可能数十秒，高并发时
-        连接池耗尽）。改用独立短生命周期 session 创建/更新记录，流中间
-        不持有任何 DB 连接。
-        """
-        from app.database import SessionLocal
-
-        # 流开始：独立 session 创建 Execution（用完即关）
-        exec_id: int | None = None
-        try:
-            with SessionLocal() as s:
-                rec = Execution(
-                    agent_id=agent.id,
-                    status="running",
-                    trigger_type="agent_test",
-                    result={"input": body.input, "engine": "hermes"},
-                )
-                s.add(rec)
-                s.commit()
-                s.refresh(rec)
-                exec_id = rec.id
-            logger.info("Hermes 执行记录已创建: execution_id=%s, agent_id=%s", exec_id, agent.id)
-        except Exception:  # noqa: BLE001
-            logger.exception("创建 Execution 记录失败，继续流式输出")
-
-        final_reply = ""
-        exec_status = "success"
-        error_msg = ""
-        tool_calls_detail: list[dict] = []
-        # 工具调用计时：tool_call_id → 开始时间戳
-        tool_timers: dict[str, float] = {}
-
-        try:
-            async for chunk in invoke_agent_sse(
-                db=db,
-                agent=agent,
-                input=body.input,
-                user=current_user,
-                channel=chat_channel,
-                override=sanitize_override(body.override, channel=chat_channel),
-                session_id=session_id,
-                history=history or None,
-                executor_holder=executor_holder,
-            ):
-                try:
-                    if chunk.startswith("data: "):
-                        data = json.loads(chunk[6:].strip())
-                        etype = data.get("type", "")
-                        if etype == "done":
-                            final_reply = data.get("content", "") or data.get("reply", "")
-                        elif etype == "error":
-                            exec_status = "failed"
-                            error_msg = data.get("message", "")
-                        elif etype == "tool_start":
-                            tc_id = data.get("tool_call_id", "")
-                            tool_timers[tc_id] = time.monotonic()
-                            tool_calls_detail.append({
-                                "name": data.get("tool_name", ""),
-                                "args": data.get("args"),
-                                "status": "running",
-                                "started_at": beijing_now_iso(),
-                            })
-                        elif etype == "tool_end":
-                            tc_id = data.get("tool_call_id", "")
-                            start_ts = tool_timers.pop(tc_id, None)
-                            duration_ms = int((time.monotonic() - start_ts) * 1000) if start_ts else None
-                            if tool_calls_detail:
-                                tool_calls_detail[-1]["status"] = "done"
-                                tool_calls_detail[-1]["result"] = data.get("result")
-                                tool_calls_detail[-1]["duration_ms"] = duration_ms
-                                tool_calls_detail[-1]["finished_at"] = beijing_now_iso()
-                except (json.JSONDecodeError, ValueError):
-                    pass
-                yield chunk
-        except Exception as exc:  # noqa: BLE001
-            exec_status = "failed"
-            error_msg = str(exc)
-            raise
-        finally:
-            executor = executor_holder[0] if executor_holder else None
-            # 流结束：独立 session 更新 Execution 状态（用完即关）
-            if exec_id is not None:
-                try:
-                    with SessionLocal() as s:
-                        rec = s.query(Execution).filter(Execution.id == exec_id).first()
-                        if rec is not None:
-                            rec.status = exec_status
-                            rec.finished_at = beijing_now()
-                            # 从 executor 实例读取监控元数据
-                            model_meta = getattr(executor, "_model_meta", {}) or {} if executor else {}
-                            token_usage = getattr(executor, "_token_usage", {}) or {} if executor else {}
-                            iteration_count = getattr(executor, "_iteration_count", 0) if executor else 0
-                            thinking_chars = getattr(executor, "_thinking_chars", 0) if executor else 0
-                            result: dict[str, Any] = {
-                                "input": body.input,
-                                "engine": "hermes",
-                                "reply": final_reply,
-                                "model": {
-                                    "config_id": model_meta.get("model_config_id"),
-                                    "name": model_meta.get("model_name", ""),
-                                    "provider": model_meta.get("provider", ""),
-                                },
-                                "token_usage": token_usage,
-                                "iterations": iteration_count,
-                                "thinking_chars": thinking_chars,
-                            }
-                            if error_msg:
-                                result["error"] = error_msg
-                            if tool_calls_detail:
-                                result["tool_calls"] = tool_calls_detail
-                            rec.result = result
-                            s.commit()
-                except Exception:  # noqa: BLE001
-                    logger.exception("更新 Execution 记录失败: exec_id=%s", exec_id)
-
-            # 持久化本轮新增对话消息（多轮上下文）。
-            # 仅在至少产生了 assistant 回复时持久化（避免错误/中止时存入孤立的 user 消息）。
-            try:
-                if executor is not None:
-                    new_msgs = executor.get_new_messages()
-                else:
-                    new_msgs = []
-                has_assistant = any(m.get("role") == "assistant" for m in new_msgs)
-                if has_assistant and new_msgs:
-                    with SessionLocal() as s:
-                        _persist_new_messages(s, agent.id, session_id, new_msgs)
-                    logger.info(
-                        "Hermes 对话持久化: agent_id=%s session=%s 新增消息数=%d",
-                        agent.id, session_id, len(new_msgs),
-                    )
-            except Exception:  # noqa: BLE001
-                logger.exception("持久化对话消息失败")
-
+    session_id = _normalize_session_id(body.session_id)
+    run = AgentRun(
+        db=db,
+        agent=agent,
+        user=current_user,
+        channel=channel,
+        session_id=session_id,
+        user_input=body.input or "",
+        override=sanitize_override(body.override, channel=channel),
+        load_history=True,
+        persist_history=True,
+    )
     return StreamingResponse(
-        sse_stream_with_execution(),
+        run.stream(),
         media_type="text/event-stream",
         headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
     )

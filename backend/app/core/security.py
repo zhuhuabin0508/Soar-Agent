@@ -551,6 +551,11 @@ def run_lightweight_migrations(engine) -> None:
                 "output_mode": "VARCHAR(32)",
             },
         )
+        ensure_columns(
+            engine,
+            "chat_messages",
+            {"user_id": "INTEGER"},
+        )
         _backfill_agent_output_mode(engine)
         # tools 表新增声明式 HTTP 工具支持：tool_type + http_config + category + is_preset + tags
         ensure_columns(

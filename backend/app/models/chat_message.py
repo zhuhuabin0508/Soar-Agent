@@ -23,6 +23,7 @@ class ChatMessage(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     agent_id = Column(Integer, ForeignKey("agents.id"), nullable=False, index=True)
+    user_id = Column(Integer, nullable=True, index=True)
     session_id = Column(String(64), nullable=False, index=True)
     role = Column(String(20), nullable=False)  # user / assistant / tool
     content = Column(Text, default="")
