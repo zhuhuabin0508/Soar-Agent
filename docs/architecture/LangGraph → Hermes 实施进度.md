@@ -1,7 +1,7 @@
 # LangGraph → Hermes 收口 · 实施进度
 
 > 类型：**进度跟踪文档**（随代码与站会更新）  
-> 最后更新：2026-10-08（Agent 基座冻结 + 遗留文件清理）  
+> 最后更新：2026-10-10（基座审查补丁：会话隔离、显式输出模式、流式收口）  
 > **方案与冲突评判标准（定稿，不随进度改）**：[`LangGraph → Hermes 统一.md`](./LangGraph%20→%20Hermes%20统一.md)  
 > **基座 MVP 范围**：[`SOAR Agent 平台基座优化方案.md`](./SOAR%20Agent%20平台基座优化方案.md) §13.2  
 
@@ -102,6 +102,7 @@
 | 2026-09-28 | 基座收口第二轮：禁决策 LangGraph、生产禁封禁 mock、SOC/系统用户门禁、tools debug→runtime |
 | 2026-09-28 | 研发收口自检 §8；`asset_tasks` 迁入 `invoke_agent` |
 | 2026-10-08 | 研发冻结 Agent 基座 MVP；删 `state.py`/`agent_tools.py`；文档与过时 LangGraph 表述收尾 |
+| 2026-10-10 | 审查补丁合入 `main`：`AgentRun`、会话 `user_id`、`output_mode`、正式对话覆盖收紧、工具构造拆出 `tool_builders.py`。双账号隔离已验证；封禁 E2E 仍未做。详见体验问题清单 B-1～B-4 |
 
 ---
 

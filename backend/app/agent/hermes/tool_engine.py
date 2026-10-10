@@ -284,7 +284,7 @@ class HermesToolEngine:
     def _register_asset_tools(self) -> None:
         """注册资产检索工具（在关联的资产类型范围内检索）。
 
-        复用 ``app.agent.decision._build_asset_tool`` 构造工具，抽取
+        复用 ``app.agent.tool_builders._build_asset_tool`` 构造工具，抽取
         (name, description, args_schema, coroutine) 注册为 ToolEntry。
         source="asset" 为核心来源（永不延迟，见 tool_search.py）。
         """

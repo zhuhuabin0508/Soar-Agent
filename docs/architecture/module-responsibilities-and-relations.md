@@ -113,7 +113,7 @@
 | # | 问题 | 所在位置 | 影响 |
 |---|------|---------|------|
 | 1 | 五模块在导航平铺，但分属执行/能力/内容三层 | 前端 `AppShell` 导航 | 概念层级不清，易误以为同一层 |
-| 2 | `search_assets` 双轨挂载（工具表 + 资产类型直挂），且工具表路径被 `continue` 跳过 | `decision.py`、`tool_engine.py` | 配置了工具却不一定生效，难以排障 |
+| 2 | `search_assets` 双轨挂载（工具表 + 资产类型直挂），且工具表路径被 `continue` 跳过 | `tool_builders.py`、`tool_engine.py`（2026-10-10 起实现已不在 `decision.py`） | 配置了工具却不一定生效，难以排障 |
 | 3 | tool_search 动态隐藏非核心工具 | `tool_search.py`、`tool_engine.py` | 研判智能体看不到威胁情报/封禁等关键工具 |
 | 4 | 内置工具迁移为 DB code 工具后，与用户自建工具混在一起 | `seed.py` 的 `HERMES_BUILTIN_TOOLS` / 工具表 | 工具列表冗长、来源难辨 |
 | 5 | framework/code/http 三类工具语义差异未对用户讲清 | 工具模型 | 新建工具时选型困惑 |
