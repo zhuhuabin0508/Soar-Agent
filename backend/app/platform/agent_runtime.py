@@ -137,13 +137,13 @@ def resolve_engine(agent: Agent) -> str:
 
 
 def adapt_soc_decision(content: str, src_ip: str = "unknown") -> dict:
-    from app.agent.decision import _parse_action_decision_from_content
+    from app.agent.output_adapt import _parse_action_decision_from_content
 
     return _parse_action_decision_from_content(content, src_ip)
 
 
 def adapt_ban_risk_analyze(content: str) -> dict:
-    from app.agent.decision import _extract_json_object
+    from app.agent.output_adapt import _extract_json_object
     from app.workflow.agent_client import AgentCallError
 
     candidate = _extract_json_object(content)

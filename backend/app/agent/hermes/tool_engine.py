@@ -219,7 +219,7 @@ class HermesToolEngine:
                 logger.warning("DB 工具加载失败: %s, error=%s", name, exc)
                 continue
 
-            from app.agent.decision import _build_args_model
+            from app.agent.tool_builders import _build_args_model
 
             args_model = _build_args_model(tool.name, tool.parameters_schema)
             tool_type = (getattr(tool, "tool_type", "code") or "code").lower()
@@ -252,7 +252,7 @@ class HermesToolEngine:
             return
 
         # search_knowledge_base
-        from app.agent.decision import _build_kb_tool
+        from app.agent.tool_builders import _build_kb_tool
 
         kb_tool = _build_kb_tool(enabled_kbs)
         if kb_tool is not None:
@@ -267,7 +267,7 @@ class HermesToolEngine:
             )
 
         # query_kb_file
-        from app.agent.decision import _build_file_query_tool
+        from app.agent.tool_builders import _build_file_query_tool
 
         file_tool = _build_file_query_tool(enabled_kbs)
         if file_tool is not None:
@@ -291,7 +291,7 @@ class HermesToolEngine:
         enabled_asset_types = self.agent.enabled_asset_types or []
         if not enabled_asset_types:
             return
-        from app.agent.decision import _build_asset_tool
+        from app.agent.tool_builders import _build_asset_tool
 
         asset_tool = _build_asset_tool(enabled_asset_types)
         if asset_tool is not None:

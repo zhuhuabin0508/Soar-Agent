@@ -94,7 +94,7 @@ def _extract_json_object_balanced(text: str) -> Optional[str]:
     （已正确处理字符串与转义，避免字符串内的 {/} 干扰匹配）。
     """
     try:
-        from app.agent.decision import _extract_json_object
+        from app.agent.output_adapt import _extract_json_object
         return _extract_json_object(text)
     except ImportError:
         # 降级：简易平衡匹配（不处理字符串内的括号）
