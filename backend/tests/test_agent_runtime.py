@@ -1,5 +1,6 @@
 """Agent 运行时适配器与引擎路由单测。"""
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -8,6 +9,7 @@ from app.platform.agent_runtime import (
     adapt_soc_decision,
     resolve_engine,
     resolve_output_mode,
+    sanitize_override,
 )
 from app.workflow.agent_client import AgentCallError
 
@@ -37,6 +39,19 @@ class TestOutputMode:
 
     def test_unknown_falls_back_to_chat(self):
         assert resolve_output_mode(_FakeAgent(1, "hermes", "other")) == "chat"
+
+    def test_conversation_drops_prompt_and_model(self):
+        override = SimpleNamespace(system_prompt="ignore", model_config_id=9, temperature=0.2)
+        sanitize_override(override, channel="conversation")
+        assert override.system_prompt is None
+        assert override.model_config_id is None
+        assert override.temperature == 0.2
+
+    def test_test_channel_keeps_override(self):
+        override = SimpleNamespace(system_prompt="debug", model_config_id=3, temperature=0.1)
+        sanitize_override(override, channel="test")
+        assert override.system_prompt == "debug"
+        assert override.model_config_id == 3
 
 
 class TestAdaptSocDecision:

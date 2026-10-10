@@ -696,6 +696,7 @@ async def test_agent(
         invoke_agent,
         resolve_output_mode,
         resolve_runtime_user,
+        sanitize_override,
     )
 
     output_mode = resolve_output_mode(agent)
@@ -707,7 +708,7 @@ async def test_agent(
             user=resolve_runtime_user(db),
             channel="test",
             output_mode=output_mode,
-            override=body.override,
+            override=sanitize_override(body.override, channel="test"),
             session_id=body.session_id or "default",
         )
     except Exception as exc:
@@ -788,10 +789,11 @@ async def test_agent_stream(
     if (body.channel or "") == "conversation":
         _require_published(agent)
 
-    from app.platform.agent_runtime import invoke_agent_sse
+    from app.platform.agent_runtime import invoke_agent_sse, sanitize_override
 
     user_input = body.input or ""
     session_id = body.session_id or "default"
+    test_channel = body.channel or "test"
 
     async def sse_stream():
         from app.database import SessionLocal
@@ -822,8 +824,8 @@ async def test_agent_stream(
                 agent=agent,
                 input=user_input,
                 user=current_user,
-                channel=body.channel or "test",
-                override=body.override,
+                channel=test_channel,
+                override=sanitize_override(body.override, channel=test_channel),
                 session_id=session_id,
             ):
                 if chunk.startswith("data: "):
@@ -956,9 +958,10 @@ async def chat_agent(
     if (body.channel or "conversation") != "test":
         _require_published(agent)
 
-    from app.platform.agent_runtime import invoke_agent_sse
+    from app.platform.agent_runtime import invoke_agent_sse, sanitize_override
 
     session_id = body.session_id or "default"
+    chat_channel = body.channel or "conversation"
     history: list[dict] = []
     try:
         history = _load_chat_history(db, agent.id, session_id, agent.context_turns or 10)
@@ -1017,8 +1020,8 @@ async def chat_agent(
                 agent=agent,
                 input=body.input,
                 user=current_user,
-                channel=body.channel or "conversation",
-                override=body.override,
+                channel=chat_channel,
+                override=sanitize_override(body.override, channel=chat_channel),
                 session_id=session_id,
                 history=history or None,
                 executor_holder=executor_holder,

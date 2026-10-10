@@ -153,6 +153,16 @@ def adapt_soc_decision(content: str, src_ip: str = "unknown") -> dict:
     return _parse_action_decision_from_content(content, src_ip)
 
 
+def sanitize_override(override, *, channel: str):
+    if override is None or channel == "test":
+        return override
+    for name in ("system_prompt", "model_config_id"):
+        if getattr(override, name, None) is not None:
+            setattr(override, name, None)
+            logger.info("正式对话忽略覆盖字段: %s", name)
+    return override
+
+
 def adapt_ban_risk_analyze(content: str) -> dict:
     from app.agent.output_adapt import _extract_json_object
     from app.workflow.agent_client import AgentCallError
@@ -285,15 +295,12 @@ async def invoke_agent(
     channel: str = "api",
     stream: bool = False,
     output_mode: str = OUTPUT_MODE_CHAT,
-    inline_config: dict | None = None,
     override=None,
     session_id: str = "default",
     history: list[dict] | None = None,
 ) -> AgentInvokeResult:
     if stream:
         raise ValueError("stream=True 请使用 invoke_agent_sse()")
-    if inline_config is not None:
-        logger.warning("invoke_agent inline_config 过渡路径尚未实现，忽略 inline_config")
 
     agent = _load_agent(db, agent_id, agent)
     engine = resolve_engine(agent)
