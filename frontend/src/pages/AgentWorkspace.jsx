@@ -7,10 +7,12 @@ import {
   Globe,
   Loader2,
   MessageSquare,
+  Eraser,
   Plus,
   Save,
   Settings,
   Sparkles,
+  Square,
   Wrench,
   X,
 } from 'lucide-react'
@@ -296,8 +298,13 @@ async function readSse(resp, handlers) {
       try {
         const data = JSON.parse(line.slice(6))
         if (data.type === 'token' && data.content) handlers.onToken?.(data.content)
+        else if (data.type === 'thinking' && data.content) handlers.onThinking?.(data.content)
+        else if (data.type === 'status') handlers.onStatus?.(data)
+        else if (data.type === 'log') handlers.onLog?.(data)
         else if (data.type === 'tool_start') handlers.onToolStart?.(data)
         else if (data.type === 'tool_end') handlers.onToolEnd?.(data)
+        else if (data.type === 'file') handlers.onFile?.(data)
+        else if (data.type === 'delegate') handlers.onDelegate?.(data)
         else if (data.type === 'done') handlers.onDone?.(data)
         else if (data.type === 'error') handlers.onError?.(data.message || '出错')
       } catch {
@@ -306,27 +313,158 @@ async function readSse(resp, handlers) {
   }
 }
 
+function formatDebugValue(value) {
+  if (value == null || value === '') return ''
+  if (typeof value === 'string') return value
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
+function DebugTrace({ tools, statuses, logs, files, thinking, live }) {
+  const hasTrace = (tools && tools.length) || (statuses && statuses.length) || (logs && logs.length) || (files && files.length) || thinking || live
+  if (!hasTrace) return null
+  return (
+    <div className="mb-2 flex flex-col gap-1.5 rounded-md border border-dashed border-primary/30 bg-primary/5 p-2">
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-primary/80">调试明细</div>
+      {(thinking || live) && (
+        <details open className="rounded border border-border bg-card/70">
+          <summary className="cursor-pointer px-2 py-1 text-[11px] text-muted-foreground">思考过程</summary>
+          {live ? (
+            <div ref={live.thinkingEl} className="max-h-48 overflow-auto whitespace-pre-wrap border-t border-border px-2 py-1.5 font-mono text-[11px] leading-relaxed text-muted-foreground" />
+          ) : (
+            <pre className="max-h-48 overflow-auto whitespace-pre-wrap border-t border-border px-2 py-1.5 font-mono text-[11px] leading-relaxed text-muted-foreground">{thinking}</pre>
+          )}
+        </details>
+      )}
+      {statuses?.length > 0 && (
+        <div className="rounded border border-border bg-card/70 px-2 py-1 font-mono text-[11px] text-muted-foreground">
+          {statuses.map((s, i) => <div key={i}>[状态] {s}</div>)}
+        </div>
+      )}
+      {logs?.length > 0 && (
+        <div className="max-h-32 overflow-auto rounded border border-border bg-card/70 px-2 py-1 font-mono text-[11px] text-muted-foreground">
+          {logs.map((s, i) => <div key={i}>{s}</div>)}
+        </div>
+      )}
+      {tools?.map((t, i) => (
+        <details key={t.call_id || i} open className="rounded border border-border bg-card/80">
+          <summary className="flex cursor-pointer items-center gap-1.5 px-2 py-1 text-[11px]">
+            <Wrench className="h-3 w-3 text-primary" />
+            <span className="font-mono text-primary">{t.name}</span>
+            <span className={t.status === 'running' ? 'text-warning' : t.error ? 'text-destructive' : 'text-emerald-500'}>
+              {t.status === 'running' ? '执行中' : t.error ? '失败' : '完成'}
+            </span>
+          </summary>
+          <div className="space-y-1 border-t border-border px-2 py-1.5">
+            {t.message && <div className="text-[11px] text-muted-foreground">{t.message}</div>}
+            {t.argsText && (
+              <div>
+                <div className="text-[10px] uppercase text-muted-foreground/70">参数</div>
+                <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] text-foreground">{t.argsText}</pre>
+              </div>
+            )}
+            {t.resultText && (
+              <div>
+                <div className="text-[10px] uppercase text-muted-foreground/70">返回</div>
+                <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] text-foreground">{t.resultText}</pre>
+              </div>
+            )}
+          </div>
+        </details>
+      ))}
+      {files?.length > 0 && (
+        <div className="text-[11px] text-muted-foreground">
+          {files.map((f, i) => <div key={i}>文件 {f.file_name || f.file_id}</div>)}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function AgentPreviewPane({ agentId, engine, ensureSaved }) {
   const [previewMsgs, setPreviewMsgs] = useState([])
   const [previewInput, setPreviewInput] = useState('')
   const [previewBusy, setPreviewBusy] = useState(false)
   const replyRef = useRef('')
+  const thinkingRef = useRef('')
   const toolsRef = useRef([])
+  const statusesRef = useRef([])
+  const logsRef = useRef([])
+  const filesRef = useRef([])
   const streamElRef = useRef(null)
+  const thinkingElRef = useRef(null)
   const rafRef = useRef(0)
+  const sessionRef = useRef('')
+  const abortRef = useRef(null)
+  const listRef = useRef(null)
+  const thinkingNotedRef = useRef(false)
+
+  if (!sessionRef.current) sessionRef.current = `preview-${agentId || 'new'}-${Date.now()}`
 
   useLayoutEffect(() => {
-    if (previewBusy && streamElRef.current) {
-      streamElRef.current.textContent = replyRef.current
-    }
+    if (!previewBusy) return
+    if (streamElRef.current) streamElRef.current.textContent = replyRef.current
+    if (thinkingElRef.current) thinkingElRef.current.textContent = thinkingRef.current
   }, [previewMsgs, previewBusy])
 
-  const paintReply = () => {
+  useEffect(() => {
+    const el = listRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [previewMsgs, previewBusy])
+
+  const paintStream = () => {
     if (rafRef.current) return
     rafRef.current = requestAnimationFrame(() => {
       rafRef.current = 0
       if (streamElRef.current) streamElRef.current.textContent = replyRef.current
+      if (thinkingElRef.current) thinkingElRef.current.textContent = thinkingRef.current
     })
+  }
+
+  const snapshotAssistant = (extra = {}) => ({
+    role: 'assistant',
+    content: replyRef.current,
+    thinking: thinkingRef.current,
+    tools: toolsRef.current.map((t) => ({ ...t })),
+    statuses: [...statusesRef.current],
+    logs: [...logsRef.current],
+    files: filesRef.current.map((f) => ({ ...f })),
+    ...extra,
+  })
+
+  const patchLast = (extra) => {
+    setPreviewMsgs((m) => {
+      const next = [...m]
+      next[next.length - 1] = snapshotAssistant(extra)
+      return next
+    })
+  }
+
+  const resetTurn = () => {
+    replyRef.current = ''
+    thinkingRef.current = ''
+    toolsRef.current = []
+    statusesRef.current = []
+    logsRef.current = []
+    filesRef.current = []
+    thinkingNotedRef.current = false
+  }
+
+  const clearMemory = () => {
+    abortRef.current?.abort()
+    abortRef.current = null
+    sessionRef.current = `preview-${agentId || 'new'}-${Date.now()}`
+    resetTurn()
+    setPreviewMsgs([])
+    setPreviewBusy(false)
+    toast.success('已清空预览记忆，下次发送将作为新会话')
+  }
+
+  const stopPreview = () => {
+    abortRef.current?.abort()
   }
 
   const runPreview = async () => {
@@ -335,104 +473,174 @@ function AgentPreviewPane({ agentId, engine, ensureSaved }) {
     const saved = await ensureSaved()
     const id = saved?.id || agentId
     if (!id) return
-    replyRef.current = ''
-    toolsRef.current = []
+    resetTurn()
+    const controller = new AbortController()
+    abortRef.current = controller
     setPreviewBusy(true)
-    setPreviewMsgs((m) => [...m, { role: 'user', content: text }, { role: 'assistant', content: '', tools: [] }])
+    setPreviewMsgs((m) => [...m, { role: 'user', content: text }, snapshotAssistant()])
     setPreviewInput('')
     try {
       const isHermes = (engine || 'hermes') === 'hermes'
       const resp = isHermes
-        ? await agentsApi.chatStream(id, text, undefined, `preview-${id}`, { channel: 'test' })
-        : await agentsApi.testStream(id, text, undefined, { channel: 'test' })
+        ? await agentsApi.chatStream(id, text, controller.signal, sessionRef.current, { channel: 'test' })
+        : await agentsApi.testStream(id, text, controller.signal, { channel: 'test' })
       if (!resp.ok) throw new Error((await resp.text()) || `HTTP ${resp.status}`)
       await readSse(resp, {
         onToken: (c) => {
           replyRef.current += c
-          paintReply()
+          paintStream()
+        },
+        onThinking: (c) => {
+          thinkingRef.current += c
+          paintStream()
+          if (!thinkingNotedRef.current) {
+            thinkingNotedRef.current = true
+            patchLast()
+          }
+        },
+        onStatus: (d) => {
+          if (d.message) {
+            statusesRef.current.push(d.message)
+            patchLast()
+          }
+        },
+        onLog: (d) => {
+          const line = d.log?.message || d.message || formatDebugValue(d.log || d)
+          if (line) {
+            logsRef.current.push(line)
+            patchLast()
+          }
         },
         onToolStart: (d) => {
-          toolsRef.current.push({ name: d.tool_name || 'tool', status: 'running' })
-          setPreviewMsgs((m) => {
-            const next = [...m]
-            next[next.length - 1] = { role: 'assistant', content: replyRef.current, tools: toolsRef.current.map((t) => ({ ...t })) }
-            return next
+          toolsRef.current.push({
+            name: d.tool_name || 'tool',
+            call_id: d.tool_call_id || '',
+            status: 'running',
+            message: d.message || '',
+            argsText: formatDebugValue(d.args),
+            resultText: '',
+            error: false,
           })
+          patchLast()
         },
-        onToolEnd: () => {
-          for (let i = toolsRef.current.length - 1; i >= 0; i--) {
-            if (toolsRef.current[i].status === 'running') {
-              toolsRef.current[i] = { ...toolsRef.current[i], status: 'done' }
-              break
+        onToolEnd: (d) => {
+          let hit = toolsRef.current.findIndex((t) => t.call_id && t.call_id === d.tool_call_id && t.status === 'running')
+          if (hit < 0) {
+            for (let i = toolsRef.current.length - 1; i >= 0; i--) {
+              const t = toolsRef.current[i]
+              if (t.status === 'running' && t.name === (d.tool_name || t.name)) {
+                hit = i
+                break
+              }
             }
           }
-          setPreviewMsgs((m) => {
-            const next = [...m]
-            next[next.length - 1] = { role: 'assistant', content: replyRef.current, tools: toolsRef.current.map((t) => ({ ...t })) }
-            return next
-          })
+          const resultText = formatDebugValue(d.result)
+          const error = /错误|失败/.test(d.message || '')
+          if (hit >= 0) {
+            toolsRef.current[hit] = {
+              ...toolsRef.current[hit],
+              status: 'done',
+              message: d.message || toolsRef.current[hit].message,
+              resultText,
+              error,
+            }
+          } else {
+            toolsRef.current.push({
+              name: d.tool_name || 'tool',
+              call_id: d.tool_call_id || '',
+              status: 'done',
+              message: d.message || '',
+              argsText: '',
+              resultText,
+              error,
+            })
+          }
+          patchLast()
+        },
+        onFile: (d) => {
+          filesRef.current.push({ file_id: d.file_id, file_name: d.file_name })
+          patchLast()
+        },
+        onDelegate: (d) => {
+          const info = d.result || {}
+          const evt = info.event || {}
+          logsRef.current.push(`委派 ${info.subagent_id || ''} ${evt.type || ''} ${evt.tool_name || evt.message || ''}`.trim())
+          patchLast()
         },
         onDone: (d) => {
-          if (!replyRef.current && d.reply) replyRef.current = d.reply
-          setPreviewMsgs((m) => {
-            const next = [...m]
-            next[next.length - 1] = {
-              role: 'assistant',
-              content: replyRef.current || d.reply || '',
-              tools: toolsRef.current.map((t) => ({ ...t })),
-            }
-            return next
-          })
+          if (!replyRef.current && (d.reply || d.content)) replyRef.current = d.reply || d.content
+          patchLast({ usage: d.usage || null })
         },
         onError: (msg) => toast.error(msg),
       })
     } catch (err) {
-      toast.error(err.message || '预览失败')
+      if (err.name !== 'AbortError') toast.error(err.message || '预览失败')
+      else patchLast()
     } finally {
+      abortRef.current = null
       setPreviewBusy(false)
     }
   }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex-1 overflow-auto px-5 py-4">
+      <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-2">
+        <span className="text-xs font-medium text-foreground">调试预览</span>
+        <button
+          type="button"
+          onClick={clearMemory}
+          className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground"
+        >
+          <Eraser className="h-3 w-3" />
+          清空记忆
+        </button>
+      </div>
+      <div ref={listRef} className="min-h-0 flex-1 overflow-auto px-4 py-3">
         {previewMsgs.length === 0 ? (
-          <p className="pt-16 text-center text-xs text-muted-foreground">保存配置后，在这里按真实智能体对话预览</p>
+          <p className="pt-16 text-center text-xs text-muted-foreground">发送一条消息开始调试。工具参数、返回、思考和状态会显示在回复上方。</p>
         ) : (
           <div className="flex flex-col gap-3">
             {previewMsgs.map((m, i) => {
               const live = previewBusy && i === previewMsgs.length - 1 && m.role === 'assistant'
+              if (m.role === 'user') {
+                return (
+                  <div key={i} className="ml-10 rounded-lg bg-secondary px-3 py-2 text-sm">{m.content}</div>
+                )
+              }
+              const statuses = m.statuses || []
               return (
-                <div key={i} className={`rounded-lg px-3 py-2 text-sm ${m.role === 'user' ? 'ml-8 bg-secondary' : 'mr-4 border border-border'}`}>
-                  {m.tools?.length > 0 && (
-                    <div className="mb-1 flex flex-wrap gap-1">
-                      {m.tools.map((t, j) => (
-                        <span key={j} className="inline-flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
-                          <Wrench className="h-3 w-3" />
-                          {t.name}
-                        </span>
-                      ))}
+                <div key={i} className="rounded-lg border border-border px-3 py-2 text-sm">
+                  <DebugTrace
+                    tools={m.tools}
+                    statuses={statuses}
+                    logs={m.logs}
+                    files={m.files}
+                    thinking={live ? '' : m.thinking}
+                    live={live && (thinkingNotedRef.current || m.thinking) ? { thinkingEl: thinkingElRef } : null}
+                  />
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground/70">回复</div>
+                  {live ? (
+                    <div ref={streamElRef} className="mt-1 whitespace-pre-wrap break-words" />
+                  ) : (
+                    <div className="mt-1"><MarkdownRenderer content={m.content || ''} /></div>
+                  )}
+                  {m.usage && (
+                    <div className="mt-1 text-[10px] text-muted-foreground/60">
+                      入 {m.usage.input_tokens ?? 0} · 出 {m.usage.output_tokens ?? 0}
                     </div>
                   )}
-                  {m.role === 'assistant' ? (
-                    live ? (
-                      <div ref={streamElRef} className="whitespace-pre-wrap break-words" />
-                    ) : (
-                      <MarkdownRenderer content={m.content || ''} />
-                    )
-                  ) : m.content}
                 </div>
               )
             })}
           </div>
         )}
       </div>
-      <div className="border-t border-border p-4">
+      <div className="shrink-0 border-t border-border p-3">
         <div className="flex items-end gap-2 rounded-xl border border-border bg-secondary px-3 py-2">
           <textarea
             value={previewInput}
             onChange={(e) => setPreviewInput(e.target.value)}
-            placeholder="输入消息预览"
+            placeholder="输入调试内容，Enter 发送"
             rows={2}
             disabled={previewBusy}
             className="max-h-28 flex-1 resize-none bg-transparent text-sm outline-none"
@@ -443,9 +651,14 @@ function AgentPreviewPane({ agentId, engine, ensureSaved }) {
               }
             }}
           />
-          <button type="button" disabled={previewBusy} onClick={runPreview} className="btn-primary btn-sm shrink-0">
-            {previewBusy ? '…' : '发送'}
-          </button>
+          {previewBusy ? (
+            <button type="button" onClick={stopPreview} className="btn-secondary btn-sm inline-flex shrink-0 items-center gap-1">
+              <Square className="h-3 w-3" />
+              停止
+            </button>
+          ) : (
+            <button type="button" onClick={runPreview} className="btn-primary btn-sm shrink-0">发送</button>
+          )}
         </div>
       </div>
     </div>
