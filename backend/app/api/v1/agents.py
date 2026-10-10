@@ -1108,28 +1108,17 @@ async def chat_agent(
     )
 
 
-@router.post("/{agent_id}/skills/{skill_run_id}/resume")
-async def resume_skill(
-    agent_id: int,
-    skill_run_id: str,
-    body: ResumeRequest,
-    db: Session = Depends(get_db),
-    current_user=Depends(require_permission("agent", "execute")),
-):
-    """恢复被中断的工作流技能。
-
-    审批通过/拒绝后调用此端点恢复技能执行。
-    """
-    logger.info("恢复技能: agent_id=%s, skill_run_id=%s, decision=%s", agent_id, skill_run_id, body.decision)
+async def _resume_workflow_run(agent_id: int, run_id: str, body: ResumeRequest, db: Session, current_user):
+    logger.info("恢复工作流运行: agent_id=%s, run_id=%s, decision=%s", agent_id, run_id, body.decision)
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    from app.agent.hermes.skill_engine import HermesSkillEngine
+    from app.agent.hermes.skill_engine import WorkflowSkillBridge
 
-    skill_engine = HermesSkillEngine(db, agent, current_user)
+    bridge = WorkflowSkillBridge(db, agent, current_user)
     try:
-        ctx = await skill_engine.resume_skill(skill_run_id, body.decision)
+        ctx = await bridge.resume_skill(run_id, body.decision)
         return {
             "skill_run_id": ctx.skill_run_id,
             "status": ctx.status,
@@ -1138,9 +1127,31 @@ async def resume_skill(
         }
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("技能恢复失败: %s", exc)
-        raise HTTPException(status_code=500, detail=f"技能恢复失败: {exc}") from exc
+    except Exception as exc:
+        logger.exception("工作流运行恢复失败: %s", exc)
+        raise HTTPException(status_code=500, detail=f"工作流运行恢复失败: {exc}") from exc
+
+
+@router.post("/{agent_id}/skills/{skill_run_id}/resume")
+async def resume_skill(
+    agent_id: int,
+    skill_run_id: str,
+    body: ResumeRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("agent", "execute")),
+):
+    return await _resume_workflow_run(agent_id, skill_run_id, body, db, current_user)
+
+
+@router.post("/{agent_id}/workflow-runs/{run_id}/resume")
+async def resume_workflow_run(
+    agent_id: int,
+    run_id: str,
+    body: ResumeRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("agent", "execute")),
+):
+    return await _resume_workflow_run(agent_id, run_id, body, db, current_user)
 
 
 @router.get("/{agent_id}/executions")

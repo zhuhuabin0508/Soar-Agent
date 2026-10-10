@@ -21,7 +21,7 @@ from app.agent.hermes.types import SkillContext
 logger = logging.getLogger(__name__)
 
 
-class HermesSkillEngine:
+class WorkflowSkillBridge:
     """工作流桥接器：把 Soar Workflow 作为可中断技能触发。"""
 
     def __init__(self, db, agent, user, log_handler: Optional[Callable] = None):
@@ -416,3 +416,6 @@ class HermesSkillEngine:
     def get_active_skill(self, skill_run_id: str) -> Optional[SkillContext]:
         """获取活跃技能上下文。"""
         return self._active_skills.get(skill_run_id)
+
+
+HermesSkillEngine = WorkflowSkillBridge

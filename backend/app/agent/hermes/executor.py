@@ -128,10 +128,10 @@ class HermesAgentExecutor:
         # 框架级工具（trigger_workflow_skill/list_workflow_skills/delegate_task/clarify）
         # 从 DB 加载 schema（tool_type='framework'），作为额外工具传入装配器。
         # 这些工具是核心工具（永不延迟），在 _react_loop 中被拦截走专属处理方法。
-        from app.agent.hermes.skill_engine import HermesSkillEngine
+        from app.agent.hermes.skill_engine import WorkflowSkillBridge
         from app.models.tool import Tool as ToolModel
 
-        self.skill_engine = HermesSkillEngine(db, agent, user, log_handler=log_handler)
+        self.skill_engine = WorkflowSkillBridge(db, agent, user, log_handler=log_handler)
 
         # 从 DB 查询启用的框架级工具，构造 OpenAI tool-defs
         framework_tools = db.query(ToolModel).filter(
