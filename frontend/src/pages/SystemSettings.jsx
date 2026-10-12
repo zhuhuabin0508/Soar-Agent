@@ -307,6 +307,38 @@ function TagInput({ value, onChange, placeholder }) {
 }
 
 // 带后缀的数字输入：input[type=number] + 右侧灰色后缀
+function BigscreenDockFields({ prefix, configs, setField }) {
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <TextInput label="免登账号" value={configs[`${prefix}.username`] || ''} onChange={setField(`${prefix}.username`)} placeholder="CIM 登录用户名" required hint="对方平台登录账号，不要填到 code 里" />
+      <div>
+        <FieldLabel label="免登密码" hint="填明文密码，保存后由后端调用加密接口再换 token" required />
+        <input
+          type="password"
+          autoComplete="new-password"
+          className={inputBaseCls}
+          value={configs[`${prefix}.password`] || ''}
+          onChange={(e) => setField(`${prefix}.password`)(e.target.value)}
+          placeholder="CIM 登录明文密码"
+        />
+      </div>
+      <TextInput label="平台基址" value={configs[`${prefix}.base_url`] || ''} onChange={setField(`${prefix}.base_url`)} placeholder="http://10.132.109.75" />
+      <TextInput label="跳转路径" value={configs[`${prefix}.path`] || ''} onChange={setField(`${prefix}.path`)} placeholder="/city/#/bigscreen" />
+      <TextInput label="大屏编号 code" value={configs[`${prefix}.code`] || ''} onChange={setField(`${prefix}.code`)} placeholder="对方提供的大屏 ID" hint="对接文档里的 code，不是用户名" />
+      <TextInput label="应用 ID appid" value={configs[`${prefix}.appid`] || ''} onChange={setField(`${prefix}.appid`)} placeholder="对方提供的应用 ID" hint="对接文档里的 appid，不是密码" />
+      <SelectInput
+        label="登录方式"
+        value={configs[`${prefix}.usergroupid`] || '0'}
+        onChange={setField(`${prefix}.usergroupid`)}
+        options={[
+          { value: '0', label: '账号登录' },
+          { value: '1', label: '市认证登录' },
+        ]}
+      />
+    </div>
+  )
+}
+
 function NumberWithSuffix({ label, value, onChange, min, max, step, hint, suffix, badge }) {
   return (
     <div>
@@ -659,7 +691,7 @@ function SystemSettings() {
                     options={[{ value: 'YYYY-MM-DD HH:mm:ss', label: 'YYYY-MM-DD HH:mm:ss' }, { value: 'YYYY-MM-DD', label: 'YYYY-MM-DD' }, { value: 'DD/MM/YYYY HH:mm', label: 'DD/MM/YYYY HH:mm' }]} />
                   <NumberWithSuffix label="文件上传大小限制" value={configs['system.max_upload_size_mb'] || ''} onChange={setField('system.max_upload_size_mb')} min={1} suffix="MB" hint="单个文件上传的最大大小" />
                   <SelectInput label="登录后默认首页" value={configs['system.home_page'] || '/dashboard'} onChange={setField('system.home_page')}
-                    options={[{ value: '/dashboard', label: '运营大屏' }, { value: '/approvals', label: '工作台' }, { value: '/chat', label: '对话' }]} />
+                    options={[{ value: '/dashboard', label: '运营大屏' }, { value: '/bigscreen', label: '大屏1 · 云防御' }, { value: '/bigscreen2', label: '大屏2 · 深治慧' }, { value: '/approvals', label: '工作台' }, { value: '/chat', label: '对话' }]} />
                 </div>
               </SettingsSection>
 
@@ -709,6 +741,38 @@ function SystemSettings() {
                     )}
                   </div>
                 </div>
+              </SettingsSection>
+
+              <SettingsSection title="大屏1 · 云防御" hint="账号密码填下面两项，打开大屏1时自动登录，不再弹出对方登录页">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <TextInput
+                    label="免登账号"
+                    value={configs['yunfang.username'] || ''}
+                    onChange={setField('yunfang.username')}
+                    placeholder="云防御登录用户名"
+                    required
+                  />
+                  <div>
+                    <FieldLabel label="免登密码" hint="填明文密码，保存后由后端登录换票" required />
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      className={inputBaseCls}
+                      value={configs['yunfang.password'] || ''}
+                      onChange={(e) => setField('yunfang.password')(e.target.value)}
+                      placeholder="云防御登录明文密码"
+                    />
+                  </div>
+                </div>
+                <TextInput
+                  label="嵌入地址"
+                  value={configs['yunfang.embed_url'] || ''}
+                  onChange={setField('yunfang.embed_url')}
+                  placeholder="https://xingtu.yunaq.com/#/Attack/"
+                />
+              </SettingsSection>
+              <SettingsSection title="大屏2 · 深治慧 CIM" hint="账号密码填下面两项；code / appid 是对方大屏编号，不是登录凭证">
+                <BigscreenDockFields prefix="bigscreen" configs={configs} setField={setField} />
               </SettingsSection>
             </div>
 

@@ -17,6 +17,8 @@ from typing import Any
 PERMISSION_MODULES: dict[str, list[str]] = {
     # 运营中心
     "dashboard": ["view"],
+    "bigscreen": ["view"],
+    "bigscreen2": ["view"],
     "approval": ["view", "approve"],
     "chat": ["view"],
     # 智能体编排
@@ -62,6 +64,8 @@ PERMISSION_MODULES: dict[str, list[str]] = {
 MODULE_LABELS: dict[str, str] = {
     # 运营中心
     "dashboard": "运营大屏",
+    "bigscreen": "大屏1",
+    "bigscreen2": "大屏2",
     "approval": "工作台",
     "chat": "对话",
     # 智能体编排
@@ -176,6 +180,8 @@ def migrate_permissions(perms: dict[str, list[str]] | None) -> dict[str, list[st
         result["device"] = ["view"]
     # 已有资产清单权限的角色补资产发现，保证侧栏与 API 同一套动作
     _inherit_module_actions(result, "asset_discovery", "govcloud", "asset", "asset_list")
+    _inherit_module_actions(result, "bigscreen", "dashboard")
+    _inherit_module_actions(result, "bigscreen2", "dashboard")
 
     return result
 
@@ -194,6 +200,8 @@ DEFAULT_ROLES: list[dict[str, Any]] = [
         "is_system": True,
         "permissions": {
             "dashboard": ["view"],
+            "bigscreen": ["view"],
+            "bigscreen2": ["view"],
             "approval": ["view", "approve"],
             "chat": ["view"],
             "agent": ["view", "edit", "execute"],
@@ -227,6 +235,8 @@ DEFAULT_ROLES: list[dict[str, Any]] = [
         "is_system": True,
         "permissions": {
             "dashboard": ["view"],
+            "bigscreen": ["view"],
+            "bigscreen2": ["view"],
             "approval": ["view"],
             "chat": ["view"],
             "agent": ["view"],

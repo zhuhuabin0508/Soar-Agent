@@ -28,6 +28,8 @@ const NAV_GROUPS = [
     title: '运营中心',
     items: [
       { to: '/dashboard', icon: LayoutDashboard, label: '运营大屏', perm: ['dashboard', 'view'] },
+      { to: '/bigscreen', icon: Monitor, label: '大屏1', perm: ['bigscreen', 'view'] },
+      { to: '/bigscreen2', icon: Monitor, label: '大屏2', perm: ['bigscreen2', 'view'] },
       { to: '/approvals', icon: WorkflowIcon, label: '工作台', perm: ['approval', 'view'] },
       { to: '/chat', icon: MessageSquare, label: '对话', perm: ['chat', 'view'] },
       { to: '/ban-workflow/rules', icon: Filter, label: '触发规则', perm: ['ban_workflow', 'view'] },
@@ -131,6 +133,8 @@ const ROLE_LABELS = {
 // 路由 → 面包屑映射
 const BREADCRUMB_MAP = {
   '/dashboard': ['运营中心', '运营大屏'],
+  '/bigscreen': ['运营中心', '大屏1'],
+  '/bigscreen2': ['运营中心', '大屏2'],
   '/approvals': ['运营中心', '工作台'],
   '/chat': ['运营中心', '对话'],
   '/studio': ['工作室', '应用'],
@@ -325,6 +329,7 @@ function getBreadcrumbs(pathname) {
 function AppShell() {
   const navigate = useNavigate()
   const location = useLocation()
+  const isEmbedScreen = location.pathname === '/bigscreen' || location.pathname === '/bigscreen2'
   const user = useAuthStore((s) => s.user)
   const token = useAuthStore((s) => s.token)
   const setAuth = useAuthStore((s) => s.setAuth)
@@ -671,6 +676,7 @@ function AppShell() {
         {/* 顶部栏：面包屑 + 用户信息 + 通知铃铛（毛玻璃半透明）
             relative z-sticky：顶栏整体抬升至 z-30，避免下方 overflow-auto 页面内容区
             （同样形成层叠上下文）覆盖下拉菜单的溢出部分 */}
+        {!isEmbedScreen && (
         <div className="relative z-sticky flex h-11 shrink-0 items-center justify-between border-b border-border bg-background/80 px-4 backdrop-blur">
           {/* 左侧：面包屑 */}
           <div className="flex min-w-0 items-center gap-1.5 text-sm">
@@ -771,8 +777,8 @@ function AppShell() {
             <NotificationBell />
           </div>
         </div>
-        {/* 页面内容 */}
-        <div className="min-h-0 flex-1 overflow-auto">
+        )}
+        <div className={`min-h-0 flex-1 ${isEmbedScreen ? 'overflow-hidden' : 'overflow-auto'}`}>
           <PageTransition>
             <Outlet />
           </PageTransition>
@@ -782,7 +788,7 @@ function AppShell() {
       </div>
 
       {/* 右下角可拖动反馈按钮：按住拖动 / 点击打开抽屉 / 位置自动持久化 */}
-      <DraggableFeedbackButton onClick={() => setFeedbackOpen(true)} />
+      {!isEmbedScreen && <DraggableFeedbackButton onClick={() => setFeedbackOpen(true)} />}
 
       {/* 提交反馈抽屉（用户菜单与悬浮按钮共用） */}
       <FeedbackDrawer open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />

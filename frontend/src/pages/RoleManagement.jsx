@@ -17,9 +17,13 @@ import { useUnsavedChanges } from '../hooks/useUnsavedChanges'
 // 后端 /roles/modules 未及时热更新时，仍保证矩阵能画出这些行
 const LOCAL_MODULE_FALLBACK = {
   asset_discovery: ['view', 'edit', 'delete'],
+  bigscreen: ['view'],
+  bigscreen2: ['view'],
 }
 const LOCAL_MODULE_LABELS = {
   asset_discovery: '资产发现',
+  bigscreen: '大屏1',
+  bigscreen2: '大屏2',
 }
 
 function mergeModuleDef(modData) {
@@ -55,7 +59,7 @@ const MODULE_GROUPS = [
   {
     key: 'workspace',
     label: '运营中心',
-    modules: ['dashboard', 'approval', 'chat'],
+    modules: ['dashboard', 'bigscreen', 'bigscreen2', 'approval', 'chat'],
   },
   {
     key: 'orchestration',

@@ -24,6 +24,8 @@ const PERMISSION_INHERIT = {
   duty_leave: ['duty'],
   duty_log: ['duty'],
   duty_dashboard: ['duty'],
+  bigscreen: ['dashboard'],
+  bigscreen2: ['dashboard'],
 }
 
 function isBuiltinAdmin(user) {

@@ -16,6 +16,7 @@ from app.api.v1 import (
     ban_workflow,
     banned_ips,
     backup,
+    bigscreen,
     dashboard,
     deliverables,
     devices,
@@ -57,6 +58,8 @@ api_router.include_router(executions.router)
 # 审批与大屏
 api_router.include_router(approvals.router)
 api_router.include_router(dashboard.router)
+api_router.include_router(bigscreen.router)
+api_router.include_router(bigscreen.router2)
 # 工具能力（IP 综合查询 / 封禁）
 api_router.include_router(tools.router)
 # 工具管理（可编辑 Python 工具）

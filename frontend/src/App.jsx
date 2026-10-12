@@ -24,6 +24,8 @@ import ApprovalCenter from './pages/ApprovalCenter'
 import ExecutionDetail from './pages/ExecutionDetail'
 import LogCenter from './pages/LogCenter'
 import Dashboard from './pages/Dashboard'
+import BigScreen from './pages/BigScreen'
+import BigScreen2 from './pages/BigScreen2'
 import ChatPage from './pages/ChatPage'
 import UserManagement from './pages/UserManagement'
 import RoleManagement from './pages/RoleManagement'
@@ -114,6 +116,8 @@ const router = createBrowserRouter([
           { path: '/assets/discovery', element: <GovCloudAssets /> },
           { path: '/assets/legacy', element: <Assets /> },
           { path: '/dashboard', element: <Dashboard /> },
+          { path: '/bigscreen', element: <BigScreen /> },
+          { path: '/bigscreen2', element: <BigScreen2 /> },
           // 系统配置
           { path: '/users', element: <UserManagement /> },
           { path: '/roles', element: <RoleManagement /> },
