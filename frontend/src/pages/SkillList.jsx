@@ -5,7 +5,7 @@ import {
   FileUp, FileText, CheckCircle2, AlertTriangle, X, Loader2,
   ChevronDown, FileDown, Share2,
 } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { skills as skillsApi } from '../api/client'
 import { hasPermission, canEditResource, canManageShare } from '../utils/permissions'
 import { TutorialButton, TutorialDrawer } from '../components/TutorialDrawer'
@@ -90,6 +90,7 @@ const QUICK_FILTERS = [
 // 技能列表页
 function SkillList() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -136,6 +137,19 @@ function SkillList() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    const editId = searchParams.get('edit')
+    if (!editId || loading) return
+    const skill = rows.find((r) => String(r.id) === String(editId))
+    if (skill) {
+      setEditing(skill)
+      setDrawerOpen(true)
+    }
+    const next = new URLSearchParams(searchParams)
+    next.delete('edit')
+    setSearchParams(next, { replace: true })
+  }, [searchParams, loading, rows, setSearchParams])
 
   // 前端搜索 + 分类 + 快捷筛选（数据量小，本地过滤即可；排序交后端语义更准，但本地也支持）
   const filteredRows = useMemo(() => {

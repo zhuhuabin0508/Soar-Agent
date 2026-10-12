@@ -187,28 +187,42 @@ function AddPicker({ title, options, value, onChange, onClose, kind, onCreateSki
                 filtered.map((o) => {
                   const on = selected.has(o.value)
                   return (
-                    <label
+                    <div
                       key={o.value}
-                      className={`mb-1 flex cursor-pointer items-start gap-2 rounded-md px-2 py-2 text-sm hover:bg-secondary ${
+                      className={`mb-1 flex items-start gap-2 rounded-md px-2 py-2 text-sm hover:bg-secondary ${
                         on ? 'bg-primary/10' : ''
                       }`}
                     >
-                      <input
-                        type="checkbox"
-                        className="mt-1"
-                        checked={on}
-                        onChange={() => {
-                          const next = on ? value.filter((v) => v !== o.value) : [...value, o.value]
-                          onChange(next)
-                        }}
-                      />
-                      <span className="min-w-0">
-                        <span className="block truncate font-medium">{o.label}</span>
-                        {o.description ? (
-                          <span className="mt-0.5 block line-clamp-2 text-[11px] text-muted-foreground">{o.description}</span>
-                        ) : null}
-                      </span>
-                    </label>
+                      <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-2">
+                        <input
+                          type="checkbox"
+                          className="mt-1"
+                          checked={on}
+                          onChange={() => {
+                            const next = on ? value.filter((v) => v !== o.value) : [...value, o.value]
+                            onChange(next)
+                          }}
+                        />
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium">{o.label}</span>
+                          {o.description ? (
+                            <span className="mt-0.5 block line-clamp-2 text-[11px] text-muted-foreground">{o.description}</span>
+                          ) : null}
+                        </span>
+                      </label>
+                      {isSkill ? (
+                        <button
+                          type="button"
+                          className="mt-0.5 shrink-0 text-[11px] text-primary hover:underline"
+                          onClick={() => {
+                            onClose()
+                            navigate(`/skills?edit=${o.value}`)
+                          }}
+                        >
+                          编辑
+                        </button>
+                      ) : null}
+                    </div>
                   )
                 })
               )}

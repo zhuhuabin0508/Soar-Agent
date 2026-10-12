@@ -7,7 +7,7 @@ import {
   Settings, HeartPulse, DatabaseBackup, LogOut, ChevronLeft, ChevronRight,
   ChevronsRight, UserRound, PieChart, Boxes, Info, Bug, MessageSquareWarning, Inbox, PackageCheck,
   CalendarClock, CalendarRange, CalendarX, History, Monitor, FileJson, BellRing, Activity,
-  ShieldBan, Filter,
+  ShieldBan, Filter, Library,
 } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import { hasPermission } from '../utils/permissions'
@@ -40,8 +40,9 @@ const NAV_GROUPS = [
         to: '/studio',
         icon: Bot,
         label: '应用',
-        matchPrefix: ['/studio', '/agents', '/workflows', '/editor', '/skills'],
+        matchPrefix: ['/studio', '/agents', '/workflows', '/editor'],
       },
+      { to: '/skills', icon: Library, label: '技能库', perm: ['skill', 'view'] },
       { to: '/tools', icon: Wrench, label: '工具', perm: ['tool', 'view'] },
       { to: '/knowledge-base', icon: BookOpen, label: '知识库', perm: ['knowledge_base', 'view'] },
     ],
