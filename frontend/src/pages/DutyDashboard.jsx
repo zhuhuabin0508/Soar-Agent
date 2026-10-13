@@ -23,11 +23,11 @@ function dayBgStyle(day) {
   return {}
 }
 
-// 日期数字颜色
+// 日期数字颜色（跟随主题令牌，随亮/暗色切换）
 function dateColor(day) {
-  if (!day) return '#94A3B8'
+  if (!day) return 'var(--muted-foreground)'
   if (day.is_holiday) return '#A78BFA'
-  return '#E2E8F0'
+  return 'var(--foreground)'
 }
 
 function fmtMember(m) {
@@ -173,26 +173,26 @@ export default function DutyDashboard({ onSwitchTab }) {
   return (
     <div
       ref={containerRef}
-      className="fixed inset-0 z-[200] flex flex-col"
-      style={{ background: 'linear-gradient(135deg, #0B1120 0%, #1E293B 100%)', color: '#E2E8F0' }}
+      className="fixed inset-0 z-[200] flex flex-col text-foreground"
+      style={{ background: 'linear-gradient(135deg, var(--background) 0%, var(--card) 100%)' }}
     >
       {/* ===== 顶部栏 96px ===== */}
-      <header className="flex h-24 shrink-0 items-center justify-between px-8" style={{ borderBottom: '1px solid rgba(148,163,184,0.12)' }}>
+      <header className="flex h-24 shrink-0 items-center justify-between border-b border-border px-8">
         <div className="flex items-center gap-4">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl" style={{ background: 'rgba(59,130,246,0.15)' }}>
             <CalendarDays className="h-6 w-6" style={{ color: shiftColor }} />
           </div>
           <div>
-            <h1 className="text-2xl font-bold tracking-wide text-white">值班监控大屏</h1>
-            <p className="text-sm text-slate-400">{dateStr} {weekdayStr}</p>
+            <h1 className="text-2xl font-bold tracking-wide text-foreground">值班监控大屏</h1>
+            <p className="text-sm text-muted-foreground">{dateStr} {weekdayStr}</p>
           </div>
           {/* 大屏切换 */}
           {onSwitchTab && (
-            <div className="ml-4 flex items-center gap-1 rounded-lg p-0.5" style={{ background: 'rgba(148,163,184,0.08)' }}>
+            <div className="ml-4 flex items-center gap-1 rounded-lg bg-muted p-0.5">
               <button
                 type="button"
                 onClick={() => onSwitchTab('operations')}
-                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-slate-400 transition-colors hover:text-white"
+                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
                 title="运营大屏"
               >
                 <LayoutDashboard className="h-3.5 w-3.5" />
@@ -201,7 +201,7 @@ export default function DutyDashboard({ onSwitchTab }) {
               <button
                 type="button"
                 onClick={() => onSwitchTab('ai_usage')}
-                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-slate-400 transition-colors hover:text-white"
+                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
                 title="AI 用量大屏"
               >
                 <Cpu className="h-3.5 w-3.5" />
@@ -210,7 +210,7 @@ export default function DutyDashboard({ onSwitchTab }) {
               <button
                 type="button"
                 onClick={() => onSwitchTab('materials')}
-                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-slate-400 transition-colors hover:text-white"
+                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
                 title="材料管理大屏"
               >
                 <Package className="h-3.5 w-3.5" />
@@ -218,7 +218,7 @@ export default function DutyDashboard({ onSwitchTab }) {
               </button>
               <button
                 type="button"
-                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-white"
+                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-primary"
                 style={{ background: 'rgba(59,130,246,0.25)' }}
                 title="值班大屏（当前）"
               >
@@ -232,7 +232,7 @@ export default function DutyDashboard({ onSwitchTab }) {
         <div className="flex items-center gap-6">
           {/* 实时时钟 */}
           <div className="text-right">
-            <div className="text-3xl font-bold tabular-nums text-white" style={{ fontVariantNumeric: 'tabular-nums' }}>{timeStr}</div>
+            <div className="text-3xl font-bold tabular-nums text-foreground" style={{ fontVariantNumeric: 'tabular-nums' }}>{timeStr}</div>
           </div>
 
           {/* 班次状态 */}
@@ -242,12 +242,12 @@ export default function DutyDashboard({ onSwitchTab }) {
           </div>
 
           {/* 全屏切换 */}
-          <button onClick={toggleFullscreen} className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 transition hover:text-white" style={{ background: 'rgba(148,163,184,0.08)' }} title={fullscreen ? '退出全屏' : '全屏'}>
+          <button onClick={toggleFullscreen} className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted text-muted-foreground transition hover:text-foreground" title={fullscreen ? '退出全屏' : '全屏'}>
             {fullscreen ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
           </button>
 
           {/* 手动刷新 */}
-          <button onClick={loadData} className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 transition hover:text-white" style={{ background: 'rgba(148,163,184,0.08)' }} title="刷新">
+          <button onClick={loadData} className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted text-muted-foreground transition hover:text-foreground" title="刷新">
             <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
@@ -256,7 +256,7 @@ export default function DutyDashboard({ onSwitchTab }) {
       {/* ===== 主区域 ===== */}
       <div className="flex flex-1 min-h-0">
         {/* 左侧 30%：上 2/3 当前值班卡片 + 下 1/3 异常提醒 */}
-        <div className="flex w-[30%] shrink-0 flex-col px-6 py-4" style={{ borderRight: '1px solid rgba(148,163,184,0.12)' }}>
+        <div className="flex w-[30%] shrink-0 flex-col border-r border-border px-6 py-4">
           {/* 上 2/3：当前值班 */}
           <div className="flex flex-1 flex-col items-center justify-center">
             {/* 呼吸灯 */}
@@ -268,47 +268,47 @@ export default function DutyDashboard({ onSwitchTab }) {
             </div>
 
             {/* 班次标题 */}
-            <div className="mb-1.5 text-xs text-slate-400">当前班次</div>
+            <div className="mb-1.5 text-xs text-muted-foreground">当前班次</div>
             <div className="mb-4" style={{ fontSize: 48, fontWeight: 700, color: shiftColor, lineHeight: 1 }}>{shiftTitle}</div>
 
             {/* 值班人姓名 */}
             {curMember ? (
               <>
-                <div className="mb-1.5 text-xs text-slate-400">值班人员</div>
-                <div className="mb-3 text-center" style={{ fontSize: 60, fontWeight: 700, color: '#F8FAFC', lineHeight: 1.1 }}>{curMember.name}</div>
+                <div className="mb-1.5 text-xs text-muted-foreground">值班人员</div>
+                <div className="mb-3 text-center text-foreground" style={{ fontSize: 60, fontWeight: 700, lineHeight: 1.1 }}>{curMember.name}</div>
                 {curMember.duty_category === 'PERMANENT_DAY' && (
                   <div className="mb-3 rounded px-3 py-0.5 text-xs" style={{ background: 'rgba(16,185,129,0.12)', color: C.normal }}>长期白班</div>
                 )}
                 {memberPhone(curMember) && (
-                  <div className="mb-4 flex items-center gap-2" style={{ fontSize: 28, fontWeight: 500, color: '#CBD5E1' }}>
-                    <Phone className="h-5 w-5 text-slate-500" />
+                  <div className="mb-4 flex items-center gap-2 text-foreground" style={{ fontSize: 28, fontWeight: 500 }}>
+                    <Phone className="h-5 w-5 text-muted-foreground" />
                     {memberPhone(curMember)}
                   </div>
                 )}
               </>
             ) : (
-              <div className="mb-4 text-xl text-slate-500">暂未排班</div>
+              <div className="mb-4 text-xl text-muted-foreground">暂未排班</div>
             )}
 
             {/* 倒计时 */}
-            <div className="mb-1.5 text-xs text-slate-400">距离下班</div>
-            <div className="tabular-nums mb-3" style={{ fontSize: 28, fontWeight: 700, color: '#F1F5F9', fontVariantNumeric: 'tabular-nums' }}>{countdown}</div>
+            <div className="mb-1.5 text-xs text-muted-foreground">距离下班</div>
+            <div className="tabular-nums mb-3 text-foreground" style={{ fontSize: 28, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{countdown}</div>
 
             {/* 备班 */}
             {backupMember && (
-              <div className="rounded-lg px-3 py-2" style={{ background: 'rgba(148,163,184,0.06)', border: '1px solid rgba(148,163,184,0.15)' }}>
-                <div className="mb-0.5 text-[10px] text-slate-400">备班人员</div>
+              <div className="rounded-lg border border-border bg-muted px-3 py-2">
+                <div className="mb-0.5 text-[10px] text-muted-foreground">备班人员</div>
                 <div className="flex items-center gap-2">
-                  <Users className="h-3.5 w-3.5 text-slate-400" />
-                  <span className="text-base font-semibold text-slate-200">{backupMember.name}</span>
+                  <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-base font-semibold text-foreground">{backupMember.name}</span>
                 </div>
               </div>
             )}
           </div>
 
           {/* 下 1/3：异常提醒 */}
-          <div className="shrink-0 rounded-lg p-3" style={{ background: 'rgba(148,163,184,0.05)', border: '1px solid rgba(148,163,184,0.12)', maxHeight: '33%' }}>
-            <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-200">
+          <div className="shrink-0 rounded-lg border border-border bg-muted p-3" style={{ maxHeight: '33%' }}>
+            <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-foreground">
               <AlertTriangle className="h-3.5 w-3.5" style={{ color: data?.has_anomaly ? C.pending : C.normal }} />
               异常提醒
             </h2>
@@ -317,14 +317,14 @@ export default function DutyDashboard({ onSwitchTab }) {
               {(anomalies.pending || []).length > 0 && (
                 <div className="flex items-center gap-2 text-[11px]">
                   <span className="font-medium" style={{ color: C.pending }}>待分配</span>
-                  <span className="text-slate-400">{anomalies.pending.length} 项</span>
+                  <span className="text-muted-foreground">{anomalies.pending.length} 项</span>
                 </div>
               )}
               {/* 请假 */}
               {(anomalies.leaves || []).length > 0 && (
                 <div className="flex items-center gap-2 text-[11px]">
                   <span className="font-medium" style={{ color: C.leave }}>请假</span>
-                  <span className="text-slate-400">{anomalies.leaves.map(l => l.member_name).join('、')}</span>
+                  <span className="text-muted-foreground">{anomalies.leaves.map(l => l.member_name).join('、')}</span>
                 </div>
               )}
               {/* 调班记录详情 */}
@@ -332,7 +332,7 @@ export default function DutyDashboard({ onSwitchTab }) {
                 <div>
                   <div className="mb-0.5 text-[11px] font-medium" style={{ color: C.adjust }}>调班记录 ({anomalies.adjustments.length})</div>
                   {anomalies.adjustments.slice(0, 6).map((a, i) => (
-                    <div key={i} className="flex items-center gap-1 text-[11px] text-slate-400">
+                    <div key={i} className="flex items-center gap-1 text-[11px] text-muted-foreground">
                       <span className="whitespace-nowrap">{a.duty_date?.slice(5)}</span>
                       <span className="truncate">{a.original_member_name}</span>
                       <span style={{ color: C.adjust }}>→</span>
@@ -345,8 +345,8 @@ export default function DutyDashboard({ onSwitchTab }) {
               {/* 交班 */}
               {anomalies.upcoming_handover && (
                 <div className="flex items-center gap-2 text-[11px]">
-                  <Clock className="h-3 w-3 text-slate-400" />
-                  <span className="text-slate-400">交班 {anomalies.upcoming_handover.time} → {anomalies.upcoming_handover.next_shift === 'DAY' ? '白班' : '晚班'}</span>
+                  <Clock className="h-3 w-3 text-muted-foreground" />
+                  <span className="text-muted-foreground">交班 {anomalies.upcoming_handover.time} → {anomalies.upcoming_handover.next_shift === 'DAY' ? '白班' : '晚班'}</span>
                 </div>
               )}
               {/* 无异常 */}
@@ -364,7 +364,7 @@ export default function DutyDashboard({ onSwitchTab }) {
 
           {/* ===== 近7天排班 ===== */}
           <section>
-            <h2 className="mb-3 flex items-center gap-2 text-base font-semibold text-slate-200">
+            <h2 className="mb-3 flex items-center gap-2 text-base font-semibold text-foreground">
               <CalendarDays className="h-4 w-4" style={{ color: shiftColor }} />
               近 7 天排班
             </h2>
@@ -376,8 +376,8 @@ export default function DutyDashboard({ onSwitchTab }) {
                     key={i}
                     className="rounded-lg p-2.5"
                     style={{
-                      background: bg.background || 'rgba(148,163,184,0.05)',
-                      border: `1px solid ${bg.borderColor || 'rgba(148,163,184,0.1)'}`,
+                      background: bg.background || 'var(--muted)',
+                      border: `1px solid ${bg.borderColor || 'var(--border)'}`,
                       ...(d?.is_today ? { boxShadow: `0 0 0 2px ${shiftColor}44` } : {}),
                     }}
                     title={d?.holiday_name || ''}
@@ -402,13 +402,13 @@ export default function DutyDashboard({ onSwitchTab }) {
                     {/* 白班 */}
                     <div className="mb-1 flex items-center gap-1.5 rounded px-1.5 py-1" style={{ background: 'rgba(59,130,246,0.10)' }}>
                       <Sun className="h-3 w-3 shrink-0" style={{ color: C.day }} />
-                      <span className="truncate text-xs text-slate-300">{fmtMember(d?.day_member)}</span>
+                      <span className="truncate text-xs text-foreground">{fmtMember(d?.day_member)}</span>
                     </div>
 
                     {/* 晚班 */}
                     <div className="flex items-center gap-1.5 rounded px-1.5 py-1" style={{ background: 'rgba(139,92,246,0.10)' }}>
                       <Moon className="h-3 w-3 shrink-0" style={{ color: C.night }} />
-                      <span className="truncate text-xs text-slate-300">{fmtMember(d?.night_member)}</span>
+                      <span className="truncate text-xs text-foreground">{fmtMember(d?.night_member)}</span>
                     </div>
 
                     {/* 需调整标记 */}
@@ -426,8 +426,8 @@ export default function DutyDashboard({ onSwitchTab }) {
           {/* ===== 月度排班日历 ===== */}
           <section>
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="flex items-center gap-2 text-base font-semibold text-slate-200">
-                <CalendarDays className="h-4 w-4 text-slate-400" />
+              <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
+                <CalendarDays className="h-4 w-4 text-muted-foreground" />
                 {monthCursor.year} 年 {MONTH_CN[monthCursor.month - 1]} 排班
               </h2>
               <div className="flex items-center gap-2">
@@ -437,15 +437,13 @@ export default function DutyDashboard({ onSwitchTab }) {
                     if (m < 1) { m = 12; y-- }
                     return { year: y, month: m }
                   })}
-                  className="flex h-7 w-7 items-center justify-center rounded text-slate-400 hover:text-white"
-                  style={{ background: 'rgba(148,163,184,0.08)' }}
+                  className="flex h-7 w-7 items-center justify-center rounded bg-muted text-muted-foreground hover:text-foreground"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
                 <button
                   onClick={() => setMonthCursor(() => { const d = new Date(); return { year: d.getFullYear(), month: d.getMonth() + 1 } })}
-                  className="rounded px-2 py-1 text-xs text-slate-400 hover:text-white"
-                  style={{ background: 'rgba(148,163,184,0.08)' }}
+                  className="rounded bg-muted px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
                 >
                   本月
                 </button>
@@ -455,20 +453,19 @@ export default function DutyDashboard({ onSwitchTab }) {
                     if (m > 12) { m = 1; y++ }
                     return { year: y, month: m }
                   })}
-                  className="flex h-7 w-7 items-center justify-center rounded text-slate-400 hover:text-white"
-                  style={{ background: 'rgba(148,163,184,0.08)' }}
+                  className="flex h-7 w-7 items-center justify-center rounded bg-muted text-muted-foreground hover:text-foreground"
                 >
                   <ChevronRight className="h-4 w-4" />
                 </button>
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-lg" style={{ border: '1px solid rgba(148,163,184,0.12)' }}>
+            <div className="overflow-hidden rounded-lg border border-border">
               <table className="w-full border-collapse">
                 <thead>
-                  <tr style={{ background: 'rgba(148,163,184,0.06)' }}>
+                  <tr className="bg-muted">
                     {WEEKDAY_CN.map((w, i) => (
-                      <th key={w} className="px-1.5 py-2 text-center text-xs font-semibold" style={{ color: i >= 5 ? '#FBBF24' : '#94A3B8' }}>{w}</th>
+                      <th key={w} className="px-1.5 py-2 text-center text-xs font-semibold" style={{ color: i >= 5 ? '#FBBF24' : 'var(--muted-foreground)' }}>{w}</th>
                     ))}
                   </tr>
                 </thead>
@@ -485,8 +482,8 @@ export default function DutyDashboard({ onSwitchTab }) {
                               height: 64,
                               minWidth: 70,
                               background: bg.background || 'transparent',
-                              borderTop: '1px solid rgba(148,163,184,0.08)',
-                              borderLeft: di > 0 ? '1px solid rgba(148,163,184,0.08)' : 'none',
+                              borderTop: '1px solid var(--border)',
+                              borderLeft: di > 0 ? '1px solid var(--border)' : 'none',
                               ...(d?.is_today ? { boxShadow: 'inset 0 0 0 2px rgba(59,130,246,0.4)' } : {}),
                             }}
                             title={d?.holiday_name || ''}
@@ -497,7 +494,7 @@ export default function DutyDashboard({ onSwitchTab }) {
                                   <span className="text-xs font-bold" style={{ color: dateColor(d) }}>
                                     {Number(d.duty_date.slice(8))}
                                   </span>
-                                  <span className="text-[9px]" style={{ color: d.is_holiday ? '#A78BFA' : '#64748B' }}>
+                                  <span className="text-[9px]" style={{ color: d.is_holiday ? '#A78BFA' : 'var(--muted-foreground)' }}>
                                     {d.is_holiday ? '休' : '班'}
                                   </span>
                                 </div>
@@ -506,11 +503,11 @@ export default function DutyDashboard({ onSwitchTab }) {
                                 )}
                                 <div className="flex items-center gap-0.5 text-[10px]">
                                   <Sun className="h-2.5 w-2.5 shrink-0" style={{ color: C.day }} />
-                                  <span className="truncate text-slate-400">{fmtMember(d.day_member)}</span>
+                                  <span className="truncate text-muted-foreground">{fmtMember(d.day_member)}</span>
                                 </div>
                                 <div className="flex items-center gap-0.5 text-[10px]">
                                   <Moon className="h-2.5 w-2.5 shrink-0" style={{ color: C.night }} />
-                                  <span className="truncate text-slate-400">{fmtMember(d.night_member)}</span>
+                                  <span className="truncate text-muted-foreground">{fmtMember(d.night_member)}</span>
                                 </div>
                               </div>
                             )}
@@ -524,7 +521,7 @@ export default function DutyDashboard({ onSwitchTab }) {
             </div>
 
             {/* 图例 */}
-            <div className="mt-2 flex items-center gap-4 text-[11px] text-slate-500">
+            <div className="mt-2 flex items-center gap-4 text-[11px] text-muted-foreground">
               <span className="flex items-center gap-1">
                 <span className="inline-block h-3 w-3 rounded" style={{ background: 'rgba(139,92,246,0.12)', border: '1px solid rgba(139,92,246,0.35)' }} /> 节假日
               </span>
@@ -532,7 +529,7 @@ export default function DutyDashboard({ onSwitchTab }) {
                 <span className="inline-block h-3 w-3 rounded" style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)' }} /> 周末
               </span>
               <span className="flex items-center gap-1">
-                <span className="inline-block h-3 w-3 rounded" style={{ background: 'rgba(148,163,184,0.05)', border: '1px solid rgba(148,163,184,0.10)' }} /> 工作日
+                <span className="inline-block h-3 w-3 rounded" style={{ background: 'var(--muted)', border: '1px solid var(--border)' }} /> 工作日
               </span>
             </div>
           </section>
