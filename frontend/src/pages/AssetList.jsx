@@ -753,6 +753,8 @@ export default function AssetList() {
   const [overview, setOverview] = useState(null)
 
   // 筛选
+  // keywordInput：输入框的即时值；keyword：实际参与查询的值（防抖后同步）
+  const [keywordInput, setKeywordInput] = useState('')
   const [keyword, setKeyword] = useState('')
   const [fStatus, setFStatus] = useState('')
   const [fCrit, setFCrit] = useState('')
@@ -765,8 +767,18 @@ export default function AssetList() {
   // 已激活的高级筛选项数量（不含 keyword，keyword 由搜索框直接体现）
   const activeFilterCount = [fStatus, fCrit, fDept, fTag].filter(Boolean).length
   const resetFilters = () => {
-    setKeyword(''); setFStatus(''); setFCrit(''); setFDept(''); setFTag(''); setPage(1)
+    setKeywordInput(''); setKeyword(''); setFStatus(''); setFCrit(''); setFDept(''); setFTag(''); setPage(1)
   }
+
+  // 搜索输入防抖：关键词搜索要跨 8 个字段做 %kw% 匹配（全表扫描），
+  // 若每敲一个字都打一次接口会明显卡顿；停顿 350ms 后再查。
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setKeyword(keywordInput)
+      setPage(1)
+    }, 350)
+    return () => clearTimeout(t)
+  }, [keywordInput])
 
   // 保存的筛选视图（localStorage）
   const [savedViews, setSavedViews] = useState(() => {
@@ -794,7 +806,7 @@ export default function AssetList() {
     setViewName(''); setViewDropdownOpen(false)
   }
   const applyView = (v) => {
-    setKeyword(v.keyword || ''); setFStatus(v.fStatus || ''); setFCrit(v.fCrit || '')
+    setKeywordInput(v.keyword || ''); setKeyword(v.keyword || ''); setFStatus(v.fStatus || ''); setFCrit(v.fCrit || '')
     setFDept(v.fDept || ''); setFTag(v.fTag || ''); setPage(1)
     switchType(v.type_code || '')
     setViewDropdownOpen(false)
@@ -1108,10 +1120,13 @@ export default function AssetList() {
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 className={`${inputCls} pl-8`}
-                placeholder="搜索 IP / 名称 / 标识"
-                value={keyword}
-                onChange={(e) => { setKeyword(e.target.value); setPage(1) }}
-                onKeyDown={(e) => e.key === 'Enter' && load()}
+                placeholder="搜索 IP / 名称 / 标识 / 部门"
+                value={keywordInput}
+                onChange={(e) => setKeywordInput(e.target.value)}
+                onKeyDown={(e) => {
+                  // 回车立即生效（跳过防抖等待）；keyword 变化会驱动 load 重新查询
+                  if (e.key === 'Enter') { setKeyword(keywordInput); setPage(1) }
+                }}
               />
             </div>
             <button
@@ -1211,7 +1226,7 @@ export default function AssetList() {
           <div className="flex flex-wrap items-center gap-1.5 border-t border-border bg-muted/10 p-2.5">
             <span className="text-[11px] text-muted-foreground">当前筛选：</span>
             {keyword && (
-              <FilterChip label={`关键词: ${keyword}`} onRemove={() => { setKeyword(''); setPage(1) }} />
+              <FilterChip label={`关键词: ${keyword}`} onRemove={() => { setKeywordInput(''); setKeyword(''); setPage(1) }} />
             )}
             {fStatus && (
               <FilterChip label={`状态: ${STATUS_LABELS[fStatus] || fStatus}`} onRemove={() => { setFStatus(''); setPage(1) }} />

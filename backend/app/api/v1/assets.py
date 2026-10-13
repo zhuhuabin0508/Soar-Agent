@@ -451,6 +451,32 @@ def _ip_matches_stored(search_ip, search_net, stored: str) -> bool:
     return False
 
 
+# 关键词模糊搜索覆盖的字段（大小写不敏感）。
+# 背景：department 是该数据集的主要可检索内容 —— 绝大多数资产没有 name，
+# 只有 department 有值；此前未纳入搜索，导致这批资产按任何关键词都搜不到。
+# 这里集中定义，保证 list_assets 的常规分支与 IP 智能搜索分支始终一致。
+_KEYWORD_FIELDS = (
+    Asset.identifier,
+    Asset.name,
+    Asset.ip,
+    Asset.owner,
+    Asset.department,
+    Asset.location,
+    Asset.asset_type,
+    Asset.kb_name,
+)
+
+
+def _keyword_condition(keyword: str):
+    """构造关键词模糊匹配条件：多字段 OR + 大小写不敏感（PostgreSQL ILIKE）。
+
+    - 用 ILIKE 而非 LIKE：LIKE 在 PG 下区分大小写，英文名称/标识会搜不到。
+    - 使用 f"%{kw}%" 做包含匹配（真正的"模糊"），而非前缀匹配。
+    """
+    like = f"%{keyword}%"
+    return or_(*[col.ilike(like) for col in _KEYWORD_FIELDS])
+
+
 def _apply_asset_filters(
     query, kb_id, asset_type, department, criticality, source, keyword,
     status=None, tag_id=None, type_code=None,
@@ -478,15 +504,7 @@ def _apply_asset_filters(
         # 多对多标签筛选：asset 必须关联该 tag
         query = query.filter(Asset.tags.any(AssetTag.id == tag_id))
     if keyword:
-        like = f"%{keyword}%"
-        query = query.filter(
-            or_(
-                Asset.identifier.like(like),
-                Asset.name.like(like),
-                Asset.ip.like(like),
-                Asset.owner.like(like),
-            )
-        )
+        query = query.filter(_keyword_condition(keyword))
     return query
 
 
@@ -539,15 +557,12 @@ def list_assets(
             prefix = ".".join(str(search_net.network_address).split(".")[:3])
             ip_like = f"%{prefix}%"
 
-        # 用前缀 LIKE 查 ip 字段 + 原始 keyword LIKE 查其他字段（name/owner/identifier）
-        like_kw = f"%{keyword}%"
+        # IP 前缀 LIKE 拉大候选集 + 其余字段模糊匹配（与常规分支口径保持一致）
         query = _apply_asset_filters(
             db.query(Asset).filter(
                 or_(
-                    Asset.ip.like(ip_like),
-                    Asset.identifier.like(like_kw),
-                    Asset.name.like(like_kw),
-                    Asset.owner.like(like_kw),
+                    Asset.ip.ilike(ip_like),
+                    _keyword_condition(keyword),
                 )
             ),
             kb_id, asset_type, department, criticality, source, "", status, tag_id, type_code,
