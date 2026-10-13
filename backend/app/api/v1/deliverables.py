@@ -45,6 +45,8 @@ ALLOWED_EXTENSIONS = {
 MAX_FILE_SIZE = 200 * 1024 * 1024  # 200MB
 # 批量下载最大文件数（防止一次性打包过多导致内存溢出）
 BATCH_DOWNLOAD_MAX = 50
+# 批量移动最大条目数（材料 / 目录各自独立计数，避免与下载上限耦合）
+BATCH_MOVE_MAX = 50
 
 
 # 文件保存目录：backend/uploads/deliverables/
@@ -125,6 +127,56 @@ def _collect_descendant_ids(db: Session, category_id: int) -> list[int]:
 def _is_descendant(db: Session, category_id: int, candidate_parent_id: int) -> bool:
     """判断 candidate_parent_id 是否是 category_id 的后代（用于防止移动成自己的子孙）。"""
     return candidate_parent_id in _collect_descendant_ids(db, category_id)
+
+
+def _subtree_height(db: Session, category_id: int) -> int:
+    """返回以该目录为根的子树的层数（仅自身算 1）。
+
+    用于移动前预判：把整棵子树挂到更深处后，最深层是否会超过 MAX_LEVEL。
+    逐层查询（层级最多 10），与 _collect_descendant_ids 同思路。
+    """
+    height = 1
+    frontier = [category_id]
+    for _ in range(ServiceCategory.MAX_LEVEL):
+        if not frontier:
+            break
+        rows = (
+            db.query(ServiceCategory.id)
+            .filter(ServiceCategory.parent_id.in_(frontier))
+            .all()
+        )
+        next_ids = [r[0] for r in rows]
+        if not next_ids:
+            break
+        height += 1
+        frontier = next_ids
+    return height
+
+
+def _refresh_descendant_levels(db: Session, category: ServiceCategory) -> int:
+    """移动目录后，递归修正其所有后代的 level，使其始终等于 parent.level + 1。
+
+    只改 level（树的父子关系由 parent_id 决定，本身已经跟着走），
+    返回被修正的目录数。逐层下推，避免递归 CTE。
+    """
+    fixed = 0
+    frontier = [(category.id, category.level or 1)]
+    for _ in range(ServiceCategory.MAX_LEVEL):
+        if not frontier:
+            break
+        next_frontier: list[tuple[int, int]] = []
+        for parent_id, parent_level in frontier:
+            children = (
+                db.query(ServiceCategory)
+                .filter(ServiceCategory.parent_id == parent_id)
+                .all()
+            )
+            for child in children:
+                child.level = parent_level + 1
+                fixed += 1
+                next_frontier.append((child.id, child.level))
+        frontier = next_frontier
+    return fixed
 
 
 def _parse_relative_dir(relative_path: str, filename: str) -> list[str]:
@@ -647,6 +699,17 @@ def update_category(
                     status_code=400,
                     detail=f"目录层级不能超过 {ServiceCategory.MAX_LEVEL} 级",
                 )
+        # 整棵子树一起移动：预判最深层是否越界（否则子目录会被挤到第 11 层）
+        sub_depth = _subtree_height(db, category_id) - 1
+        if new_level + sub_depth > ServiceCategory.MAX_LEVEL:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"该目录下还有 {sub_depth} 层子目录，移动后最深层级将达到 "
+                    f"L{new_level + sub_depth}，超过上限 {ServiceCategory.MAX_LEVEL}，"
+                    f"请选择更浅的父级"
+                ),
+            )
         # 同级名称唯一（排除自身）
         dup_q = db.query(ServiceCategory).filter(
             ServiceCategory.name == name,
@@ -660,6 +723,8 @@ def update_category(
             raise HTTPException(status_code=400, detail=f"同级下名称「{name}」已存在")
         category.parent_id = new_parent_id
         category.level = new_level
+        # 子目录跟着走：递归修正后代 level，保证与 parent.level + 1 一致
+        _refresh_descendant_levels(db, category)
     else:
         # 仅改名：在原同级下检查重名
         dup_q = db.query(ServiceCategory).filter(
@@ -677,6 +742,111 @@ def update_category(
     category.description = sanitize_text(description)[:500] if description else None
     db.commit()
     return category.to_dict()
+
+
+@router.post("/categories/batch-move")
+def batch_move_categories(
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("deliverable", "edit")),
+):
+    """批量移动目录到目标父级（整棵子树跟着走，目录内文件不动）。
+
+    - 请求体 ``{"ids": [1, 2], "target_parent_id": 10}``；``target_parent_id=0`` 表示移到根级。
+    - 逐项校验（自身 / 成环 / 越界 / 同级重名），非法项计入 ``skipped`` 并附原因，
+      不影响其余目录；全部处理完统一提交。
+    - 目录内的文件无需任何改动（文件按 category_id 挂载，天然跟随）。
+    - 移动后递归修正整棵子树的 level。
+    """
+    raw_ids = payload.get("ids") if isinstance(payload, dict) else None
+    raw_target = payload.get("target_parent_id") if isinstance(payload, dict) else None
+    if not isinstance(raw_ids, list) or not raw_ids:
+        raise HTTPException(status_code=400, detail="请选择要移动的目录")
+    if len(raw_ids) > BATCH_MOVE_MAX:
+        raise HTTPException(
+            status_code=400,
+            detail=f"批量移动最多 {BATCH_MOVE_MAX} 个目录，请减少选择数量",
+        )
+    try:
+        target_parent_id = int(raw_target)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="目标目录参数非法")
+
+    target: ServiceCategory | None = None
+    if target_parent_id:
+        target = _get_category_or_404(db, target_parent_id)
+    new_level = (target.level or 1) + 1 if target else 1
+
+    # 去重 + 转整
+    ids: list[int] = []
+    seen: set[int] = set()
+    for x in raw_ids:
+        try:
+            iid = int(x)
+        except (TypeError, ValueError):
+            continue
+        if iid in seen:
+            continue
+        seen.add(iid)
+        ids.append(iid)
+
+    # 全部 id 都非法（如 ["abc"]）时直接返回，避免 in_([]) 退化 SQL
+    if not ids:
+        return {"moved": 0, "moved_ids": [], "skipped": []}
+
+    moved: list[int] = []
+    skipped: list[dict] = []
+    for cid in ids:
+        cat = db.query(ServiceCategory).filter(ServiceCategory.id == cid).first()
+        if cat is None:
+            skipped.append({"id": cid, "name": "", "reason": "目录不存在"})
+            continue
+        if target is not None and target.id == cat.id:
+            skipped.append({"id": cid, "name": cat.name, "reason": "目标就是该目录自身"})
+            continue
+        if target is not None and _is_descendant(db, cat.id, target.id):
+            skipped.append({"id": cid, "name": cat.name, "reason": "不能移动到自己的子目录下"})
+            continue
+
+        new_parent_id = target.id if target is not None else None
+        # 同级重名（排除自身）
+        dup_q = db.query(ServiceCategory).filter(
+            ServiceCategory.name == cat.name,
+            ServiceCategory.id != cat.id,
+        )
+        if new_parent_id is None:
+            dup_q = dup_q.filter(ServiceCategory.parent_id.is_(None))
+        else:
+            dup_q = dup_q.filter(ServiceCategory.parent_id == new_parent_id)
+        if dup_q.first():
+            skipped.append({
+                "id": cid, "name": cat.name,
+                "reason": f"目标层级下已存在同名目录「{cat.name}」",
+            })
+            continue
+
+        sub_depth = _subtree_height(db, cat.id) - 1
+        if new_level + sub_depth > ServiceCategory.MAX_LEVEL:
+            skipped.append({
+                "id": cid, "name": cat.name,
+                "reason": (
+                    f"其下还有 {sub_depth} 层子目录，移动后最深层级将达 "
+                    f"L{new_level + sub_depth}，超过上限 {ServiceCategory.MAX_LEVEL}"
+                ),
+            })
+            continue
+
+        cat.parent_id = new_parent_id
+        cat.level = new_level
+        _refresh_descendant_levels(db, cat)
+        moved.append(cat.id)
+
+    db.commit()
+    logger.info(
+        "目录已批量移动: moved=%s, skipped=%s, target_parent_id=%s, operator=%s",
+        len(moved), len(skipped), target_parent_id, current_user.username,
+    )
+    return {"moved": len(moved), "moved_ids": moved, "skipped": skipped}
 
 
 @router.delete("/categories/{category_id}", status_code=204)
@@ -1246,6 +1416,72 @@ def batch_delete(
     )
     return {
         "deleted": len(to_remove_files),
+        "not_found": not_found,
+    }
+
+
+@router.post("/batch-move")
+def batch_move(
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("deliverable", "edit")),
+):
+    """批量移动材料到目标目录。
+
+    - 请求体 ``{"ids": [1, 2, 3], "target_category_id": 10}``，最多 50 个。
+    - 仅更新材料的 ``category_id``（落盘文件无需移动），目标目录须存在。
+    - 缺失 ID 计入 ``not_found``，不影响其余移动。
+    """
+    raw_ids = payload.get("ids") if isinstance(payload, dict) else None
+    target_category_id = payload.get("target_category_id") if isinstance(payload, dict) else None
+    if not isinstance(raw_ids, list) or not raw_ids:
+        raise HTTPException(status_code=400, detail="请选择要移动的文件")
+    if len(raw_ids) > BATCH_MOVE_MAX:
+        raise HTTPException(
+            status_code=400,
+            detail=f"批量移动最多 {BATCH_MOVE_MAX} 个文件，请减少选择数量",
+        )
+    try:
+        target_id = int(target_category_id)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="目标目录参数非法")
+    _get_category_or_404(db, target_id)
+
+    # 去重 + 转整
+    ids: list[int] = []
+    seen: set[int] = set()
+    for x in raw_ids:
+        try:
+            iid = int(x)
+        except (TypeError, ValueError):
+            continue
+        if iid in seen:
+            continue
+        seen.add(iid)
+        ids.append(iid)
+
+    # 全部 id 都非法时直接返回，避免 in_([]) 退化 SQL
+    if not ids:
+        return {"moved": 0, "not_found": 0}
+
+    deliverables = (
+        db.query(Deliverable).filter(Deliverable.id.in_(ids)).all()
+    )
+    found_ids = {d.id for d in deliverables}
+    not_found = sum(1 for i in ids if i not in found_ids)
+
+    # 仅更新所属目录，落盘文件不用移动
+    for d in deliverables:
+        d.category_id = target_id
+        d.updated_at = datetime.utcnow()
+    db.commit()
+
+    logger.info(
+        "材料已批量移动: count=%s, target_category_id=%s, operator=%s",
+        len(deliverables), target_id, current_user.username,
+    )
+    return {
+        "moved": len(deliverables),
         "not_found": not_found,
     }
 

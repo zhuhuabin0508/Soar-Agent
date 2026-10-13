@@ -162,6 +162,57 @@ function buildTree(items) {
   return roots
 }
 
+// 把目录树按「展开状态」拍平成带 depth 的行列表 —— 真正的树：只有父级处于展开态时，
+// 其子级才会出现在列表里（默认只展示第一层，点箭头逐级展开）。
+//
+// 注意：递归只用于「算数据」（在 useMemo 里调用），渲染层始终是平铺的 map。
+// 千万不要在 JSX 里写递归渲染函数，那会触发
+// "Functions are not valid as a React child"，导致弹窗整个打不开。
+//
+// 性能：先建 parent_id → 子节点 的索引（O(n)），再自顶向下遍历，
+// 不在递归里做线性查找（旧实现对每个节点都扫描一遍全表，是 O(n²)）。
+function flattenTree(selectable, expandedSet) {
+  const idSet = new Set()
+  for (const c of selectable) idSet.add(c.id)
+
+  const childrenByParent = new Map()
+  const roots = []
+  for (const c of selectable) {
+    // 父级不在可选集内（被排除）的节点，按根级处理，保证不会整棵消失
+    const pid = c.parent_id != null && idSet.has(c.parent_id) ? c.parent_id : null
+    if (pid === null) {
+      roots.push(c)
+    } else {
+      const arr = childrenByParent.get(pid)
+      if (arr) arr.push(c)
+      else childrenByParent.set(pid, [c])
+    }
+  }
+
+  const flat = []
+  const walk = (nodes, depth) => {
+    for (const n of nodes) {
+      const kids = childrenByParent.get(n.id)
+      const hasChildren = !!kids && kids.length > 0
+      flat.push({ id: n.id, name: n.name, level: n.level, depth, hasChildren })
+      if (hasChildren && expandedSet.has(n.id)) walk(kids, depth + 1)
+    }
+  }
+  walk(roots, 0)
+  return flat
+}
+
+// 在 selectable 里「有子级」的节点 id，用于「展开全部」。O(n)。
+function expandableIdsOf(selectable) {
+  const idSet = new Set()
+  for (const c of selectable) idSet.add(c.id)
+  const parents = new Set()
+  for (const c of selectable) {
+    if (c.parent_id != null && idSet.has(c.parent_id)) parents.add(c.parent_id)
+  }
+  return [...parents]
+}
+
 // 通用小 Modal
 function Modal({ title, children, onClose, footer, wide = false }) {
   useLockBackgroundScroll(true)
@@ -224,11 +275,15 @@ export default function DeliverableManagement() {
   const [searchInput, setSearchInput] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // 批量选择
+  // 批量选择（selectedIds=材料文件，selectedCatIds=子目录）
   const [selectedIds, setSelectedIds] = useState(() => new Set())
+  const [selectedCatIds, setSelectedCatIds] = useState(() => new Set())
   const [batchDownloading, setBatchDownloading] = useState(false)
   const [batchDeleting, setBatchDeleting] = useState(false)
   const [selectingAll, setSelectingAll] = useState(false)
+  // 批量移动弹窗：{ targetCategoryId } | null
+  const [batchMoveModal, setBatchMoveModal] = useState(null)
+  const [batchMoving, setBatchMoving] = useState(false)
 
   // 上传弹窗：{ files: [{ file, status }], version, description }
   // status: 'pending' | 'uploading' | 'success' | 'failed'
@@ -244,6 +299,9 @@ export default function DeliverableManagement() {
   // 移动目录弹窗：{ id, name, description, currentParentId, targetParentId }
   const [moveModal, setMoveModal] = useState(null)
   const [moveSaving, setMoveSaving] = useState(false)
+  // 目标目录树的展开节点（点击箭头逐级展开，默认只展示第一层）
+  const [moveExpandedIds, setMoveExpandedIds] = useState(() => new Set())
+  const [batchMoveExpandedIds, setBatchMoveExpandedIds] = useState(() => new Set())
 
   // 视图模式：list / grid
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('soar_dlv_view') || 'list')
@@ -269,14 +327,29 @@ export default function DeliverableManagement() {
   // 使用教程抽屉
   const [tutorialOpen, setTutorialOpen] = useState(false)
 
+  // 目录索引：id → 目录、parent_id → 直接子目录 id 列表。
+  // 统一在这里建一次（O(n)），后续所有"找父级/找子级/找后代"都查它，
+  // 避免各处反复 categories.find / categories.filter 造成的 O(n²)。
+  const catIndex = useMemo(() => {
+    const byId = new Map()
+    const childrenByParent = new Map()
+    for (const c of categories) {
+      byId.set(c.id, c)
+      if (c.parent_id != null) {
+        const arr = childrenByParent.get(c.parent_id)
+        if (arr) arr.push(c.id)
+        else childrenByParent.set(c.parent_id, [c.id])
+      }
+    }
+    return { byId, childrenByParent }
+  }, [categories])
+
   // 构建树
   const tree = useMemo(() => buildTree(categories), [categories])
-  const activeCat = categories.find((c) => c.id === activeCatId) || null
+  const activeCat = catIndex.byId.get(activeCatId) || null
   const totalFiles = totalDeliverables
-  const allChecked = rows.length > 0 && rows.every((r) => selectedIds.has(r.id))
-  const someChecked = rows.some((r) => selectedIds.has(r.id))
 
-  // 面包屑路径：从根到当前目录
+  // 面包屑路径：从根到当前目录（用索引取父级，O(depth)）
   const breadcrumbPath = useMemo(() => {
     if (!activeCat) return []
     const path = []
@@ -284,18 +357,34 @@ export default function DeliverableManagement() {
     let safety = 0
     while (current && safety < MAX_LEVEL) {
       path.unshift(current)
-      current = categories.find((c) => c.id === current.parent_id)
+      current = current.parent_id != null ? catIndex.byId.get(current.parent_id) : null
       safety++
     }
     return path
-  }, [activeCat, categories])
+  }, [activeCat, catIndex])
 
   // 当前目录的直接子目录（随列表/网格视图切换展示）
   const subCategories = useMemo(() => {
     if (!activeCatId) return []
-    return categories.filter((c) => c.parent_id === activeCatId)
-  }, [activeCatId, categories])
+    const kids = catIndex.childrenByParent.get(activeCatId)
+    if (!kids) return []
+    return kids.map((id) => catIndex.byId.get(id)).filter(Boolean)
+  }, [activeCatId, catIndex])
   const showFolders = subCategories.length > 0 && !search
+
+  // 当前页可勾选集合 = 材料行 + 子目录行（子目录也可被选中后批量移动）
+  const pageFolderIds = useMemo(
+    () => (showFolders ? subCategories.map((c) => c.id) : []),
+    [showFolders, subCategories]
+  )
+  const selectedTotal = selectedIds.size + selectedCatIds.size
+  const allChecked =
+    (rows.length > 0 || pageFolderIds.length > 0)
+    && rows.every((r) => selectedIds.has(r.id))
+    && pageFolderIds.every((id) => selectedCatIds.has(id))
+  const someChecked =
+    rows.some((r) => selectedIds.has(r.id))
+    || pageFolderIds.some((id) => selectedCatIds.has(id))
 
   // 双击进入子目录
   const enterSubCategory = useCallback((cat) => {
@@ -426,7 +515,18 @@ export default function DeliverableManagement() {
   // 切换类别时清空选择
   useEffect(() => {
     setSelectedIds(new Set())
+    setSelectedCatIds(new Set())
   }, [activeCatId, page, pageSize, search])
+
+  // 打开「移动目录」/「批量移动」弹窗时重置目录树展开状态：默认只展示第一层，
+  // 由用户点箭头逐级展开（避免一次性铺开上百行）
+  useEffect(() => {
+    setMoveExpandedIds(new Set())
+  }, [moveModal?.id])
+
+  useEffect(() => {
+    setBatchMoveExpandedIds(new Set())
+  }, [batchMoveModal !== null])
 
   // ===== 目录类别操作 =====
   const handleCatSave = async (continueMode = false) => {
@@ -684,22 +784,30 @@ export default function DeliverableManagement() {
   }, [overlayPreview])
 
   // ===== 移动目录 =====
-  // 计算某节点的所有后代 ID（用于移动时排除不可选目标）
+  // 计算某节点的所有后代 ID（用于移动时排除不可选目标）。
+  // 走 catIndex 的 childrenByParent 索引，复杂度只跟子树规模有关，不再全表扫描。
   const getDescendantIds = useCallback(
     (nodeId) => {
       const result = new Set()
+      const { childrenByParent } = catIndex
       let frontier = [nodeId]
-      for (let i = 0; i < MAX_LEVEL; i++) {
-        const next = categories
-          .filter((c) => c.parent_id && frontier.includes(c.parent_id))
-          .map((c) => c.id)
-        if (next.length === 0) break
-        next.forEach((id) => result.add(id))
+      for (let i = 0; i < MAX_LEVEL && frontier.length > 0; i++) {
+        const next = []
+        for (const pid of frontier) {
+          const kids = childrenByParent.get(pid)
+          if (!kids) continue
+          for (const id of kids) {
+            if (!result.has(id)) {
+              result.add(id)
+              next.push(id)
+            }
+          }
+        }
         frontier = next
       }
       return result
     },
-    [categories]
+    [catIndex]
   )
 
   const handleMoveSave = async () => {
@@ -765,14 +873,33 @@ export default function DeliverableManagement() {
   }
 
   const toggleAll = () => {
-    // 仅切换当前页行的选中状态，不影响跨页已选
+    // 仅切换当前页（材料行 + 子目录行）的选中状态，不影响跨页已选
     setSelectedIds((prev) => {
       const next = new Set(prev)
-      if (rows.every((r) => next.has(r.id))) {
+      if (rows.length > 0 && rows.every((r) => next.has(r.id))) {
         rows.forEach((r) => next.delete(r.id))
       } else {
         rows.forEach((r) => next.add(r.id))
       }
+      return next
+    })
+    setSelectedCatIds((prev) => {
+      const next = new Set(prev)
+      if (pageFolderIds.length > 0 && pageFolderIds.every((id) => next.has(id))) {
+        pageFolderIds.forEach((id) => next.delete(id))
+      } else {
+        pageFolderIds.forEach((id) => next.add(id))
+      }
+      return next
+    })
+  }
+
+  // 勾选 / 取消勾选一个子目录
+  const toggleCat = (id) => {
+    setSelectedCatIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
       return next
     })
   }
@@ -797,6 +924,7 @@ export default function DeliverableManagement() {
 
   const handleClearSelection = () => {
     setSelectedIds(new Set())
+    setSelectedCatIds(new Set())
   }
 
   const handleBatchDownload = async () => {
@@ -843,6 +971,77 @@ export default function DeliverableManagement() {
       toast.error(err.message || '批量删除失败')
     } finally {
       setBatchDeleting(false)
+    }
+  }
+
+  // 批量移动：材料改挂 category_id，目录改挂 parent_id（都只动索引，落盘文件不动）
+  // targetCategoryId: null=未选；0=根级（仅对目录有意义）；>0=具体目录 id
+  const handleBatchMove = async () => {
+    const fileIds = [...selectedIds]
+    const catIds = [...selectedCatIds]
+    if (fileIds.length === 0 && catIds.length === 0) return
+    const targetId = batchMoveModal?.targetCategoryId
+    if (targetId === null || targetId === undefined) {
+      toast.warning('请选择目标目录')
+      return
+    }
+    if (batchMoving) return
+    const toRoot = targetId === 0
+    const targetName = toRoot
+      ? '根级（最顶层）'
+      : (catIndex.byId.get(targetId)?.name || '')
+    setBatchMoving(true)
+    try {
+      const parts = []
+      let movedTotal = 0
+      const skipped = []
+
+      if (fileIds.length > 0) {
+        if (toRoot) {
+          // 材料必须挂在某个目录下，不存在"根级"这一层
+          skipped.push(`${fileIds.length} 个材料未移动：材料必须归属具体目录，不能移到根级`)
+        } else {
+          const res = await deliverablesApi.batchMove(fileIds, targetId)
+          movedTotal += res.moved || 0
+          if (res.moved > 0) parts.push(`${res.moved} 个材料`)
+          if (res.not_found > 0) skipped.push(`${res.not_found} 个材料未找到`)
+        }
+      }
+      if (catIds.length > 0) {
+        const res = await deliverablesApi.batchMoveCategories(catIds, targetId)
+        movedTotal += res.moved || 0
+        if (res.moved > 0) parts.push(`${res.moved} 个目录`)
+        ;(res.skipped || []).forEach((s) => {
+          skipped.push(`目录「${s.name || `#${s.id}`}」未移动：${s.reason}`)
+        })
+      }
+
+      // 只有真的移动了才报成功，避免"已移动 0 个"这种误导性提示
+      if (movedTotal > 0) {
+        toast.success(`已移动 ${parts.join(' + ')} 到「${targetName}」`)
+      }
+      if (skipped.length > 0) {
+        toast.warning(
+          skipped.length === 1
+            ? skipped[0]
+            : `${skipped.length} 项未移动，例如：${skipped[0]}`
+        )
+      }
+      if (movedTotal === 0 && skipped.length === 0) {
+        toast.warning('没有可移动的内容')
+      }
+
+      setBatchMoveModal(null)
+      setSelectedIds(new Set())
+      setSelectedCatIds(new Set())
+    } catch (err) {
+      toast.error(err.message || '批量移动失败')
+    } finally {
+      // 无论成功还是部分失败都刷新：材料已移动、目录接口报错时，
+      // 若不刷新界面会停留在旧数据，用户以为没生效而重复操作
+      setBatchMoving(false)
+      await loadDeliverables()
+      await loadCategories()
     }
   }
 
@@ -1088,6 +1287,73 @@ export default function DeliverableManagement() {
     return opts
   }, [categories])
 
+  // 批量移动：可选目标 = 全部目录 - 被选中目录自身及其所有后代
+  const batchMoveSelectable = useMemo(() => {
+    const blocked = new Set()
+    selectedCatIds.forEach((id) => {
+      blocked.add(id)
+      getDescendantIds(id).forEach((d) => blocked.add(d))
+    })
+    return categories.filter((c) => !blocked.has(c.id))
+  }, [categories, selectedCatIds, getDescendantIds])
+
+  const batchMoveTargetList = useMemo(
+    () => flattenTree(batchMoveSelectable, batchMoveExpandedIds),
+    [batchMoveSelectable, batchMoveExpandedIds]
+  )
+  const batchMoveExpandableIds = useMemo(
+    () => expandableIdsOf(batchMoveSelectable),
+    [batchMoveSelectable]
+  )
+
+  // 「移动目录」：可选目标 = 全部目录 - 自身及其所有后代
+  const moveSelectable = useMemo(() => {
+    if (!moveModal) return []
+    const excludeIds = getDescendantIds(moveModal.id)
+    excludeIds.add(moveModal.id)
+    return categories.filter((c) => !excludeIds.has(c.id))
+  }, [moveModal, categories, getDescendantIds])
+
+  const moveTargetList = useMemo(
+    () => flattenTree(moveSelectable, moveExpandedIds),
+    [moveSelectable, moveExpandedIds]
+  )
+  const moveExpandableIds = useMemo(
+    () => expandableIdsOf(moveSelectable),
+    [moveSelectable]
+  )
+
+  const toggleMoveExpand = useCallback((id) => {
+    setMoveExpandedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  const toggleBatchMoveExpand = useCallback((id) => {
+    setBatchMoveExpandedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  // 「移动目录」的目标层级提示
+  const moveLevelInfo = useMemo(() => {
+    if (!moveModal) return { targetLevel: 1, currentLevel: 1, willChangeLevel: false }
+    const targetId = moveModal.targetParentId
+    let targetLevel = 1
+    if (targetId) {
+      const tCat = catIndex.byId.get(targetId)
+      targetLevel = (tCat?.level || 1) + 1
+    }
+    const currentLevel = catIndex.byId.get(moveModal.id)?.level || 1
+    return { targetLevel, currentLevel, willChangeLevel: targetLevel !== currentLevel }
+  }, [moveModal, catIndex])
+
   // ===== 渲染 =====
   return (
     <PageContainer>
@@ -1288,9 +1554,12 @@ export default function DeliverableManagement() {
                 <span className="ml-1 text-muted-foreground/70">/ 含子目录共 {activeCat.deliverable_count} 个</span>
               )}
             </span>
-            {selectedIds.size > 0 && (
+            {selectedTotal > 0 && (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-2.5 py-1 text-xs font-medium text-primary">
-                已选 {selectedIds.size} 个
+                已选
+                {selectedIds.size > 0 && <span> {selectedIds.size} 个材料</span>}
+                {selectedIds.size > 0 && selectedCatIds.size > 0 && <span> +</span>}
+                {selectedCatIds.size > 0 && <span> {selectedCatIds.size} 个目录</span>}
                 <button
                   type="button"
                   className="ml-0.5 rounded text-primary/70 hover:text-primary"
@@ -1311,6 +1580,16 @@ export default function DeliverableManagement() {
                 >
                   <Download className="h-3.5 w-3.5" />
                   批量下载 ({selectedIds.size})
+                </Button>
+              )}
+              {selectedTotal > 0 && canEdit && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setBatchMoveModal({ targetCategoryId: null })}
+                >
+                  <Move className="h-3.5 w-3.5" />
+                  批量移动 ({selectedTotal})
                 </Button>
               )}
               {selectedIds.size > 0 && canDelete && (
@@ -1452,39 +1731,54 @@ export default function DeliverableManagement() {
           ) : viewMode === 'grid' ? (
             // 网格视图
             <div className="grid grid-cols-2 gap-3 p-4 md:grid-cols-3 xl:grid-cols-4">
-              {showFolders && subCategories.map((cat) => (
-                <div
-                  key={`folder-${cat.id}`}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => enterSubCategory(cat)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') enterSubCategory(cat) }}
-                  title={`打开「${cat.name}」`}
-                  className="group flex min-h-[168px] cursor-pointer flex-col rounded-lg border border-border bg-card p-3 transition-colors hover:border-primary/40 hover:bg-primary/5"
-                >
-                  <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
-                    <span className="flex h-12 w-12 items-center justify-center">
-                      <Folder className="h-8 w-8 text-amber-500/80 transition-transform group-hover:scale-110" />
-                    </span>
-                    <span
-                      className="w-full text-xs font-medium text-foreground"
-                      style={{
-                        display: '-webkit-box',
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: 'vertical',
-                        overflow: 'hidden',
-                        wordBreak: 'break-word',
-                      }}
-                      title={cat.name}
-                    >
-                      {cat.name}
-                    </span>
+              {showFolders && subCategories.map((cat) => {
+                const checked = selectedCatIds.has(cat.id)
+                return (
+                  <div
+                    key={`folder-${cat.id}`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => enterSubCategory(cat)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') enterSubCategory(cat) }}
+                    title={`打开「${cat.name}」`}
+                    className={`group relative flex min-h-[168px] cursor-pointer flex-col rounded-lg border p-3 transition-colors ${
+                      checked
+                        ? 'border-primary/40 bg-primary/5'
+                        : 'border-border bg-card hover:border-primary/40 hover:bg-primary/5'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleCat(cat.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="absolute left-2 top-2 z-10 h-3.5 w-3.5 cursor-pointer rounded border-border accent-primary"
+                      title="勾选此文件夹（可批量移动，内含文件与子目录会一起跟随）"
+                    />
+                    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
+                      <span className="flex h-12 w-12 items-center justify-center">
+                        <Folder className="h-8 w-8 text-amber-500/80 transition-transform group-hover:scale-110" />
+                      </span>
+                      <span
+                        className="w-full text-xs font-medium text-foreground"
+                        style={{
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
+                          overflow: 'hidden',
+                          wordBreak: 'break-word',
+                        }}
+                        title={cat.name}
+                      >
+                        {cat.name}
+                      </span>
+                    </div>
+                    <div className="mt-2 text-center text-[10px] text-muted-foreground tabular-nums">
+                      {cat.deliverable_count || 0} 个材料
+                    </div>
                   </div>
-                  <div className="mt-2 text-center text-[10px] text-muted-foreground tabular-nums">
-                    {cat.deliverable_count || 0} 个材料
-                  </div>
-                </div>
-              ))}
+                )
+              })}
               {rows.map((r) => {
                 const checked = selectedIds.has(r.id)
                 const canPreview = PREVIEWABLE_EXTS.includes((r.file_ext || '').toLowerCase())
@@ -1627,13 +1921,26 @@ export default function DeliverableManagement() {
                   </tr>
                 </thead>
                 <tbody>
-                  {showFolders && subCategories.map((cat) => (
+                  {showFolders && subCategories.map((cat) => {
+                    const catChecked = selectedCatIds.has(cat.id)
+                    return (
                     <tr
                       key={`folder-${cat.id}`}
-                      className="cursor-pointer border-b border-border/60 bg-muted/10 transition-colors hover:bg-primary/5"
+                      className={`cursor-pointer border-b border-border/60 transition-colors hover:bg-primary/5 ${
+                        catChecked ? 'bg-primary/5' : 'bg-muted/10'
+                      }`}
                       onClick={() => enterSubCategory(cat)}
                     >
-                      <td className="px-4 py-2.5" />
+                      <td className="px-4 py-2.5">
+                        <input
+                          type="checkbox"
+                          checked={catChecked}
+                          onChange={() => toggleCat(cat.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="h-3.5 w-3.5 cursor-pointer rounded border-border accent-primary"
+                          title="勾选此文件夹（可批量移动，内含文件与子目录会一起跟随）"
+                        />
+                      </td>
                       <td className="min-w-0 px-4 py-2.5">
                         <div className="flex items-center gap-2">
                           <Folder className="h-4 w-4 shrink-0 text-amber-500" />
@@ -1657,7 +1964,8 @@ export default function DeliverableManagement() {
                         </span>
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                   {rows.map((r) => {
                     const checked = selectedIds.has(r.id)
                     return (
@@ -2422,58 +2730,7 @@ export default function DeliverableManagement() {
       )}
 
       {/* 移动目录弹窗 */}
-      {moveModal && (() => {
-        // 排除自身及所有后代，构建可选目标列表
-        const excludeIds = getDescendantIds(moveModal.id)
-        excludeIds.add(moveModal.id)
-        const selectable = categories.filter((c) => !excludeIds.has(c.id))
-        // 构建可选目标树
-        const selTree = buildTree(selectable)
-        // 计算目标层级
-        const targetId = moveModal.targetParentId
-        let targetLevel = 1
-        if (targetId) {
-          const tCat = categories.find((c) => c.id === targetId)
-          targetLevel = (tCat?.level || 1) + 1
-        }
-        const currentLevel = categories.find((c) => c.id === moveModal.id)?.level || 1
-        const willChangeLevel = targetLevel !== currentLevel
-
-        const renderMoveNode = (node, depth = 0) => {
-          const selected = moveModal.targetParentId === node.id
-          return (
-            <div key={node.id}>
-              <button
-                type="button"
-                style={{ paddingLeft: `${8 + depth * 16}px` }}
-                onClick={() => setMoveModal({ ...moveModal, targetParentId: node.id })}
-                className={`flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-sm transition-colors ${
-                  selected
-                    ? 'border-primary/40 bg-primary/10 text-primary'
-                    : 'border-transparent hover:bg-muted/60 text-foreground'
-                }`}
-              >
-                <span
-                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
-                    selected ? 'border-primary' : 'border-border'
-                  }`}
-                >
-                  {selected && <span className="h-2 w-2 rounded-full bg-primary" />}
-                </span>
-                {node.children.length > 0 ? (
-                  <FolderOpen className="h-3.5 w-3.5 shrink-0 text-amber-500/80" />
-                ) : (
-                  <Folder className="h-3.5 w-3.5 shrink-0 text-amber-500/80" />
-                )}
-                <span className="min-w-0 flex-1 truncate" title={node.name}>{node.name}</span>
-                <span className="shrink-0 text-[10px] text-muted-foreground">L{node.level}</span>
-              </button>
-              {node.children.map((child) => renderMoveNode(child, depth + 1))}
-            </div>
-          )
-        }
-
-        return (
+      {moveModal && (
           <Modal
             title={`移动目录「${moveModal.name}」`}
             onClose={() => !moveSaving && setMoveModal(null)}
@@ -2491,8 +2748,35 @@ export default function DeliverableManagement() {
               </>
             }
           >
-            <Field label="选择新的父级目录" hint={willChangeLevel ? `层级将从 L${currentLevel} 变为 L${targetLevel}` : `层级保持 L${currentLevel}（≤ ${MAX_LEVEL}）`}>
-              <div className="max-h-64 overflow-y-auto rounded-md border border-border p-1.5">
+            <Field
+              label="选择新的父级目录"
+              hint={
+                moveLevelInfo.willChangeLevel
+                  ? `层级将从 L${moveLevelInfo.currentLevel} 变为 L${moveLevelInfo.targetLevel}`
+                  : `层级保持 L${moveLevelInfo.currentLevel}（≤ ${MAX_LEVEL}）`
+              }
+            >
+              <div className="mb-1 flex items-center justify-end gap-1.5 text-[11px]">
+                <button
+                  type="button"
+                  className="text-primary hover:underline"
+                  onClick={() => setMoveExpandedIds(new Set(moveExpandableIds))}
+                >
+                  展开全部
+                </button>
+                <span className="text-muted-foreground/40">|</span>
+                <button
+                  type="button"
+                  className="text-primary hover:underline"
+                  onClick={() => setMoveExpandedIds(new Set())}
+                >
+                  收起全部
+                </button>
+              </div>
+              <div
+                data-allow-scroll
+                className="max-h-64 overflow-y-auto overscroll-contain rounded-md border border-border p-1.5"
+              >
                 {/* 根级选项 */}
                 <button
                   type="button"
@@ -2514,9 +2798,60 @@ export default function DeliverableManagement() {
                   <span className="font-medium">根级（最顶层）</span>
                   <span className="shrink-0 text-[10px] text-muted-foreground">L1</span>
                 </button>
-                {/* 可选目录树 */}
-                {selTree.length > 0 ? (
-                  selTree.map((node) => renderMoveNode(node, 0))
+                {/* 目录树：点箭头逐级展开，点行选中为目标 */}
+                {moveTargetList.length > 0 ? (
+                  moveTargetList.map((n) => {
+                    const selected = moveModal.targetParentId === n.id
+                    const expanded = moveExpandedIds.has(n.id)
+                    return (
+                      <div
+                        key={n.id}
+                        className="flex items-center gap-0.5"
+                        style={{ paddingLeft: `${4 + n.depth * 16}px` }}
+                      >
+                        {n.hasChildren ? (
+                          <button
+                            type="button"
+                            title={expanded ? '折叠' : '展开'}
+                            onClick={() => toggleMoveExpand(n.id)}
+                            className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          >
+                            {expanded ? (
+                              <ChevronDown className="h-3.5 w-3.5" />
+                            ) : (
+                              <ChevronRight className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                        ) : (
+                          <span className="inline-block w-[18px] shrink-0" aria-hidden />
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setMoveModal({ ...moveModal, targetParentId: n.id })}
+                          className={`flex min-w-0 flex-1 items-center gap-2 rounded-md border px-2 py-1.5 text-left text-sm transition-colors ${
+                            selected
+                              ? 'border-primary/40 bg-primary/10 text-primary'
+                              : 'border-transparent hover:bg-muted/60 text-foreground'
+                          }`}
+                        >
+                          <span
+                            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
+                              selected ? 'border-primary' : 'border-border'
+                            }`}
+                          >
+                            {selected && <span className="h-2 w-2 rounded-full bg-primary" />}
+                          </span>
+                          {n.hasChildren ? (
+                            <FolderOpen className="h-3.5 w-3.5 shrink-0 text-amber-500/80" />
+                          ) : (
+                            <Folder className="h-3.5 w-3.5 shrink-0 text-amber-500/80" />
+                          )}
+                          <span className="min-w-0 flex-1 truncate" title={n.name}>{n.name}</span>
+                          <span className="shrink-0 text-[10px] text-muted-foreground">L{n.level}</span>
+                        </button>
+                      </div>
+                    )
+                  })
                 ) : (
                   <div className="px-2 py-4 text-center text-xs text-muted-foreground">
                     没有可选的目标目录
@@ -2524,14 +2859,165 @@ export default function DeliverableManagement() {
                 )}
               </div>
             </Field>
-            {targetLevel > MAX_LEVEL && (
+            {moveLevelInfo.targetLevel > MAX_LEVEL && (
               <p className="mt-2 text-xs text-red-500">
-                目标层级 L{targetLevel} 超过上限 {MAX_LEVEL}，请选择更浅的父级
+                目标层级 L{moveLevelInfo.targetLevel} 超过上限 {MAX_LEVEL}，请选择更浅的父级
               </p>
             )}
           </Modal>
-        )
-      })}
+      )}
+
+      {/* 批量移动材料弹窗 */}
+      {batchMoveModal && (
+        <Modal
+          title={`批量移动 ${selectedIds.size > 0 ? `${selectedIds.size} 个材料` : ''}${selectedIds.size > 0 && selectedCatIds.size > 0 ? ' + ' : ''}${selectedCatIds.size > 0 ? `${selectedCatIds.size} 个目录` : ''}`}
+          onClose={() => !batchMoving && setBatchMoveModal(null)}
+          footer={
+            <>
+              <Button size="sm" variant="secondary" disabled={batchMoving} onClick={() => setBatchMoveModal(null)}>取消</Button>
+              <Button
+                size="sm"
+                loading={batchMoving}
+                disabled={batchMoving || batchMoveModal.targetCategoryId === null}
+                onClick={handleBatchMove}
+              >
+                <Move className="h-3.5 w-3.5" />
+                确认移动
+              </Button>
+            </>
+          }
+        >
+          <Field
+            label="目标目录"
+            hint={
+              selectedCatIds.size > 0
+                ? '材料改挂到该目录；目录改挂为该目录的子目录（内含文件与子目录一并跟随，落盘文件不动）'
+                : '所选材料将全部移动到该目录下（源目录保持不变，仅重挂目录索引）'
+            }
+          >
+            <div className="mb-1 flex items-center justify-end gap-1.5 text-[11px]">
+              <button
+                type="button"
+                className="text-primary hover:underline"
+                onClick={() => setBatchMoveExpandedIds(new Set(batchMoveExpandableIds))}
+              >
+                展开全部
+              </button>
+              <span className="text-muted-foreground/40">|</span>
+              <button
+                type="button"
+                className="text-primary hover:underline"
+                onClick={() => setBatchMoveExpandedIds(new Set())}
+              >
+                收起全部
+              </button>
+            </div>
+            <div
+              data-allow-scroll
+              className="max-h-72 overflow-y-auto overscroll-contain rounded-md border border-border p-1.5"
+            >
+              {/* 根级选项：仅目录可以移到最顶层，材料必须归属具体目录 */}
+              {selectedCatIds.size > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setBatchMoveModal({ targetCategoryId: 0 })}
+                  className={`flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-sm transition-colors ${
+                    batchMoveModal.targetCategoryId === 0
+                      ? 'border-primary/40 bg-primary/10 text-primary'
+                      : 'border-transparent hover:bg-muted/60 text-foreground'
+                  }`}
+                >
+                  <span
+                    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
+                      batchMoveModal.targetCategoryId === 0 ? 'border-primary' : 'border-border'
+                    }`}
+                  >
+                    {batchMoveModal.targetCategoryId === 0 && (
+                      <span className="h-2 w-2 rounded-full bg-primary" />
+                    )}
+                  </span>
+                  <FolderPlus className="h-3.5 w-3.5 shrink-0 text-primary" />
+                  <span className="font-medium">根级（最顶层）</span>
+                  <span className="shrink-0 text-[10px] text-muted-foreground">L1</span>
+                </button>
+              )}
+              {batchMoveTargetList.length > 0 ? (
+                batchMoveTargetList.map((n) => {
+                  const selected = batchMoveModal.targetCategoryId === n.id
+                  const expanded = batchMoveExpandedIds.has(n.id)
+                  return (
+                    <div
+                      key={n.id}
+                      className="flex items-center gap-0.5"
+                      style={{ paddingLeft: `${4 + n.depth * 16}px` }}
+                    >
+                      {n.hasChildren ? (
+                        <button
+                          type="button"
+                          title={expanded ? '折叠' : '展开'}
+                          onClick={() => toggleBatchMoveExpand(n.id)}
+                          className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        >
+                          {expanded ? (
+                            <ChevronDown className="h-3.5 w-3.5" />
+                          ) : (
+                            <ChevronRight className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                      ) : (
+                        <span className="inline-block w-[18px] shrink-0" aria-hidden />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setBatchMoveModal({ targetCategoryId: n.id })}
+                        className={`flex min-w-0 flex-1 items-center gap-2 rounded-md border px-2 py-1.5 text-left text-sm transition-colors ${
+                          selected
+                            ? 'border-primary/40 bg-primary/10 text-primary'
+                            : 'border-transparent hover:bg-muted/60 text-foreground'
+                        }`}
+                      >
+                        <span
+                          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
+                            selected ? 'border-primary' : 'border-border'
+                          }`}
+                        >
+                          {selected && <span className="h-2 w-2 rounded-full bg-primary" />}
+                        </span>
+                        {n.hasChildren ? (
+                          <FolderOpen className="h-3.5 w-3.5 shrink-0 text-amber-500/80" />
+                        ) : (
+                          <Folder className="h-3.5 w-3.5 shrink-0 text-amber-500/80" />
+                        )}
+                        <span className="min-w-0 flex-1 truncate" title={n.name}>{n.name}</span>
+                        <span className="shrink-0 text-[10px] text-muted-foreground">L{n.level}</span>
+                      </button>
+                    </div>
+                  )
+                })
+              ) : (
+                <div className="px-2 py-4 text-center text-xs text-muted-foreground">
+                  没有可选的目标目录
+                </div>
+              )}
+            </div>
+          </Field>
+          {batchMoveModal.targetCategoryId !== null && batchMoveModal.targetCategoryId !== undefined ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              将移动到：
+              <b className="text-foreground">
+                {batchMoveModal.targetCategoryId === 0
+                  ? '根级（最顶层）'
+                  : (catIndex.byId.get(batchMoveModal.targetCategoryId)?.name || '—')}
+              </b>
+              {batchMoveModal.targetCategoryId === 0 && selectedIds.size > 0 && (
+                <span className="ml-1 text-amber-500">
+                  （材料不能挂到根级，将只移动目录）
+                </span>
+              )}
+            </p>
+          ) : null}
+        </Modal>
+      )}
 
       {/* 使用教程 */}
       <TutorialDrawer

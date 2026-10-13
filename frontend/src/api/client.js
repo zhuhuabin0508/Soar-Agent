@@ -866,6 +866,20 @@ export const deliverablesApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids }),
     }),
+  // 批量移动：ids → 目标目录，返回 { moved, not_found }
+  batchMove: (ids, targetCategoryId) =>
+    request('/deliverables/batch-move', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, target_category_id: targetCategoryId }),
+    }),
+  // 批量移动目录（整棵子树跟着走）：ids → 目标父级（0=根级），返回 { moved, moved_ids, skipped }
+  batchMoveCategories: (ids, targetParentId) =>
+    request('/deliverables/categories/batch-move', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, target_parent_id: targetParentId }),
+    }),
   // 获取预览 Blob URL（带 auth fetch → blob → URL，用于 PDF iframe 内嵌预览）
   previewBlob: async (id) => {
     const blob = await _fetchPreviewBlob(id)
