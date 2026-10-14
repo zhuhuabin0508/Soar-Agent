@@ -55,7 +55,12 @@ _PARALLEL_SAFE_TOOLS = frozenset({
 _PARALLEL_SAFE_PREFIXES = ("query_", "get_", "list_", "search_")
 
 
-def plan_tool_batch_segments(tool_calls: list["ToolCall"]) -> list[tuple[str, list["ToolCall"]]]:
+def plan_tool_batch_segments(
+    tool_calls: list["ToolCall"],
+    *,
+    never_parallel: frozenset[str] | None = None,
+    parallel_safe: frozenset[str] | None = None,
+) -> list[tuple[str, list["ToolCall"]]]:
     """分段：``[("parallel", calls), ("sequential", calls), ...]``。
 
     规则与 Hermes 一致：
@@ -74,7 +79,9 @@ def plan_tool_batch_segments(tool_calls: list["ToolCall"]) -> list[tuple[str, li
     Returns:
         分段列表，每段为 (kind, calls)，kind ∈ {"parallel", "sequential"}
     """
-    # 原始结构：list of [kind, calls] pairs，返回时转为 tuple
+    np = never_parallel if never_parallel is not None else _NEVER_PARALLEL_TOOLS
+    ps = parallel_safe if parallel_safe is not None else _PARALLEL_SAFE_TOOLS
+
     segments: list[list] = []
     current_parallel: list["ToolCall"] = []
 
@@ -95,7 +102,7 @@ def plan_tool_batch_segments(tool_calls: list["ToolCall"]) -> list[tuple[str, li
         tool_name = tc.name
 
         # 写工具 → barrier
-        if tool_name in _NEVER_PARALLEL_TOOLS:
+        if tool_name in np:
             _add_sequential(tc)
             continue
 
@@ -109,7 +116,7 @@ def plan_tool_batch_segments(tool_calls: list["ToolCall"]) -> list[tuple[str, li
             continue
 
         # 显式并行安全工具
-        if tool_name in _PARALLEL_SAFE_TOOLS:
+        if tool_name in ps:
             current_parallel.append(tc)
             continue
 

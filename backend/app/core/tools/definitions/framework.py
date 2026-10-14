@@ -20,6 +20,11 @@ HERMES_FRAMEWORK_TOOLS: list[dict[str, Any]] = [
         "category": "task_delegation",
         "code": None,
         "enabled": True,
+        "mutating": True,
+        "risk_level": "high",
+        "parallel_safe": False,
+        "deferrable": False,
+        "verification": "trigger_workflow",
     },
     {
         "name": "list_workflow_skills",
@@ -73,6 +78,10 @@ HERMES_FRAMEWORK_TOOLS: list[dict[str, Any]] = [
         "category": "task_delegation",
         "code": None,
         "enabled": True,
+        "mutating": True,
+        "risk_level": "high",
+        "parallel_safe": False,
+        "deferrable": False,
     },
     {
         "name": "clarify",
@@ -175,6 +184,10 @@ HERMES_FRAMEWORK_TOOLS: list[dict[str, Any]] = [
         "category": "cron_jobs",
         "code": None,
         "enabled": True,
+        "mutating": True,
+        "risk_level": "high",
+        "parallel_safe": False,
+        "deferrable": False,
     },
     {
         "name": "computer_use",
@@ -206,6 +219,10 @@ HERMES_FRAMEWORK_TOOLS: list[dict[str, Any]] = [
         "category": "computer_use",
         "code": None,
         "enabled": True,
+        "mutating": True,
+        "risk_level": "high",
+        "parallel_safe": False,
+        "deferrable": False,
     },
     # ===== 智能体创建助手：构建类框架工具（tool_type='framework'，executor 拦截处理）=====
     # 处理逻辑在 app/agent/hermes/builder.py；仅对显式启用的智能体可见。

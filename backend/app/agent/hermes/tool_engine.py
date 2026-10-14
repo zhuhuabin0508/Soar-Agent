@@ -146,6 +146,13 @@ class HermesToolEngine:
         self._source_map: dict[str, str] = {}  # 工具名 → source（供桥接 dispatch）
 
         self._registry: dict[str, ToolEntry] = {}
+        self._write_tools_requiring_verification: frozenset[str] = WRITE_TOOLS_REQUIRING_VERIFICATION
+        self._never_parallel: frozenset[str] = frozenset()
+        self._parallel_safe: frozenset[str] = frozenset()
+        self._deferrable: frozenset[str] = frozenset()
+        self._no_effect: frozenset[str] = frozenset()
+        self._mutating_tool_names: frozenset[str] = frozenset()
+        self._file_mutating_tool_names: frozenset[str] = frozenset()
         self._build_registry()
 
     def reset_for_turn(
@@ -172,162 +179,34 @@ class HermesToolEngine:
             self.variables = variables
 
     def _build_registry(self) -> None:
-        """从 Agent 配置构建工具注册表。"""
-        # 1. DB 工具（code + http；framework 类型由 executor 注入，不在此注册）
-        self._register_db_tools()
-        # 2. 知识库工具
-        self._register_kb_tools()
-        # 3. 资产检索工具（勾选资产类型 或 工具列表启用 search_assets）
-        self._register_asset_tools()
-        self._register_workflow_tools()
-        # 注意：内置安全工具（check_whitelist 等）已迁移为 DB code 类型工具，
-        # 由 _register_db_tools 统一加载，不再需要 _register_builtin_tools 兜底。
+        from app.core.tools.derive import (
+            deferrable_names,
+            file_mutating_tool_names,
+            mutating_tool_names,
+            never_parallel_names,
+            no_effect_names,
+            parallel_safe_names,
+            write_tools_requiring_verification,
+        )
+        from app.core.tools.registry_builder import ToolRegistryBuilder, descriptor_to_tool_entry
+
+        builder = ToolRegistryBuilder(self.db, self.agent, user_id=self.user_id)
+        descriptors = builder.build()
+        self._registry = {n: descriptor_to_tool_entry(d) for n, d in descriptors.items()}
+        self._write_tools_requiring_verification = (
+            write_tools_requiring_verification(descriptors) | WRITE_TOOLS_REQUIRING_VERIFICATION
+        )
+        self._never_parallel = never_parallel_names(descriptors)
+        self._parallel_safe = parallel_safe_names(descriptors)
+        self._deferrable = deferrable_names(descriptors)
+        self._no_effect = no_effect_names(descriptors)
+        self._mutating_tool_names = mutating_tool_names(descriptors)
+        self._file_mutating_tool_names = file_mutating_tool_names(descriptors)
         logger.info(
             "HermesToolEngine 注册表构建完成: agent_id=%s, tools=%s",
             self.agent.id,
             list(self._registry.keys()),
         )
-
-    def _register_db_tools(self) -> None:
-        """注册 DB 中的 code/http 工具（跳过 framework 类型，后者由 executor 注入）。"""
-        enabled_tools = self.agent.enabled_tools or []
-        if not enabled_tools:
-            return
-        from app.models.tool import Tool
-
-        for name in enabled_tools:
-            tool = self.db.query(Tool).filter(Tool.name == name, Tool.enabled.is_(True)).first()
-            if tool is None:
-                logger.warning("DB 工具未找到或未启用: %s", name)
-                continue
-            # framework 类型工具（delegate_task/clarify 等）由 executor 作为 extra_tool_defs
-            # 注入并在 _react_loop 中拦截处理，不走 tool_engine 执行管线
-            if (tool.tool_type or "code").lower() == "framework":
-                continue
-            if name == "search_assets":
-                continue
-            try:
-                from app.core.tool_runner import load_tool_function
-
-                run_fn = load_tool_function(
-                    tool,
-                    enabled_kbs=self.agent.enabled_kbs or [],
-                    agent_id=self.agent.id,
-                    user_id=self.user_id,
-                )
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("DB 工具加载失败: %s, error=%s", name, exc)
-                continue
-
-            from app.agent.tool_builders import _build_args_model
-
-            args_model = _build_args_model(tool.name, tool.parameters_schema)
-            tool_type = (getattr(tool, "tool_type", "code") or "code").lower()
-            if getattr(tool, "is_preset", False):
-                source = "builtin"
-            elif tool_type == "http":
-                source = "db_http"
-            else:
-                source = "db_code"
-
-            # 判断并行安全性：HTTP 工具默认 barrier，code 工具按名称判断
-            parallel_safe = self._is_parallel_safe(name)
-            # 不可信包装：HTTP 工具结果可能含外部内容
-            untrusted = tool_type == "http" or name.startswith("http_") or name.startswith("openapi_")
-
-            self._registry[name] = ToolEntry(
-                name=name,
-                description=tool.description or f"DB 工具 {name}",
-                args_schema=args_model,
-                coroutine=self._make_safe_coroutine(run_fn, name),
-                source=source,
-                parallel_safe=parallel_safe,
-                untrusted=untrusted,
-            )
-
-    def _register_kb_tools(self) -> None:
-        """注册知识库检索工具。"""
-        enabled_kbs = self.agent.enabled_kbs or []
-        if not enabled_kbs:
-            return
-
-        # search_knowledge_base
-        from app.agent.tool_builders import _build_kb_tool
-
-        kb_tool = _build_kb_tool(enabled_kbs)
-        if kb_tool is not None:
-            self._registry["search_knowledge_base"] = ToolEntry(
-                name="search_knowledge_base",
-                description=kb_tool.description,
-                args_schema=kb_tool.args_schema,
-                coroutine=kb_tool.coroutine,
-                source="kb",
-                parallel_safe=True,
-                untrusted=True,  # KB 结果含外部文档内容
-            )
-
-        # query_kb_file
-        from app.agent.tool_builders import _build_file_query_tool
-
-        file_tool = _build_file_query_tool(enabled_kbs)
-        if file_tool is not None:
-            self._registry["query_kb_file"] = ToolEntry(
-                name="query_kb_file",
-                description=file_tool.description,
-                args_schema=file_tool.args_schema,
-                coroutine=file_tool.coroutine,
-                source="kb",
-                parallel_safe=True,
-                untrusted=True,
-            )
-
-    def _register_asset_tools(self) -> None:
-        """注册资产检索工具（在关联的资产类型范围内检索）。
-
-        复用 ``app.agent.tool_builders._build_asset_tool`` 构造工具，抽取
-        (name, description, args_schema, coroutine) 注册为 ToolEntry。
-        source="asset" 为核心来源（永不延迟，见 tool_search.py）。
-        """
-        enabled_asset_types = self.agent.enabled_asset_types or []
-        if not enabled_asset_types:
-            return
-        from app.agent.tool_builders import _build_asset_tool
-
-        asset_tool = _build_asset_tool(enabled_asset_types)
-        if asset_tool is not None:
-            self._registry["search_assets"] = ToolEntry(
-                name="search_assets",
-                description=asset_tool.description,
-                args_schema=asset_tool.args_schema,
-                coroutine=asset_tool.coroutine,
-                source="asset",          # 核心来源，永不延迟（见 tool_search.py）
-                parallel_safe=True,      # 只读检索，并行安全
-                untrusted=True,          # 资产数据可能含外部来源
-            )
-
-    @staticmethod
-    def _is_parallel_safe(name: str) -> bool:
-        """判断工具是否并行安全（按名称规则）。"""
-        from app.agent.hermes.tool_dispatch import _NEVER_PARALLEL_TOOLS, _PARALLEL_SAFE_TOOLS, _PARALLEL_SAFE_PREFIXES
-
-        if name in _NEVER_PARALLEL_TOOLS:
-            return False
-        if name in _PARALLEL_SAFE_TOOLS:
-            return True
-        return any(name.startswith(prefix) for prefix in _PARALLEL_SAFE_PREFIXES)
-
-    @staticmethod
-    def _make_safe_coroutine(run_fn: Callable, name: str) -> Callable:
-        """包装工具协程，捕获异常返回 {"error": ...} 而非抛出。"""
-
-        async def _safe_coroutine(**kwargs):
-            try:
-                return await run_fn(**kwargs)
-            except Exception as exc:  # noqa: BLE001
-                logger.exception("工具 %s 执行异常: %s", name, exc)
-                return {"error": str(exc)}
-
-        return _safe_coroutine
 
     # ========================================================================
     # 工具列表（供 LLM bind_tools）
@@ -495,7 +374,11 @@ class HermesToolEngine:
                 for tc in tool_calls
             ]
 
-        segments = plan_tool_batch_segments(tool_calls)
+        segments = plan_tool_batch_segments(
+            tool_calls,
+            never_parallel=self._never_parallel,
+            parallel_safe=self._parallel_safe,
+        )
         results: list[Optional[ToolResult]] = [None] * len(tool_calls)
 
         for kind, calls in segments:
@@ -659,7 +542,7 @@ class HermesToolEngine:
                 )
 
         # 4. verification：写工具证据验证
-        if self.verification_config is not None and effective_name in WRITE_TOOLS_REQUIRING_VERIFICATION:
+        if self.verification_config is not None and effective_name in self._write_tools_requiring_verification:
             verify_context = {
                 "tool_history": ctx.tool_history if ctx is not None else [],
                 "confirmed_facts": ctx.confirmed_facts if ctx is not None else {},
@@ -669,6 +552,7 @@ class HermesToolEngine:
                 tc.arguments,
                 context=verify_context,
                 config=self.verification_config,
+                write_tools=self._write_tools_requiring_verification,
             )
             if not v_result.approved:
                 duration_ms = int((time.time() - start_time) * 1000)
@@ -741,6 +625,7 @@ class HermesToolEngine:
             ctx.tool_history.append({
                 "name": effective_name,
                 "tool_call_id": tc.id,
+                "arguments": tc.arguments,
                 "result": raw_result,
                 "is_error": is_error,
             })
@@ -991,30 +876,6 @@ class HermesToolEngine:
             return await run_http_tool(tool_config, kwargs)
 
         return _coroutine
-
-    def _register_workflow_tools(self) -> None:
-        from app.agent.workflow_as_tool import infer_parameters, make_tool_name
-        from app.models.workflow import Workflow
-
-        for raw_id in getattr(self.agent, "enabled_workflows", None) or []:
-            try:
-                wf_id = int(raw_id)
-            except (TypeError, ValueError):
-                continue
-            wf = (
-                self.db.query(Workflow)
-                .filter(Workflow.id == wf_id, Workflow.enabled.is_(True))
-                .first()
-            )
-            if wf is None:
-                continue
-            desc = (wf.description or "").strip() or f"运行已发布工作流：{wf.name}"
-            self.register_workflow_as_tool(
-                wf.id,
-                make_tool_name(wf.id, wf.name),
-                desc,
-                parameters=infer_parameters(wf.graph_config),
-            )
 
     def register_workflow_as_tool(
         self,

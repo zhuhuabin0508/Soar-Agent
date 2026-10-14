@@ -25,6 +25,10 @@ def _sec_tool(
         "enabled": True,
         "is_preset": True,
         "tool_source": TOOL_SOURCE_SECURITY,
+        "mutating": True,
+        "risk_level": "high",
+        "parallel_safe": False,
+        "deferrable": True,
     }
 
 

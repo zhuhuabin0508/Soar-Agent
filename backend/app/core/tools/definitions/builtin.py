@@ -25,6 +25,8 @@ HERMES_BUILTIN_TOOLS: list[dict[str, Any]] = [
         "tool_type": "code",
         "category": "security",
         "enabled": True,
+        "parallel_safe": True,
+        "mutating": False,
     },
     {
         "name": "get_asset_info",
@@ -123,6 +125,8 @@ HERMES_BUILTIN_TOOLS: list[dict[str, Any]] = [
         "tool_type": "code",
         "category": "security",
         "enabled": True,
+        "parallel_safe": True,
+        "mutating": False,
     },
     {
         "name": "search_assets",
@@ -214,6 +218,8 @@ HERMES_BUILTIN_TOOLS: list[dict[str, Any]] = [
         "tool_type": "code",
         "category": "security",
         "enabled": True,
+        "parallel_safe": True,
+        "mutating": False,
     },
     {
         "name": "check_subnet",
@@ -240,6 +246,8 @@ HERMES_BUILTIN_TOOLS: list[dict[str, Any]] = [
         "tool_type": "code",
         "category": "security",
         "enabled": True,
+        "parallel_safe": True,
+        "mutating": False,
     },
     {
         "name": "block_ip_on_firewall",
@@ -261,6 +269,11 @@ HERMES_BUILTIN_TOOLS: list[dict[str, Any]] = [
         "tool_type": "code",
         "category": "security",
         "enabled": True,
+        "mutating": True,
+        "risk_level": "critical",
+        "parallel_safe": False,
+        "deferrable": False,
+        "verification": "block_ip",
     },
     {
         "name": "read_document",

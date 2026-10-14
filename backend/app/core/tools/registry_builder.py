@@ -1,0 +1,290 @@
+"""唯一工具装配工厂：模块→工具契约的唯一登记点。"""
+from __future__ import annotations
+
+import logging
+from typing import Any, Callable, Optional
+
+from app.core.tools.descriptor import ToolDescriptor
+from app.core.tools.governance_legacy import (
+    FRAMEWORK_REQUIRES_EXPLICIT_ENABLE,
+    LEGACY_NEVER_PARALLEL,
+    LEGACY_PARALLEL_SAFE,
+    PARALLEL_SAFE_PREFIXES,
+)
+
+logger = logging.getLogger(__name__)
+
+
+async def _noop_coroutine(**_kwargs):
+    return {}
+
+
+def descriptor_to_tool_entry(d: ToolDescriptor):
+    from app.agent.hermes.types import ToolEntry
+
+    return ToolEntry(
+        name=d.name,
+        description=d.description,
+        args_schema=d.args_schema,
+        coroutine=d.coroutine,
+        source=d.source,
+        parallel_safe=d.parallel_safe,
+        untrusted=d.untrusted,
+        parameters=d.parameters,
+    )
+
+
+class ToolRegistryBuilder:
+    def __init__(
+        self,
+        db,
+        agent,
+        *,
+        user: Optional[Any] = None,
+        user_id: Optional[int] = None,
+    ):
+        self.db = db
+        self.agent = agent
+        if user_id is not None:
+            self.user_id = user_id
+        else:
+            self.user_id = getattr(user, "id", None) if user is not None else None
+        self._preset_index: Optional[dict[str, dict]] = None
+
+    def build(self) -> dict[str, ToolDescriptor]:
+        registry: dict[str, ToolDescriptor] = {}
+        self._register_db_tools(registry)
+        self._register_kb_tools(registry)
+        self._register_asset_tools(registry)
+        self._register_workflow_tools(registry)
+        self._register_framework_governance(registry)
+        return registry
+
+    def _preset_meta(self, name: str) -> dict:
+        if self._preset_index is None:
+            from app.core.tools.catalog import ToolCatalog
+
+            self._preset_index = ToolCatalog.preset_name_index()
+        return self._preset_index.get(name, {})
+
+    @staticmethod
+    def _resolve_parallel_safe(name: str, preset: dict) -> bool:
+        if name in LEGACY_NEVER_PARALLEL:
+            return False
+        if "parallel_safe" in preset:
+            return bool(preset["parallel_safe"])
+        if name in LEGACY_PARALLEL_SAFE:
+            return True
+        return any(name.startswith(prefix) for prefix in PARALLEL_SAFE_PREFIXES)
+
+    def _governance_from_preset(self, name: str, preset: dict) -> dict[str, Any]:
+        return {
+            "mutating": bool(preset.get("mutating", False)),
+            "risk_level": str(preset.get("risk_level", "low")),
+            "parallel_safe": self._resolve_parallel_safe(name, preset),
+            "deferrable": bool(preset.get("deferrable", False)),
+            "verification": preset.get("verification"),
+        }
+
+    @staticmethod
+    def _make_safe_coroutine(run_fn: Callable, name: str) -> Callable:
+        async def _safe_coroutine(**kwargs):
+            try:
+                return await run_fn(**kwargs)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("工具 %s 执行异常: %s", name, exc)
+                return {"error": str(exc)}
+
+        return _safe_coroutine
+
+    def _register_db_tools(self, registry: dict[str, ToolDescriptor]) -> None:
+        enabled_tools = self.agent.enabled_tools or []
+        if not enabled_tools:
+            return
+        from app.models.tool import Tool
+
+        for name in enabled_tools:
+            tool = self.db.query(Tool).filter(Tool.name == name, Tool.enabled.is_(True)).first()
+            if tool is None:
+                logger.warning("DB 工具未找到或未启用: %s", name)
+                continue
+            if (tool.tool_type or "code").lower() == "framework":
+                continue
+            try:
+                from app.core.tool_runner import load_tool_function
+
+                run_fn = load_tool_function(
+                    tool,
+                    enabled_kbs=self.agent.enabled_kbs or [],
+                    agent_id=self.agent.id,
+                    user_id=self.user_id,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("DB 工具加载失败: %s, error=%s", name, exc)
+                continue
+
+            from app.agent.tool_builders import _build_args_model
+
+            args_model = _build_args_model(tool.name, tool.parameters_schema)
+            tool_type = (getattr(tool, "tool_type", "code") or "code").lower()
+            if getattr(tool, "is_preset", False):
+                source = "builtin"
+            elif tool_type == "http":
+                source = "db_http"
+            else:
+                source = "db_code"
+
+            preset = self._preset_meta(name)
+            gov = self._governance_from_preset(name, preset)
+            if not preset:
+                gov["parallel_safe"] = self._resolve_parallel_safe(name, {})
+            untrusted = tool_type == "http" or name.startswith("http_") or name.startswith("openapi_")
+            tool_source = getattr(tool, "tool_source", None) or preset.get("tool_source") or "builtin"
+
+            registry[name] = ToolDescriptor(
+                name=name,
+                description=tool.description or f"DB 工具 {name}",
+                args_schema=args_model,
+                coroutine=self._make_safe_coroutine(run_fn, name),
+                source=source,
+                tool_source=str(tool_source),
+                tool_type=tool_type,
+                category=getattr(tool, "category", None) or preset.get("category"),
+                mutating=gov["mutating"],
+                risk_level=gov["risk_level"],
+                parallel_safe=gov["parallel_safe"],
+                deferrable=gov["deferrable"],
+                verification=gov["verification"],
+                untrusted=untrusted,
+            )
+
+    def _register_kb_tools(self, registry: dict[str, ToolDescriptor]) -> None:
+        enabled_kbs = self.agent.enabled_kbs or []
+        if not enabled_kbs:
+            return
+        from app.agent.tool_builders import _build_file_query_tool, _build_kb_tool
+
+        kb_tool = _build_kb_tool(enabled_kbs)
+        if kb_tool is not None:
+            registry["search_knowledge_base"] = ToolDescriptor(
+                name="search_knowledge_base",
+                description=kb_tool.description,
+                args_schema=kb_tool.args_schema,
+                coroutine=kb_tool.coroutine,
+                source="kb",
+                parallel_safe=True,
+                untrusted=True,
+            )
+        file_tool = _build_file_query_tool(enabled_kbs)
+        if file_tool is not None:
+            registry["query_kb_file"] = ToolDescriptor(
+                name="query_kb_file",
+                description=file_tool.description,
+                args_schema=file_tool.args_schema,
+                coroutine=file_tool.coroutine,
+                source="kb",
+                parallel_safe=True,
+                untrusted=True,
+            )
+
+    def _register_asset_tools(self, registry: dict[str, ToolDescriptor]) -> None:
+        enabled_asset_types = self.agent.enabled_asset_types or []
+        if not enabled_asset_types:
+            return
+        from app.agent.tool_builders import _build_asset_tool
+
+        asset_tool = _build_asset_tool(enabled_asset_types)
+        if asset_tool is not None:
+            preset = self._preset_meta("search_assets")
+            gov = self._governance_from_preset("search_assets", preset)
+            registry["search_assets"] = ToolDescriptor(
+                name="search_assets",
+                description=asset_tool.description,
+                args_schema=asset_tool.args_schema,
+                coroutine=asset_tool.coroutine,
+                source="asset",
+                parallel_safe=gov.get("parallel_safe", True),
+                mutating=gov.get("mutating", False),
+                untrusted=True,
+            )
+
+    def _register_workflow_tools(self, registry: dict[str, ToolDescriptor]) -> None:
+        from app.agent.workflow_as_tool import infer_parameters, invoke_workflow_as_tool, make_tool_name
+        from app.models.workflow import Workflow
+
+        for raw_id in getattr(self.agent, "enabled_workflows", None) or []:
+            try:
+                wf_id = int(raw_id)
+            except (TypeError, ValueError):
+                continue
+            wf = (
+                self.db.query(Workflow)
+                .filter(Workflow.id == wf_id, Workflow.enabled.is_(True))
+                .first()
+            )
+            if wf is None:
+                continue
+            tool_name = make_tool_name(wf.id, wf.name)
+            desc = (wf.description or "").strip() or f"运行已发布工作流：{wf.name}"
+            parameters = infer_parameters(wf.graph_config)
+
+            async def _coroutine(workflow_id=wf_id, **kwargs):
+                return await invoke_workflow_as_tool(
+                    db=self.db,
+                    workflow_id=workflow_id,
+                    agent_id=getattr(self.agent, "id", None),
+                    payload=kwargs,
+                )
+
+            registry[tool_name] = ToolDescriptor(
+                name=tool_name,
+                description=desc,
+                args_schema=None,
+                coroutine=_coroutine,
+                source="workflow",
+                parallel_safe=False,
+                mutating=True,
+                parameters=parameters,
+            )
+
+    def _framework_visible(self, name: str) -> bool:
+        enabled = set(self.agent.enabled_tools or [])
+        from app.agent.hermes.builder import BUILDER_TOOL_NAMES
+        from app.agent.workflow_as_tool import GLOBAL_WORKFLOW_TOOL_NAMES
+
+        if name in BUILDER_TOOL_NAMES and name not in enabled:
+            return False
+        if name in GLOBAL_WORKFLOW_TOOL_NAMES and name not in enabled:
+            return False
+        if name in FRAMEWORK_REQUIRES_EXPLICIT_ENABLE and name not in enabled:
+            return False
+        return True
+
+    def _register_framework_governance(self, registry: dict[str, ToolDescriptor]) -> None:
+        if self._preset_index is None:
+            from app.core.tools.catalog import ToolCatalog
+
+            self._preset_index = ToolCatalog.preset_name_index()
+        for name, preset in self._preset_index.items():
+            if (preset.get("tool_type") or "").lower() != "framework":
+                continue
+            if not self._framework_visible(name):
+                continue
+            if name in registry:
+                continue
+            gov = self._governance_from_preset(name, preset)
+            registry[name] = ToolDescriptor(
+                name=name,
+                description=preset.get("description") or name,
+                args_schema=None,
+                coroutine=_noop_coroutine,
+                source="delegate" if name == "delegate_task" else "framework",
+                tool_source="framework",
+                tool_type="framework",
+                category=preset.get("category"),
+                mutating=gov["mutating"],
+                risk_level=gov["risk_level"],
+                parallel_safe=gov["parallel_safe"],
+                deferrable=gov["deferrable"],
+                verification=gov["verification"],
+            )
