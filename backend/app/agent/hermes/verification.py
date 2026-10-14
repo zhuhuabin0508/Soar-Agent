@@ -40,9 +40,9 @@ __all__ = [
 ]
 
 
-# 需要验证的写工具
 WRITE_TOOLS_REQUIRING_VERIFICATION = frozenset({
-    "block_ip", "device_action", "send_notification", "trigger_workflow_skill",
+    "block_ip_on_firewall",
+    "trigger_workflow_skill",
 })
 
 
@@ -100,6 +100,7 @@ def verify_write_tool(
     *,
     context: dict,
     config: Optional[VerificationConfig] = None,
+    write_tools: Optional[frozenset[str]] = None,
 ) -> VerificationResult:
     """验证写工具的执行证据是否充分。
 
@@ -114,16 +115,15 @@ def verify_write_tool(
         VerificationResult
     """
     config = config or VerificationConfig()
+    effective_write_tools = (
+        write_tools if write_tools is not None else WRITE_TOOLS_REQUIRING_VERIFICATION
+    )
 
-    if tool_name not in WRITE_TOOLS_REQUIRING_VERIFICATION:
+    if tool_name not in effective_write_tools:
         return VerificationResult(approved=True, code="approved", message="非写工具，跳过验证")
 
-    if tool_name == "block_ip" and config.verify_block_ip:
+    if tool_name == "block_ip_on_firewall" and config.verify_block_ip:
         return _verify_block_ip(arguments, context, config)
-    if tool_name == "device_action" and config.verify_device_action:
-        return _verify_device_action(arguments, context, config)
-    if tool_name == "send_notification" and config.verify_send_notification:
-        return _verify_send_notification(arguments, context, config)
     if tool_name == "trigger_workflow_skill" and config.verify_trigger_workflow:
         return _verify_trigger_workflow(arguments, context, config)
 
@@ -135,31 +135,26 @@ def _verify_block_ip(
     context: dict,
     config: VerificationConfig,
 ) -> VerificationResult:
-    """验证 block_ip 的证据链。
-
-    要求：
-    - 参数含 ip（非空、合法格式）
-    - 已查 whitelist（确认 IP 不在白名单）
-    - asset 已确认（IP 属于已知资产）
-    - 若 require_threat_intel=True，需已查 threat_intel
-    - 若有 duration 参数，需为合法时长
-    """
     missing: list[str] = []
     ip = arguments.get("ip") or arguments.get("target_ip")
     if not ip:
         missing.append("目标 IP 未指定")
     elif not _is_valid_ip(ip):
         missing.append(f"目标 IP 格式不合法: {ip}")
+    else:
+        ip = str(ip)
 
     tool_history: list[dict] = context.get("tool_history", [])
-    tool_names_called = {t.get("name") for t in tool_history}
+    valid_ip = isinstance(ip, str) and ip
 
-    # whitelist 检查
-    if "check_whitelist" not in tool_names_called:
-        missing.append("未查询白名单（应先调用 check_whitelist 确认 IP 不在白名单）")
+    wl_entry = _find_tool_entry_for_ip(tool_history, "check_whitelist", ip) if valid_ip else None
+    if wl_entry is None:
+        if any(e.get("name") == "check_whitelist" for e in tool_history):
+            missing.append(f"白名单查询的 IP 与封禁目标 IP（{ip}）不一致，证据未绑定")
+        else:
+            missing.append("未查询白名单（应先调用 check_whitelist 确认 IP 不在白名单）")
     else:
-        # 检查 whitelist 结果是否确认不在白名单
-        wl_result = _find_tool_result(tool_history, "check_whitelist")
+        wl_result = wl_entry.get("result")
         if isinstance(wl_result, dict) and wl_result.get("in_whitelist"):
             return VerificationResult(
                 approved=False,
@@ -168,15 +163,18 @@ def _verify_block_ip(
                 missing_evidence=missing,
             )
 
-    # asset 确认
-    if "get_asset_info" not in tool_names_called:
-        missing.append("未查询资产信息（应先调用 get_asset_info 确认 IP 属于已知资产）")
+    asset_entry = _find_tool_entry_for_ip(tool_history, "get_asset_info", ip) if valid_ip else None
+    if asset_entry is None:
+        if any(e.get("name") == "get_asset_info" for e in tool_history):
+            missing.append(f"资产查询的 IP 与封禁目标 IP（{ip}）不一致，证据未绑定")
+        else:
+            missing.append("未查询资产信息（应先调用 get_asset_info 确认 IP 属于已知资产）")
 
-    # threat_intel（可选）
-    if config.require_threat_intel and "get_threat_intel" not in tool_names_called:
-        missing.append("未查询威胁情报（require_threat_intel=True 时必须先查 get_threat_intel）")
+    if config.require_threat_intel:
+        ti_entry = _find_tool_entry_for_ip(tool_history, "get_threat_intel", ip) if valid_ip else None
+        if ti_entry is None:
+            missing.append("未查询威胁情报（require_threat_intel=True 时必须先查 get_threat_intel）")
 
-    # duration 校验
     duration = arguments.get("duration")
     if duration is not None:
         if not _is_valid_duration(duration):
@@ -279,11 +277,25 @@ def _verify_trigger_workflow(
     return VerificationResult(approved=True, code="approved", message="trigger_workflow_skill 参数完整")
 
 
-def _find_tool_result(tool_history: list[dict], name: str) -> Any:
-    """从工具历史中找最近一次某工具的结果。"""
+def _entry_ip(entry: dict) -> Optional[str]:
+    args = entry.get("arguments") or {}
+    ip = args.get("ip") or args.get("target_ip")
+    if ip:
+        return str(ip)
+    result = entry.get("result")
+    if isinstance(result, dict):
+        ip = result.get("ip")
+        if ip:
+            return str(ip)
+    return None
+
+
+def _find_tool_entry_for_ip(tool_history: list[dict], name: str, ip: str) -> Optional[dict]:
     for entry in reversed(tool_history):
-        if entry.get("name") == name:
-            return entry.get("result")
+        if entry.get("name") != name:
+            continue
+        if _entry_ip(entry) == ip:
+            return entry
     return None
 
 
