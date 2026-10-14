@@ -22,8 +22,8 @@ const LOCAL_MODULE_FALLBACK = {
 }
 const LOCAL_MODULE_LABELS = {
   asset_discovery: '资产发现',
-  bigscreen: '大屏1',
-  bigscreen2: '大屏2',
+  bigscreen: '盾立方W',
+  bigscreen2: '盾立方指挥大屏',
 }
 
 function mergeModuleDef(modData) {

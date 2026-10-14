@@ -6,7 +6,7 @@ export default function BigScreen() {
   const fetchUrl = useCallback(() => getYunfangEmbedUrl(), [])
   return (
     <EmbedScreen
-      title="大屏1"
+      title="盾立方W"
       subtitle="云防御态势感知指挥平台"
       perm="bigscreen"
       fetchUrl={fetchUrl}

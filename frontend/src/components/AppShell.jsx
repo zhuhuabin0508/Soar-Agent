@@ -28,8 +28,8 @@ const NAV_GROUPS = [
     title: '运营中心',
     items: [
       { to: '/dashboard', icon: LayoutDashboard, label: '运营大屏', perm: ['dashboard', 'view'] },
-      { to: '/bigscreen', icon: Monitor, label: '大屏1', perm: ['bigscreen', 'view'] },
-      { to: '/bigscreen2', icon: Monitor, label: '大屏2', perm: ['bigscreen2', 'view'] },
+      { to: '/bigscreen', icon: Monitor, label: '盾立方W', perm: ['bigscreen', 'view'] },
+      { to: '/bigscreen2', icon: Monitor, label: '盾立方指挥大屏', perm: ['bigscreen2', 'view'] },
       { to: '/approvals', icon: WorkflowIcon, label: '工作台', perm: ['approval', 'view'] },
       { to: '/chat', icon: MessageSquare, label: '对话', perm: ['chat', 'view'] },
       { to: '/ban-workflow/rules', icon: Filter, label: '触发规则', perm: ['ban_workflow', 'view'] },
@@ -133,8 +133,8 @@ const ROLE_LABELS = {
 // 路由 → 面包屑映射
 const BREADCRUMB_MAP = {
   '/dashboard': ['运营中心', '运营大屏'],
-  '/bigscreen': ['运营中心', '大屏1'],
-  '/bigscreen2': ['运营中心', '大屏2'],
+  '/bigscreen': ['运营中心', '盾立方W'],
+  '/bigscreen2': ['运营中心', '盾立方指挥大屏'],
   '/approvals': ['运营中心', '工作台'],
   '/chat': ['运营中心', '对话'],
   '/studio': ['工作室', '应用'],

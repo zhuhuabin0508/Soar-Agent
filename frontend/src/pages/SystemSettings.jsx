@@ -691,7 +691,7 @@ function SystemSettings() {
                     options={[{ value: 'YYYY-MM-DD HH:mm:ss', label: 'YYYY-MM-DD HH:mm:ss' }, { value: 'YYYY-MM-DD', label: 'YYYY-MM-DD' }, { value: 'DD/MM/YYYY HH:mm', label: 'DD/MM/YYYY HH:mm' }]} />
                   <NumberWithSuffix label="文件上传大小限制" value={configs['system.max_upload_size_mb'] || ''} onChange={setField('system.max_upload_size_mb')} min={1} suffix="MB" hint="单个文件上传的最大大小" />
                   <SelectInput label="登录后默认首页" value={configs['system.home_page'] || '/dashboard'} onChange={setField('system.home_page')}
-                    options={[{ value: '/dashboard', label: '运营大屏' }, { value: '/bigscreen', label: '大屏1 · 云防御' }, { value: '/bigscreen2', label: '大屏2 · 深治慧' }, { value: '/approvals', label: '工作台' }, { value: '/chat', label: '对话' }]} />
+                    options={[{ value: '/dashboard', label: '运营大屏' }, { value: '/bigscreen', label: '盾立方W' }, { value: '/bigscreen2', label: '盾立方指挥大屏' }, { value: '/approvals', label: '工作台' }, { value: '/chat', label: '对话' }]} />
                 </div>
               </SettingsSection>
 
@@ -743,7 +743,7 @@ function SystemSettings() {
                 </div>
               </SettingsSection>
 
-              <SettingsSection title="大屏1 · 云防御" hint="账号密码填下面两项，打开大屏1时自动登录，不再弹出对方登录页">
+              <SettingsSection title="盾立方W" hint="账号密码填下面两项，打开该大屏时自动登录，不再弹出对方登录页">
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <TextInput
                     label="免登账号"
@@ -771,7 +771,7 @@ function SystemSettings() {
                   placeholder="https://xingtu.yunaq.com/#/Attack/"
                 />
               </SettingsSection>
-              <SettingsSection title="大屏2 · 深治慧 CIM" hint="账号密码填下面两项；code / appid 是对方大屏编号，不是登录凭证">
+              <SettingsSection title="盾立方指挥大屏" hint="账号密码填下面两项；code / appid 是对方大屏编号，不是登录凭证">
                 <BigscreenDockFields prefix="bigscreen" configs={configs} setField={setField} />
               </SettingsSection>
             </div>

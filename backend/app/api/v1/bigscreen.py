@@ -71,7 +71,7 @@ def _build_embed_url(db: Session, prefix: str, label: str) -> dict:
     if not username or not password:
         raise HTTPException(
             status_code=400,
-            detail=f"请在系统设置 → 大屏2 · 深治慧 CIM 填写「免登账号」和「免登密码」。code / appid 是对方大屏编号，不要把登录账号密码填到这两项里",
+            detail=f"请在系统设置 → 盾立方指挥大屏 填写「免登账号」和「免登密码」。code / appid 是对方大屏编号，不要把登录账号密码填到这两项里",
         )
 
     encrypt_url = f"{base_url}/cim/sys/encryptStr"
@@ -161,15 +161,15 @@ def get_yunfang_embed_url(
     username = _cfg_value(db, "yunfang.username")
     password = _cfg_value(db, "yunfang.password")
     if not embed:
-        raise HTTPException(status_code=400, detail="请在系统设置 → 大屏1 · 云防御 填写嵌入地址")
+        raise HTTPException(status_code=400, detail="请在系统设置 → 盾立方W 填写嵌入地址")
     if not username or not password:
         raise HTTPException(
             status_code=400,
-            detail="请在系统设置 → 大屏1 · 云防御 填写免登账号和免登密码",
+            detail="请在系统设置 → 盾立方W 填写免登账号和免登密码",
         )
     parsed = urlparse(embed)
     if not parsed.scheme or not parsed.netloc:
-        raise HTTPException(status_code=400, detail="大屏1 嵌入地址无效")
+        raise HTTPException(status_code=400, detail="盾立方W 嵌入地址无效")
     origin = f"{parsed.scheme}://{parsed.netloc}"
     login_url = f"{origin}/api/v1/account/login/"
     headers = {
@@ -189,25 +189,25 @@ def get_yunfang_embed_url(
             except ValueError:
                 data = None
     except httpx.TimeoutException as exc:
-        logger.warning("大屏1 登录超时: %s", exc)
-        raise HTTPException(status_code=502, detail="大屏1 登录超时") from exc
+        logger.warning("盾立方W 登录超时: %s", exc)
+        raise HTTPException(status_code=502, detail="盾立方W 登录超时") from exc
     except httpx.HTTPError as exc:
-        logger.warning("大屏1 网络请求失败: %s", exc)
-        raise HTTPException(status_code=502, detail="大屏1 服务暂时不可用") from exc
+        logger.warning("盾立方W 网络请求失败: %s", exc)
+        raise HTTPException(status_code=502, detail="盾立方W 服务暂时不可用") from exc
     if not isinstance(data, dict) or data.get("status") != "success":
         msg = data.get("message") if isinstance(data, dict) else None
         if isinstance(msg, dict):
             msg = next(iter(msg.values()), None)
-        raise HTTPException(status_code=502, detail=str(msg or "大屏1 登录失败"))
+        raise HTTPException(status_code=502, detail=str(msg or "盾立方W 登录失败"))
     payload = data.get("data") if isinstance(data.get("data"), dict) else {}
     token = str(payload.get("token") or "")
     refresh = str(payload.get("refresh") or "")
     login_user = str(payload.get("username") or username)
     if not token or not refresh:
-        raise HTTPException(status_code=502, detail="大屏1 登录未返回有效凭证")
+        raise HTTPException(status_code=502, detail="盾立方W 登录未返回有效凭证")
     return {"url": _attach_bdv(embed, token, refresh, login_user)}
 
 
 @router2.get("/embed-url")
 def get_cim_embed_url(db: Session = Depends(get_db)) -> dict:
-    return _build_embed_url(db, "bigscreen", "大屏2")
+    return _build_embed_url(db, "bigscreen", "盾立方指挥大屏")

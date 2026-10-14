@@ -70,29 +70,29 @@ DEFAULT_CONFIGS: dict[str, dict[str, str]] = {
     },
     "yunfang.embed_url": {
         "value": "https://xingtu.yunaq.com/#/Attack/",
-        "description": "大屏1 云防御态势感知嵌入地址",
+        "description": "盾立方W 嵌入地址",
     },
-    "yunfang.username": {"value": "", "description": "大屏1 云防御免登账号"},
-    "yunfang.password": {"value": "", "description": "大屏1 云防御免登密码（明文，后端登录换票）"},
+    "yunfang.username": {"value": "", "description": "盾立方W 免登账号"},
+    "yunfang.password": {"value": "", "description": "盾立方W 免登密码（明文，后端登录换票）"},
     "bigscreen.base_url": {
         "value": "http://10.132.109.75",
-        "description": "大屏2 深治慧 CIM 平台基址",
+        "description": "盾立方指挥大屏 平台基址",
     },
     "bigscreen.path": {
         "value": "/city/#/bigscreen",
-        "description": "大屏2 深治慧 CIM 跳转路径",
+        "description": "盾立方指挥大屏 跳转路径",
     },
     "bigscreen.code": {
         "value": "08498bb43396419aae5052a90b568b5d",
-        "description": "大屏2 CIM code",
+        "description": "盾立方指挥大屏 code",
     },
     "bigscreen.appid": {
         "value": "2c958082961d687a019632cf1d120005",
-        "description": "大屏2 CIM appid",
+        "description": "盾立方指挥大屏 appid",
     },
-    "bigscreen.username": {"value": "", "description": "大屏2 CIM 免登账号"},
-    "bigscreen.password": {"value": "", "description": "大屏2 CIM 免登密码（明文，后端加密后换票）"},
-    "bigscreen.usergroupid": {"value": "0", "description": "大屏2 CIM 登录方式：0账号登录 1市认证登录"},
+    "bigscreen.username": {"value": "", "description": "盾立方指挥大屏 免登账号"},
+    "bigscreen.password": {"value": "", "description": "盾立方指挥大屏 免登密码（明文，后端加密后换票）"},
+    "bigscreen.usergroupid": {"value": "0", "description": "盾立方指挥大屏 登录方式：0账号登录 1市认证登录"},
 }
 
 
