@@ -143,11 +143,14 @@ class HermesAgentExecutor:
         from app.agent.hermes.builder import BUILDER_TOOL_NAMES
         from app.agent.workflow_as_tool import GLOBAL_WORKFLOW_TOOL_NAMES
 
+        from app.core.tools.governance_legacy import FRAMEWORK_REQUIRES_EXPLICIT_ENABLE
+
         enabled_tool_names = set(agent.enabled_tools or [])
         framework_tools = [
             t for t in framework_tools
             if (t.name not in BUILDER_TOOL_NAMES or t.name in enabled_tool_names)
             and (t.name not in GLOBAL_WORKFLOW_TOOL_NAMES or t.name in enabled_tool_names)
+            and (t.name not in FRAMEWORK_REQUIRES_EXPLICIT_ENABLE or t.name in enabled_tool_names)
         ]
         extra_tool_defs = [
             {
@@ -224,9 +227,9 @@ class HermesAgentExecutor:
 
     def _build_llm(self):
         """创建 LLM 实例。"""
-        from app.api.v1.agents import _create_llm
+        from app.core.llm_helper import create_llm_for_agent
 
-        llm, err = _create_llm(self.agent, self.db, override=self.override)
+        llm, err = create_llm_for_agent(self.agent, self.db, override=self.override)
         if llm is None:
             logger.error("LLM 创建失败: %s", err)
             return None

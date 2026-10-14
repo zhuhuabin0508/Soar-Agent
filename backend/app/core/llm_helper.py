@@ -196,3 +196,69 @@ def create_llm_from_config(
     llm = ChatOpenAI(**kwargs)
     logger.info("创建 LLM(openai-compat): model=%s, base_url=%s", model_name, kwargs["base_url"])
     return llm, {"provider": "openai", "model": model_name}
+
+
+def create_llm_for_agent(agent, db, override=None):
+    from app.agent.decision import _load_llm_config
+    from app.config import settings
+
+    eff_model_config_id = (
+        override.model_config_id
+        if override and override.model_config_id is not None
+        else agent.model_config_id
+    )
+    eff_temp = (
+        override.temperature
+        if override and override.temperature is not None
+        else (agent.temperature if agent.temperature is not None else 0.7)
+    )
+    eff_max_tokens = (
+        override.max_tokens
+        if override and override.max_tokens is not None
+        else (agent.max_tokens or 1024)
+    )
+    extra_kwargs: dict = {}
+    if override:
+        for k in ("top_p", "frequency_penalty", "presence_penalty", "seed"):
+            v = getattr(override, k, None)
+            if v is not None:
+                extra_kwargs[k] = v
+
+    llm_config = _load_llm_config(db, eff_model_config_id)
+    if llm_config is not None and (llm_config.api_key or llm_config.base_url):
+        try:
+            return create_llm_from_config(
+                llm_config,
+                temperature=eff_temp,
+                max_tokens=eff_max_tokens,
+                **extra_kwargs,
+            )
+        except ValueError as exc:
+            return None, str(exc)
+        except Exception as exc:
+            logger.exception("创建 LLM 实例失败: %s", exc)
+            return None, f"创建 LLM 实例失败: {exc}"
+
+    api_key = getattr(settings, "ANTHROPIC_API_KEY", "") or ""
+    if not api_key:
+        return None, "未配置 LLM API Key，请在「模型设置」中配置"
+
+    try:
+        from langchain_anthropic import ChatAnthropic
+
+        env_kwargs: dict = {
+            "model": "claude-3-5-haiku-20241022",
+            "api_key": api_key,
+            "temperature": eff_temp,
+            "max_tokens": eff_max_tokens,
+        }
+        if "top_p" in extra_kwargs:
+            env_kwargs["top_p"] = extra_kwargs["top_p"]
+        for k in ("frequency_penalty", "presence_penalty", "seed"):
+            if k in extra_kwargs:
+                logger.warning("Anthropic 不支持 %s，已忽略", k)
+        llm = ChatAnthropic(**env_kwargs)
+        return llm, {"provider": "anthropic", "model": "(env)"}
+    except Exception as exc:
+        logger.exception("创建 LLM 实例失败: %s", exc)
+        return None, f"创建 LLM 实例失败: {exc}"

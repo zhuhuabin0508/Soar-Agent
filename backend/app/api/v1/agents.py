@@ -22,82 +22,9 @@ logger = logging.getLogger(__name__)
 
 
 def _create_llm(agent, db, override: "Optional[ChatOverride]" = None):
-    """根据智能体配置创建 LLM 实例（ChatOpenAI / ChatAnthropic）。
+    from app.core.llm_helper import create_llm_for_agent
 
-    支持会话级参数覆盖：override 非 None 时按字段独立覆盖 agent 配置，
-    None 字段不覆盖（按需启用模式，避免覆盖模型默认值）。
-
-    返回 (llm, config_info) 或 (None, error_msg)。
-    """
-    from app.agent.decision import _load_llm_config
-    from app.core.llm_helper import create_llm_from_config
-
-    # 解析 effective model_config_id（override 优先）
-    eff_model_config_id = (
-        override.model_config_id
-        if override and override.model_config_id is not None
-        else agent.model_config_id
-    )
-    # 解析 effective temperature / max_tokens
-    eff_temp = (
-        override.temperature
-        if override and override.temperature is not None
-        else (agent.temperature if agent.temperature is not None else 0.7)
-    )
-    eff_max_tokens = (
-        override.max_tokens
-        if override and override.max_tokens is not None
-        else (agent.max_tokens or 1024)
-    )
-    # 扩展参数：仅 override 非 None 时透传（None 即不传，使用模型默认）
-    extra_kwargs: dict = {}
-    if override:
-        for k in ("top_p", "frequency_penalty", "presence_penalty", "seed"):
-            v = getattr(override, k, None)
-            if v is not None:
-                extra_kwargs[k] = v
-
-    llm_config = _load_llm_config(db, eff_model_config_id)
-    if llm_config is not None and (llm_config.api_key or llm_config.base_url):
-        try:
-            llm, info = create_llm_from_config(
-                llm_config,
-                temperature=eff_temp,
-                max_tokens=eff_max_tokens,
-                **extra_kwargs,
-            )
-            return llm, info
-        except ValueError as exc:
-            return None, str(exc)
-        except Exception as exc:
-            logger.exception("创建 LLM 实例失败: %s", exc)
-            return None, f"创建 LLM 实例失败: {exc}"
-
-    # 尝试环境变量（Anthropic）
-    from app.config import settings
-    api_key = getattr(settings, "ANTHROPIC_API_KEY", "") or ""
-    if not api_key:
-        return None, "未配置 LLM API Key，请在「模型设置」中配置"
-
-    try:
-        from langchain_anthropic import ChatAnthropic
-        # 环境变量回退路径：仅支持 top_p（Anthropic 限制），其余扩展参数忽略并告警
-        env_kwargs: dict = {
-            "model": "claude-3-5-haiku-20241022",
-            "api_key": api_key,
-            "temperature": eff_temp,
-            "max_tokens": eff_max_tokens,
-        }
-        if "top_p" in extra_kwargs:
-            env_kwargs["top_p"] = extra_kwargs["top_p"]
-        for k in ("frequency_penalty", "presence_penalty", "seed"):
-            if k in extra_kwargs:
-                logger.warning("Anthropic 不支持 %s，已忽略", k)
-        llm = ChatAnthropic(**env_kwargs)
-        return llm, {"provider": "anthropic", "model": "(env)"}
-    except Exception as exc:
-        logger.exception("创建 LLM 实例失败: %s", exc)
-        return None, f"创建 LLM 实例失败: {exc}"
+    return create_llm_for_agent(agent, db, override)
 
 router = APIRouter(
     prefix="/agents",
