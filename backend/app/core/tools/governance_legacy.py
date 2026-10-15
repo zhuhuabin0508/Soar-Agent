@@ -1,13 +1,13 @@
-"""工作流节点类型、遗留工具名等不在 Agent 注册表内的治理名单（派生时合并）。"""
+"""工作流节点类型、遗留工具名等不在 Agent 注册表内的治理名单（派生时合并）。
+
+注：节点类型名（block_ip/send_notification/device_action）与 Hermes 原生遗留死名
+（execute_code/memory_write/memory_search/read_file/session_search/web_search/web_extract）
+已从名单清理——它们不是真实智能体工具，真实写工具/只读工具由注册表派生覆盖。
+"""
 
 LEGACY_NEVER_PARALLEL = frozenset({
-    "block_ip",
-    "send_notification",
-    "device_action",
-    "execute_code",
     "delegate_task",
     "trigger_workflow_skill",
-    "memory_write",
     "query_persisted_result",
 })
 
@@ -18,11 +18,6 @@ LEGACY_PARALLEL_SAFE = frozenset({
     "check_subnet",
     "search_knowledge_base",
     "query_kb_file",
-    "web_search",
-    "web_extract",
-    "read_file",
-    "session_search",
-    "memory_search",
     "tool_search",
     "tool_describe",
 })
@@ -30,20 +25,12 @@ LEGACY_PARALLEL_SAFE = frozenset({
 PARALLEL_SAFE_PREFIXES = ("query_", "get_", "list_", "search_")
 
 LEGACY_SOAR_WRITE = frozenset({
-    "block_ip",
-    "send_notification",
-    "device_action",
     "trigger_workflow_skill",
     "delegate_task",
-    "memory_write",
-    "execute_code",
 })
 
 LEGACY_FILE_MUTATING = frozenset({
-    "block_ip",
-    "device_action",
     "trigger_workflow_skill",
-    "memory_write",
 })
 
 LEGACY_NO_EFFECT = frozenset({
@@ -53,14 +40,9 @@ LEGACY_NO_EFFECT = frozenset({
     "check_subnet",
     "search_knowledge_base",
     "query_kb_file",
-    "read_file",
-    "session_search",
-    "memory_search",
     "tool_search",
     "tool_describe",
     "list_workflow_skills",
-    "web_search",
-    "web_extract",
 })
 
 FRAMEWORK_REQUIRES_EXPLICIT_ENABLE = frozenset({
