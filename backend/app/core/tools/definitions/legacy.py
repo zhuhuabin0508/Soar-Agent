@@ -5,6 +5,7 @@ REMOVED_BUILTIN_TOOLS: set[str] = {
     "add_asset",
     "update_asset",
     "list_assets",
+    "search_assets",
 }
 
 LEGACY_DEPRECATED_TOOL_NAMES: set[str] = {

@@ -1,4 +1,4 @@
-﻿"""SOC 决策解析、Mock 降级与遗留 ``run_agent_decision`` 转发。
+"""SOC 决策解析、Mock 降级与遗留 ``run_agent_decision`` 转发。
 
 新调用请使用 ``app.platform.agent_runtime.invoke_agent`` / ``invoke_agent_sse``。
 本模块保留 ``_parse_action_decision_from_content``、工具构建与 ``run_agent_decision``（已废弃，转发 runtime）。
@@ -233,10 +233,6 @@ async def _run_agent_decision_via_runtime(
 
 async def run_agent_decision(
     alert_data: dict,
-    enabled_tools: Optional[list[str]] = None,
-    enabled_kbs: Optional[list[int]] = None,
-    enabled_asset_types: Optional[list[str]] = None,
-    enabled_workflows: Optional[list[int]] = None,
     agent_id: Optional[int] = None,
     model_config_id: Optional[int] = None,
     system_prompt: Optional[str] = None,
@@ -253,8 +249,6 @@ async def run_agent_decision(
 
     Args:
         alert_data: 告警数据。
-        enabled_tools: 启用的 DB 工具名称列表（可选）。
-        enabled_kbs: 启用的知识库 id 列表（可选，非空则追加知识库检索工具）。
         model_config_id: 指定 LLMConfig id（可选）。
         system_prompt: 自定义系统提示词（可选）。
         temperature: 采样温度（可选）。
@@ -348,10 +342,6 @@ async def run_agent_decision(
 
 async def run_agent_decision_stream(
     alert_data: dict,
-    enabled_tools: Optional[list[str]] = None,
-    enabled_kbs: Optional[list[int]] = None,
-    enabled_asset_types: Optional[list[str]] = None,
-    enabled_workflows: Optional[list[int]] = None,
     agent_id: Optional[int] = None,
     model_config_id: Optional[int] = None,
     system_prompt: Optional[str] = None,
