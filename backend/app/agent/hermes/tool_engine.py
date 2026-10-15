@@ -870,6 +870,8 @@ class HermesToolEngine:
                     untrusted=True,
                 )
                 registered.append(name)
+                # openapi 动态工具 source=openapi_dynamic，进 deferrable 派生（与 tool_search 原判定一致）
+                self._deferrable = self._deferrable | {name}
             except Exception as exc:  # noqa: BLE001
                 logger.warning("OpenAPI 工具注册失败: %s", exc)
         logger.info("OpenAPI 动态注册 %d 个工具: %s", len(registered), registered)

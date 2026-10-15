@@ -203,7 +203,7 @@ class ChildAgentConfig:
 
 def _strip_blocked_tools(
     tools: list[str],
-    blocked: frozenset[str] = DELEGATE_BASE_BLOCKED,
+    blocked: frozenset[str],
 ) -> list[str]:
     """从工具列表中移除子代理 blocked tools。"""
     return [t for t in tools if t not in blocked]

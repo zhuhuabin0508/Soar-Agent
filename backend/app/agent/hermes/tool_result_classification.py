@@ -115,7 +115,6 @@ def classify_tool_failure(
     tool_name: str,
     result: Any,
     *,
-    mutating_names: frozenset[str] | None = None,
     file_mutating_names: frozenset[str] | None = None,
 ) -> tuple[bool, str]:
     """安全回退分类器：判断工具结果是否表示失败。
@@ -125,7 +124,6 @@ def classify_tool_failure(
     此函数供独立调用方（测试、工具）保持一致行为。
 
     Args:
-        mutating_names: 派生的写工具名集合（可选，默认用 ``SOAR_WRITE_TOOL_NAMES``）
         file_mutating_names: 派生的文件/状态变更工具名集合（可选，默认用
             ``FILE_MUTATING_TOOL_NAMES``）
 

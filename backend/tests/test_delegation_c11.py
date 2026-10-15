@@ -308,14 +308,18 @@ def test_delegation_depth_context():
 
 def test_strip_blocked_tools():
     """剥离子代理禁止使用的工具。"""
-    from app.agent.hermes.delegator import _strip_blocked_tools, DELEGATE_BLOCKED_TOOLS
+    from app.agent.hermes.delegator import (
+        _strip_blocked_tools,
+        DELEGATE_BASE_BLOCKED,
+        DELEGATE_BLOCKED_TOOLS,
+    )
 
     parent_tools = [
         "search_knowledge_base", "delegate_task", "clarify",
         "memory_write", "block_ip", "trigger_workflow_skill",
         "send_notification", "get_threat_intel",
     ]
-    child_tools = _strip_blocked_tools(parent_tools)
+    child_tools = _strip_blocked_tools(parent_tools, DELEGATE_BASE_BLOCKED)
 
     # 子代理保留了普通工具
     assert "search_knowledge_base" in child_tools
