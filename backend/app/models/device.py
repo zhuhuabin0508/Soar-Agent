@@ -122,6 +122,8 @@ class DeviceCallLog(Base):
     error_message = Column(Text, nullable=True, comment="错误信息")
     # 调用者
     user_id = Column(Integer, nullable=True, comment="调用者用户 ID")
+    idempotency_key = Column(String(128), nullable=True, index=True, comment="幂等键（重复调用去重）")
+    correlation_id = Column(String(128), nullable=True, index=True, comment="关联键（agent/workflow 调用链）")
     source_ip = Column(String(64), nullable=True, comment="来源 IP")
     created_at = Column(DateTime, server_default=func.now(), index=True, comment="调用时间")
 

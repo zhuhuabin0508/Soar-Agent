@@ -85,7 +85,7 @@ def get_banned_stats(
 
 
 @router.post("", status_code=201)
-def manual_ban_ip(
+async def manual_ban_ip(
     body: ManualBanRequest,
     db: Session = Depends(get_db),
     _: object = Depends(require_role("admin")),
@@ -110,13 +110,14 @@ def manual_ban_ip(
         )
 
     # 查找设备的 block_ip 动作
-    from app.devices.action_executor import find_device_action_by_type, execute_device_action
+    from app.devices.action_executor import find_device_action_by_type
+    from app.devices.gateway import DeviceGateway, build_idempotency_key
 
     device, action, dev_err = find_device_action_by_type(db, body.device_id, "block_ip")
     if dev_err:
         raise HTTPException(status_code=400, detail=dev_err)
 
-    # 调用设备 API 执行封禁
+    # 调用设备 API 执行封禁（经 DeviceGateway 统一执行缝 + 幂等键）
     params = {
         "ip": body.ip,
         "duration": str(body.ban_duration),
@@ -124,7 +125,12 @@ def manual_ban_ip(
         "reason": body.reason or "手动添加封禁",
         "region": body.region or "",
     }
-    result = execute_device_action(device, action, params, db=db, source="api")
+    idem = build_idempotency_key(source="api", device_id=body.device_id,
+                                 action_type="block_ip", params={"ip": body.ip})
+    result = await DeviceGateway.invoke(
+        db, body.device_id, action_type="block_ip", params=params,
+        source="api", user_id=None, idempotency_key=idem,
+    )
     if not result["success"]:
         logger.warning("手动封禁 IP 设备 API 调用失败: ip=%s, device=%s, error=%s",
                        body.ip, device.name, result.get("error"))

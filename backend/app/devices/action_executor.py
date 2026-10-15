@@ -39,6 +39,8 @@ def record_device_call(
     status_code: Optional[int] = None,
     latency_ms: Optional[int] = None,
     error_message: Optional[str] = None,
+    idempotency_key: Optional[str] = None,
+    correlation_id: Optional[str] = None,
 ) -> None:
     """把一次设备动作调用写入 DeviceCallLog（各调用链路统一入口）。"""
     try:
@@ -58,6 +60,8 @@ def record_device_call(
             error_message=error_message,
             user_id=user_id,
             source_ip=source_ip,
+            idempotency_key=idempotency_key,
+            correlation_id=correlation_id,
         )
         db.add(log)
         db.commit()
@@ -212,6 +216,8 @@ def execute_device_action(
     user_id: Optional[int] = None,
     source_ip: Optional[str] = None,
     skip_log: bool = False,
+    idempotency_key: Optional[str] = None,
+    correlation_id: Optional[str] = None,
 ) -> dict[str, Any]:
     """实际调用设备 API 执行指定动作（统一执行引擎）。
 
@@ -274,7 +280,9 @@ def execute_device_action(
                                        workflow_id=workflow_id, agent_id=agent_id,
                                        user_id=user_id, source_ip=source_ip,
                                        request_summary=request_summary, status="failed",
-                                       latency_ms=0, error_message=msg)
+                                       latency_ms=0, error_message=msg,
+                                       idempotency_key=idempotency_key,
+                                       correlation_id=correlation_id)
                 return {"success": False, "status_code": None, "response_body": None,
                         "error": msg, "latency_ms": 0}
             headers, req_body, url = _qingteng_signheaders(
@@ -324,7 +332,9 @@ def execute_device_action(
                                workflow_id=workflow_id, agent_id=agent_id,
                                user_id=user_id, source_ip=source_ip,
                                request_summary=request_summary, status="failed",
-                               latency_ms=latency_ms, error_message=msg)
+                               latency_ms=latency_ms, error_message=msg,
+                               idempotency_key=idempotency_key,
+                               correlation_id=correlation_id)
         return {"success": False, "status_code": None, "response_body": None,
                 "error": msg, "latency_ms": latency_ms}
 
@@ -347,6 +357,8 @@ def execute_device_action(
             status="success" if success else "failed",
             status_code=r.status_code, latency_ms=latency_ms,
             error_message=error,
+            idempotency_key=idempotency_key,
+            correlation_id=correlation_id,
         )
 
     return {
