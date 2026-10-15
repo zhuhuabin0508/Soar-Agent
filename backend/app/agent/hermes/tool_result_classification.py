@@ -111,12 +111,23 @@ def file_mutation_result_landed(
     return False
 
 
-def classify_tool_failure(tool_name: str, result: Any) -> tuple[bool, str]:
+def classify_tool_failure(
+    tool_name: str,
+    result: Any,
+    *,
+    mutating_names: frozenset[str] | None = None,
+    file_mutating_names: frozenset[str] | None = None,
+) -> tuple[bool, str]:
     """安全回退分类器：判断工具结果是否表示失败。
 
     供 guardrail 在调用方未显式传 ``failed=`` 时使用。
     生产路径（``tool_engine._execute_one``）应显式传 ``failed=``，
     此函数供独立调用方（测试、工具）保持一致行为。
+
+    Args:
+        mutating_names: 派生的写工具名集合（可选，默认用 ``SOAR_WRITE_TOOL_NAMES``）
+        file_mutating_names: 派生的文件/状态变更工具名集合（可选，默认用
+            ``FILE_MUTATING_TOOL_NAMES``）
 
     Returns:
         ``(is_failed, hint_message)``。``hint_message`` 为简短失败提示
@@ -126,7 +137,9 @@ def classify_tool_failure(tool_name: str, result: Any) -> tuple[bool, str]:
         return False, ""
 
     # 写工具：检查是否真正落地
-    if file_mutation_result_landed(tool_name, result):
+    if file_mutation_result_landed(
+        tool_name, result, file_mutating_names=file_mutating_names
+    ):
         return False, ""
 
     # 字符串结果：检查 error 标记

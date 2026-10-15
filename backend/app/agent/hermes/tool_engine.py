@@ -149,6 +149,10 @@ class HermesToolEngine:
         self._write_tools_requiring_verification: frozenset[str] = WRITE_TOOLS_REQUIRING_VERIFICATION
         self._never_parallel: frozenset[str] = frozenset()
         self._parallel_safe: frozenset[str] = frozenset()
+        self._deferrable: frozenset[str] = frozenset()
+        self._no_effect: frozenset[str] = frozenset()
+        self._mutating_tool_names: frozenset[str] = frozenset()
+        self._file_mutating_tool_names: frozenset[str] = frozenset()
         self._build_registry()
 
     def reset_for_turn(
@@ -176,7 +180,11 @@ class HermesToolEngine:
 
     def _build_registry(self) -> None:
         from app.core.tools.derive import (
+            deferrable_names,
+            file_mutating_tool_names,
+            mutating_tool_names,
             never_parallel_names,
+            no_effect_names,
             parallel_safe_names,
             write_tools_requiring_verification,
         )
@@ -190,6 +198,10 @@ class HermesToolEngine:
         )
         self._never_parallel = never_parallel_names(descriptors)
         self._parallel_safe = parallel_safe_names(descriptors)
+        self._deferrable = deferrable_names(descriptors)
+        self._no_effect = no_effect_names(descriptors)
+        self._mutating_tool_names = mutating_tool_names(descriptors)
+        self._file_mutating_tool_names = file_mutating_tool_names(descriptors)
         logger.info(
             "HermesToolEngine 注册表构建完成: agent_id=%s, tools=%s",
             self.agent.id,
@@ -294,6 +306,7 @@ class HermesToolEngine:
             source_map=source_map,
             context_length=context_length,
             config=self.tool_search_config,
+            deferrable=self._deferrable,
         )
 
         # 4. 缓存供桥接 dispatch 使用
@@ -715,6 +728,7 @@ class HermesToolEngine:
                 full_tool_defs=self._full_tool_defs,
                 source_map=self._source_map,
                 config=self.tool_search_config,
+                deferrable=self._deferrable,
             )
             self._log_tool(
                 "info",
@@ -734,6 +748,7 @@ class HermesToolEngine:
                 args,
                 full_tool_defs=self._full_tool_defs,
                 source_map=self._source_map,
+                deferrable=self._deferrable,
             )
             self._log_tool(
                 "info",
@@ -749,7 +764,7 @@ class HermesToolEngine:
 
         # ── tool_call：解析底层工具并递归执行 ──
         underlying_name, underlying_args, err = resolve_underlying_call(
-            args, source_map=self._source_map,
+            args, source_map=self._source_map, deferrable=self._deferrable,
         )
         if err is not None:
             duration_ms = int((time.time() - start_time) * 1000)

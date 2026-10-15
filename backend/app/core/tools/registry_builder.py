@@ -134,6 +134,12 @@ class ToolRegistryBuilder:
             gov = self._governance_from_preset(name, preset)
             if not preset:
                 gov["parallel_safe"] = self._resolve_parallel_safe(name, {})
+            # deferrable 与 tool_search 原 source 判定逐字节等价：
+            # 仅用户自建 code/http（db_code/db_http）可延迟；builtin 预设工具
+            # （source=builtin）在原判定中属核心工具、永不延迟。此处以 source 判定
+            # 为准，覆盖预设元数据的 deferrable 标志（security 预设标了 True，但原
+            # tool_search 对 builtin 判为核心，保留原行为以满足 A-4 逐字节回归）。
+            gov["deferrable"] = source in ("db_code", "db_http")
             untrusted = tool_type == "http" or name.startswith("http_") or name.startswith("openapi_")
             tool_source = getattr(tool, "tool_source", None) or preset.get("tool_source") or "builtin"
 
@@ -240,5 +246,6 @@ class ToolRegistryBuilder:
                 source="workflow",
                 parallel_safe=False,
                 mutating=True,
+                deferrable=True,
                 parameters=parameters,
             )

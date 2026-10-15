@@ -205,16 +205,26 @@ _JUDGMENT_CORE_TOOL_NAMES = frozenset({
 })
 
 
-def is_deferrable_by_source(name: str, source: Optional[str]) -> bool:
+def is_deferrable_by_source(
+    name: str,
+    source: Optional[str],
+    *,
+    deferrable: Optional[frozenset[str]] = None,
+) -> bool:
     """按 Soar 的 source 分类判断工具是否可延迟。
 
     Args:
         name: 工具名
         source: ``ToolEntry.source``（如 ``"db_code"`` / ``"builtin"``）
+        deferrable: 派生的可延迟工具名集合（来自 ToolRegistryBuilder 注册表派生）。
+            传入时优先使用派生集合判定；``None`` 时回退到 source 硬编码判定。
 
     Returns:
         True 表示可延迟（进入目录，按需检索）
     """
+    if deferrable is not None:
+        # 派生集合优先：名字在派生集合 → 可延迟；否则核心
+        return name in deferrable
     if not name or name in BRIDGE_TOOL_NAMES:
         return False
     if name in _EXPLICIT_CORE_NAMES or name in _JUDGMENT_CORE_TOOL_NAMES:
@@ -233,6 +243,8 @@ def is_deferrable_by_source(name: str, source: Optional[str]) -> bool:
 def classify_tools(
     tool_defs: List[Dict[str, Any]],
     source_map: Optional[Dict[str, str]] = None,
+    *,
+    deferrable: Optional[frozenset[str]] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """把 tool-defs 列表拆为 (visible, deferrable)。
 
@@ -245,7 +257,7 @@ def classify_tools(
         (visible, deferrable)：visible 必须留在模型可见数组；deferrable 进入目录。
     """
     visible: List[Dict[str, Any]] = []
-    deferrable: List[Dict[str, Any]] = []
+    deferrable_list: List[Dict[str, Any]] = []
     sm = source_map or {}
     for td in tool_defs:
         fn = td.get("function") or {}
@@ -253,11 +265,11 @@ def classify_tools(
         if name in BRIDGE_TOOL_NAMES:
             # 已存在的桥接工具跳过（防重复装配）
             continue
-        if is_deferrable_by_source(name, sm.get(name)):
-            deferrable.append(td)
+        if is_deferrable_by_source(name, sm.get(name), deferrable=deferrable):
+            deferrable_list.append(td)
         else:
             visible.append(td)
-    return visible, deferrable
+    return visible, deferrable_list
 
 
 # ============================================================================
@@ -627,6 +639,7 @@ def assemble_tool_defs(
     source_map: Optional[Dict[str, str]] = None,
     context_length: Optional[int] = None,
     config: Optional[ToolSearchConfig] = None,
+    deferrable: Optional[frozenset[str]] = None,
 ) -> AssemblyResult:
     """返回模型实际应看到的 tool-defs 列表。
 
@@ -643,36 +656,36 @@ def assemble_tool_defs(
     incoming = [td for td in tool_defs
                 if (td.get("function") or {}).get("name") not in BRIDGE_TOOL_NAMES]
 
-    visible, deferrable = classify_tools(incoming, source_map=source_map)
-    if not deferrable:
+    visible, deferrable_defs = classify_tools(incoming, source_map=source_map, deferrable=deferrable)
+    if not deferrable_defs:
         return AssemblyResult(tool_defs=incoming, activated=False,
                               visible_count=len(visible))
 
-    deferrable_tokens = estimate_tokens_from_schemas(deferrable)
+    deferrable_tokens = estimate_tokens_from_schemas(deferrable_defs)
     if not should_activate(config, deferrable_tokens, context_length):
         threshold_tokens = int((context_length or 0) * (config.threshold_pct / 100.0))
         return AssemblyResult(
             tool_defs=incoming,
             activated=False,
-            deferred_count=len(deferrable),
+            deferred_count=len(deferrable_defs),
             deferred_tokens=deferrable_tokens,
             threshold_tokens=threshold_tokens,
             visible_count=len(visible),
         )
 
-    bridge = bridge_tool_schemas(len(deferrable))
+    bridge = bridge_tool_schemas(len(deferrable_defs))
     result = visible + bridge
     threshold_tokens = int((context_length or 0) * (config.threshold_pct / 100.0))
 
     logger.info(
         "tool_search 激活: 保留核心工具 %d 个, 延迟 %d 个 (~%d token, 阈值 ~%d token)",
-        len(visible), len(deferrable), deferrable_tokens, threshold_tokens,
+        len(visible), len(deferrable_defs), deferrable_tokens, threshold_tokens,
     )
 
     return AssemblyResult(
         tool_defs=result,
         activated=True,
-        deferred_count=len(deferrable),
+        deferred_count=len(deferrable_defs),
         deferred_tokens=deferrable_tokens,
         threshold_tokens=threshold_tokens,
         visible_count=len(visible),
@@ -704,6 +717,7 @@ def dispatch_tool_search(
     full_tool_defs: List[Dict[str, Any]],
     source_map: Optional[Dict[str, str]] = None,
     config: Optional[ToolSearchConfig] = None,
+    deferrable: Optional[frozenset[str]] = None,
 ) -> str:
     """执行 ``tool_search`` 桥接工具，返回 JSON 字符串。
 
@@ -728,8 +742,8 @@ def dispatch_tool_search(
                            _safe_int(raw_limit, config.search_default_limit)))
 
     # 从完整列表分类出可延迟子集，重建目录
-    _, deferrable = classify_tools(full_tool_defs, source_map=source_map)
-    catalog = build_catalog(deferrable, source_map=source_map)
+    _, deferrable_defs = classify_tools(full_tool_defs, source_map=source_map, deferrable=deferrable)
+    catalog = build_catalog(deferrable_defs, source_map=source_map)
     hits = search_catalog(catalog, query, limit=limit)
     return json.dumps({
         "query": query,
@@ -743,6 +757,7 @@ def dispatch_tool_describe(
     *,
     full_tool_defs: List[Dict[str, Any]],
     source_map: Optional[Dict[str, str]] = None,
+    deferrable: Optional[frozenset[str]] = None,
 ) -> str:
     """执行 ``tool_describe`` 桥接工具，返回 JSON 字符串。"""
     name = str(args.get("name") or "").strip()
@@ -750,7 +765,7 @@ def dispatch_tool_describe(
         return json.dumps({"error": "name is required"}, ensure_ascii=False)
 
     sm = source_map or {}
-    if not is_deferrable_by_source(name, sm.get(name)):
+    if not is_deferrable_by_source(name, sm.get(name), deferrable=deferrable):
         return json.dumps({
             "error": (
                 f"'{name}' 不是可延迟工具。若它已在工具列表中，请直接调用；"
@@ -758,8 +773,8 @@ def dispatch_tool_describe(
             ),
         }, ensure_ascii=False)
 
-    _, deferrable = classify_tools(full_tool_defs, source_map=source_map)
-    for td in deferrable:
+    _, deferrable_defs = classify_tools(full_tool_defs, source_map=source_map, deferrable=deferrable)
+    for td in deferrable_defs:
         fn = td.get("function") or {}
         if fn.get("name") == name:
             return json.dumps({
@@ -776,6 +791,7 @@ def resolve_underlying_call(
     args: Dict[str, Any],
     *,
     source_map: Optional[Dict[str, str]] = None,
+    deferrable: Optional[frozenset[str]] = None,
 ) -> Tuple[Optional[str], Dict[str, Any], Optional[str]]:
     """解析 ``tool_call`` 桥接调用为 (底层工具名, 参数, 错误信息)。
 
@@ -804,7 +820,7 @@ def resolve_underlying_call(
         return None, {}, "tool_call 'arguments' 必须是对象"
 
     sm = source_map or {}
-    if not is_deferrable_by_source(name, sm.get(name)):
+    if not is_deferrable_by_source(name, sm.get(name), deferrable=deferrable):
         return None, {}, (
             f"'{name}' 不是可延迟工具。若它已在模型可见工具列表中，"
             f"请直接调用而非通过 tool_call。"
