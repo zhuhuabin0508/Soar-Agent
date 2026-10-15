@@ -791,12 +791,14 @@ def load_tool_function(tool, enabled_kbs=None, agent_id=None, user_id=None) -> C
         from app.models.knowledge_base import KnowledgeBase, KnowledgeSegment
         from app.models.asset import Asset
         from app.core.timezone import beijing_now
+        from sqlalchemy import func
         namespace["SessionLocal"] = SessionLocal
         namespace["BannedIP"] = BannedIP
         namespace["BanRecord"] = BanRecord
         namespace["KnowledgeBase"] = KnowledgeBase
         namespace["KnowledgeSegment"] = KnowledgeSegment
         namespace["Asset"] = Asset
+        namespace["func"] = func
 
         # 供 record_ban 工具调用：把智能体聊天发起的封禁也同步写入封禁记录表（ban_source=chat），
         # 使「人工通过智能体聊天封禁」与工作流/手动封禁统一展示在工作台封禁记录中。
