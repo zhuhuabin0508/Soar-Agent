@@ -197,7 +197,23 @@ class ToolCallGuardrailController:
 
     def __init__(self, config: ToolCallGuardrailConfig | None = None):
         self.config = config or ToolCallGuardrailConfig()
+        # 派生治理集合（由 tool_engine._build_registry 注入）；None 时回退 config 默认
+        self._derived_mutating = None
+        self._derived_file_mutating = None
+        self._derived_no_effect = None
         self.reset_for_turn()
+
+    def set_derived_sets(
+        self,
+        *,
+        mutating=None,
+        file_mutating=None,
+        no_effect=None,
+    ) -> None:
+        """注入派生治理集合（覆盖 config 硬编码默认）。"""
+        self._derived_mutating = mutating
+        self._derived_file_mutating = file_mutating
+        self._derived_no_effect = no_effect
 
     def reset_for_turn(self) -> None:
         """每个 turn 开始时重置所有计数器。"""
@@ -269,7 +285,9 @@ class ToolCallGuardrailController:
         args = _coerce_args(args)
         signature = ToolCallSignature.from_call(tool_name, args)
         if failed is None:
-            failed, _ = classify_tool_failure(tool_name, result)
+            failed, _ = classify_tool_failure(
+                tool_name, result, file_mutating_names=self._derived_file_mutating
+            )
 
         if failed:
             exact_count = self._exact_failure_counts.get(signature, 0) + 1
@@ -354,9 +372,19 @@ class ToolCallGuardrailController:
         return ToolGuardrailDecision(tool_name=tool_name, count=repeat_count, signature=signature)
 
     def _is_idempotent(self, tool_name: str) -> bool:
-        if tool_name in self.config.mutating_tools:
+        mutating = (
+            self._derived_mutating
+            if self._derived_mutating is not None
+            else self.config.mutating_tools
+        )
+        idem = (
+            self._derived_no_effect
+            if self._derived_no_effect is not None
+            else self.config.idempotent_tools
+        )
+        if tool_name in mutating:
             return False
-        return tool_name in self.config.idempotent_tools
+        return tool_name in idem
 
 
 def toolguard_synthetic_result(decision: ToolGuardrailDecision) -> str:

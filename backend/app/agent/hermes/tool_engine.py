@@ -202,6 +202,12 @@ class HermesToolEngine:
         self._no_effect = no_effect_names(descriptors)
         self._mutating_tool_names = mutating_tool_names(descriptors)
         self._file_mutating_tool_names = file_mutating_tool_names(descriptors)
+        if self.guardrail_controller is not None:
+            self.guardrail_controller.set_derived_sets(
+                mutating=self._mutating_tool_names,
+                file_mutating=self._file_mutating_tool_names,
+                no_effect=self._no_effect,
+            )
         logger.info(
             "HermesToolEngine 注册表构建完成: agent_id=%s, tools=%s",
             self.agent.id,
