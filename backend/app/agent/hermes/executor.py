@@ -211,6 +211,7 @@ class HermesAgentExecutor:
             user=user,
             log_handler=log_handler,
             child_max_iterations=min(self.max_iterations, 5),
+            blocked_extra=self.tool_engine._mutating_tool_names,
         )
         # 中间件上下文（per-turn，由 _react_loop 构造并注入 tool_engine）
         self.middleware_ctx: Optional[MiddlewareContext] = None

@@ -41,6 +41,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "MAX_DELEGATION_DEPTH",
+    "DELEGATE_BASE_BLOCKED",
     "DELEGATE_BLOCKED_TOOLS",
     "DELEGATE_TASK_SCHEMA",
     "Delegator",
@@ -87,19 +88,17 @@ def delegation_depth_context(depth: int):
 # 子代理 blocked tools
 # ============================================================================
 
-# 子代理永远不能拥有的工具：
+# 子代理永远不能拥有的工具（基础集）：
 # - delegate_task：禁止递归委派（防无限递归 + 成本爆炸）
 # - clarify：子代理不能与用户交互（会阻塞父代理）
-# - memory_write：不写共享记忆（隔离副作用）
-# - send_notification：无跨平台副作用
-# - trigger_workflow_skill：不触发工作流（隔离副作用，避免循环触发）
-DELEGATE_BLOCKED_TOOLS = frozenset({
+# 原 memory_write/send_notification/trigger_workflow_skill 由派生 mutating 集合覆盖
+# （经 Delegator(blocked_extra=...) 注入），不再硬编码。
+DELEGATE_BASE_BLOCKED = frozenset({
     "delegate_task",
     "clarify",
-    "memory_write",
-    "send_notification",
-    "trigger_workflow_skill",
 })
+# 兼容旧引用（基础集别名）；完整剥离名单 = DELEGATE_BASE_BLOCKED | blocked_extra
+DELEGATE_BLOCKED_TOOLS = DELEGATE_BASE_BLOCKED
 
 
 # ============================================================================
@@ -202,9 +201,12 @@ class ChildAgentConfig:
         return getattr(self._parent, name)
 
 
-def _strip_blocked_tools(tools: list[str]) -> list[str]:
+def _strip_blocked_tools(
+    tools: list[str],
+    blocked: frozenset[str] = DELEGATE_BASE_BLOCKED,
+) -> list[str]:
     """从工具列表中移除子代理 blocked tools。"""
-    return [t for t in tools if t not in DELEGATE_BLOCKED_TOOLS]
+    return [t for t in tools if t not in blocked]
 
 
 def build_child_system_prompt(
@@ -279,6 +281,7 @@ class Delegator:
         *,
         max_depth: int = MAX_DELEGATION_DEPTH,
         child_max_iterations: int = 5,
+        blocked_extra: Optional[frozenset[str]] = None,
     ):
         """初始化委派器。
 
@@ -288,12 +291,14 @@ class Delegator:
             log_handler: 日志回调 (level, message)
             max_depth: 最大委派深度（默认 1 = 扁平）
             child_max_iterations: 子代理最大迭代轮数（独立预算）
+            blocked_extra: 额外剥离的工具名集合（派生 mutating，子代理禁写）
         """
         self.db = db
         self.user = user
         self.log_handler = log_handler
         self.max_depth = max_depth
         self.child_max_iterations = child_max_iterations
+        self._blocked = DELEGATE_BASE_BLOCKED | (blocked_extra or frozenset())
 
     def _log(self, level: str, message: str) -> None:
         if self.log_handler is not None:
@@ -400,7 +405,7 @@ class Delegator:
 
             # 4a. 构建子代理配置
             parent_tools = list(getattr(parent_agent, "enabled_tools", None) or [])
-            child_tools = _strip_blocked_tools(parent_tools)
+            child_tools = _strip_blocked_tools(parent_tools, self._blocked)
             child_agent = ChildAgentConfig(
                 parent_agent,
                 enabled_tools=child_tools,
