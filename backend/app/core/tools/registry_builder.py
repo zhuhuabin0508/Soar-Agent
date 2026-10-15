@@ -6,17 +6,12 @@ from typing import Any, Callable, Optional
 
 from app.core.tools.descriptor import ToolDescriptor
 from app.core.tools.governance_legacy import (
-    FRAMEWORK_REQUIRES_EXPLICIT_ENABLE,
     LEGACY_NEVER_PARALLEL,
     LEGACY_PARALLEL_SAFE,
     PARALLEL_SAFE_PREFIXES,
 )
 
 logger = logging.getLogger(__name__)
-
-
-async def _noop_coroutine(**_kwargs):
-    return {}
 
 
 def descriptor_to_tool_entry(d: ToolDescriptor):
@@ -57,7 +52,6 @@ class ToolRegistryBuilder:
         self._register_kb_tools(registry)
         self._register_asset_tools(registry)
         self._register_workflow_tools(registry)
-        self._register_framework_governance(registry)
         return registry
 
     def _preset_meta(self, name: str) -> dict:
@@ -109,6 +103,8 @@ class ToolRegistryBuilder:
                 logger.warning("DB 工具未找到或未启用: %s", name)
                 continue
             if (tool.tool_type or "code").lower() == "framework":
+                continue
+            if name == "search_assets":
                 continue
             try:
                 from app.core.tool_runner import load_tool_function
@@ -245,46 +241,4 @@ class ToolRegistryBuilder:
                 parallel_safe=False,
                 mutating=True,
                 parameters=parameters,
-            )
-
-    def _framework_visible(self, name: str) -> bool:
-        enabled = set(self.agent.enabled_tools or [])
-        from app.agent.hermes.builder import BUILDER_TOOL_NAMES
-        from app.agent.workflow_as_tool import GLOBAL_WORKFLOW_TOOL_NAMES
-
-        if name in BUILDER_TOOL_NAMES and name not in enabled:
-            return False
-        if name in GLOBAL_WORKFLOW_TOOL_NAMES and name not in enabled:
-            return False
-        if name in FRAMEWORK_REQUIRES_EXPLICIT_ENABLE and name not in enabled:
-            return False
-        return True
-
-    def _register_framework_governance(self, registry: dict[str, ToolDescriptor]) -> None:
-        if self._preset_index is None:
-            from app.core.tools.catalog import ToolCatalog
-
-            self._preset_index = ToolCatalog.preset_name_index()
-        for name, preset in self._preset_index.items():
-            if (preset.get("tool_type") or "").lower() != "framework":
-                continue
-            if not self._framework_visible(name):
-                continue
-            if name in registry:
-                continue
-            gov = self._governance_from_preset(name, preset)
-            registry[name] = ToolDescriptor(
-                name=name,
-                description=preset.get("description") or name,
-                args_schema=None,
-                coroutine=_noop_coroutine,
-                source="delegate" if name == "delegate_task" else "framework",
-                tool_source="framework",
-                tool_type="framework",
-                category=preset.get("category"),
-                mutating=gov["mutating"],
-                risk_level=gov["risk_level"],
-                parallel_safe=gov["parallel_safe"],
-                deferrable=gov["deferrable"],
-                verification=gov["verification"],
             )

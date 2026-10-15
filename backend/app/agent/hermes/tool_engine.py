@@ -149,10 +149,6 @@ class HermesToolEngine:
         self._write_tools_requiring_verification: frozenset[str] = WRITE_TOOLS_REQUIRING_VERIFICATION
         self._never_parallel: frozenset[str] = frozenset()
         self._parallel_safe: frozenset[str] = frozenset()
-        self._deferrable: frozenset[str] = frozenset()
-        self._no_effect: frozenset[str] = frozenset()
-        self._mutating_tool_names: frozenset[str] = frozenset()
-        self._file_mutating_tool_names: frozenset[str] = frozenset()
         self._build_registry()
 
     def reset_for_turn(
@@ -180,11 +176,7 @@ class HermesToolEngine:
 
     def _build_registry(self) -> None:
         from app.core.tools.derive import (
-            deferrable_names,
-            file_mutating_tool_names,
-            mutating_tool_names,
             never_parallel_names,
-            no_effect_names,
             parallel_safe_names,
             write_tools_requiring_verification,
         )
@@ -198,10 +190,6 @@ class HermesToolEngine:
         )
         self._never_parallel = never_parallel_names(descriptors)
         self._parallel_safe = parallel_safe_names(descriptors)
-        self._deferrable = deferrable_names(descriptors)
-        self._no_effect = no_effect_names(descriptors)
-        self._mutating_tool_names = mutating_tool_names(descriptors)
-        self._file_mutating_tool_names = file_mutating_tool_names(descriptors)
         logger.info(
             "HermesToolEngine 注册表构建完成: agent_id=%s, tools=%s",
             self.agent.id,

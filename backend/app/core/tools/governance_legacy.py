@@ -29,40 +29,6 @@ LEGACY_PARALLEL_SAFE = frozenset({
 
 PARALLEL_SAFE_PREFIXES = ("query_", "get_", "list_", "search_")
 
-LEGACY_SOAR_WRITE = frozenset({
-    "block_ip",
-    "send_notification",
-    "device_action",
-    "trigger_workflow_skill",
-    "delegate_task",
-    "memory_write",
-    "execute_code",
-})
-
-LEGACY_FILE_MUTATING = frozenset({
-    "block_ip",
-    "device_action",
-    "trigger_workflow_skill",
-    "memory_write",
-})
-
-LEGACY_NO_EFFECT = frozenset({
-    "check_whitelist",
-    "get_asset_info",
-    "get_threat_intel",
-    "check_subnet",
-    "search_knowledge_base",
-    "query_kb_file",
-    "read_file",
-    "session_search",
-    "memory_search",
-    "tool_search",
-    "tool_describe",
-    "list_workflow_skills",
-    "web_search",
-    "web_extract",
-})
-
 FRAMEWORK_REQUIRES_EXPLICIT_ENABLE = frozenset({
     "computer_use",
     "schedule_cron",

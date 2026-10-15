@@ -135,6 +135,7 @@ def _verify_block_ip(
     context: dict,
     config: VerificationConfig,
 ) -> VerificationResult:
+    """验证 block_ip_on_firewall 的证据链，证据必须绑定目标 IP。"""
     missing: list[str] = []
     ip = arguments.get("ip") or arguments.get("target_ip")
     if not ip:
