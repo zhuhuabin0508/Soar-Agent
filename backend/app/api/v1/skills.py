@@ -408,7 +408,7 @@ async def test_skill(
 
     user_text = body.message or ""
     alert_data = {"input": user_text}
-    has_tools = bool(agent.enabled_tools) or bool(agent.enabled_kbs) or bool(agent.enabled_asset_types) or bool(getattr(agent, "enabled_workflows", None))
+    has_tools = bool(agent.enabled_tools) or bool(agent.enabled_kbs) or bool(agent.enabled_asset_types) or bool(getattr(agent, "enabled_workflows", None)) or bool(getattr(agent, "enabled_devices", None))
 
     from app.platform.agent_runtime import (
         OUTPUT_MODE_CHAT,

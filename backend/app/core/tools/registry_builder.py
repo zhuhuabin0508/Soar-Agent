@@ -52,6 +52,7 @@ class ToolRegistryBuilder:
         self._register_kb_tools(registry)
         self._register_asset_tools(registry)
         self._register_workflow_tools(registry)
+        self._register_device_tools(registry)
         return registry
 
     def _preset_meta(self, name: str) -> dict:
@@ -249,3 +250,52 @@ class ToolRegistryBuilder:
                 deferrable=True,
                 parameters=parameters,
             )
+
+    def _register_device_tools(self, registry: dict[str, ToolDescriptor]) -> None:
+        """装配设备工具（P2-3，C1-5）。
+
+        主配置入口为 ``Agent.enabled_devices``（设备 id 列表）。勾选设备后装配：
+          1. 枚举工具 ``list_devices`` / ``list_device_actions``（作用域收窄到勾选设备）；
+          2. 每台「启用且在线」设备的所有启用动作投影 ``device_{device_id}_{action_id}``；
+          3. 门面 ``device_action``（作用域收窄，防越权操作未勾选设备）。
+
+        既有 Agent 无 enabled_devices 列值（NULL）→ 空 → 不装配任何 device 工具，
+        保证 A-4 逐字节回归安全。
+        """
+        enabled_ids = getattr(self.agent, "enabled_devices", None) or []
+        if not enabled_ids:
+            return
+
+        from app.devices.as_tool import (
+            build_device_action_facade_tool, build_device_action_tool,
+            build_list_device_actions_tool, build_list_devices_tool,
+        )
+        from app.models.device import Device, DeviceAction
+
+        allowed = {int(i) for i in enabled_ids if str(i).strip().isdigit()}
+        if not allowed:
+            return
+
+        # 1) 纯只读枚举（作用域收窄到本 Agent 勾选的设备）
+        registry["list_devices"] = build_list_devices_tool(self.db, allowed)
+        registry["list_device_actions"] = build_list_device_actions_tool(self.db, allowed)
+
+        # 2) 仅「启用且在线」的设备参与投影（C1-12 装配过滤）
+        devices = (
+            self.db.query(Device)
+            .filter(Device.id.in_(allowed), Device.enabled.is_(True), Device.status == "online")
+            .all()
+        )
+        for device in devices:
+            actions = (
+                self.db.query(DeviceAction)
+                .filter(DeviceAction.device_id == device.id, DeviceAction.enabled.is_(True))
+                .all()
+            )
+            for action in actions:
+                desc = build_device_action_tool(self.db, device, action)
+                registry[desc.name] = desc
+
+        # 3) 门面兜底（同样收窄；勾选设备全离线时不暴露门面）
+        if devices:
+            registry["device_action"] = build_device_action_facade_tool(self.db, allowed)

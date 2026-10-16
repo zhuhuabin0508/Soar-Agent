@@ -347,6 +347,7 @@ def _backfill_agent_output_mode(engine) -> None:
                 OR COALESCE(enabled_kbs::text, '[]') NOT IN ('[]', 'null', '')
                 OR COALESCE(enabled_asset_types::text, '[]') NOT IN ('[]', 'null', '')
                 OR COALESCE(enabled_workflows::text, '[]') NOT IN ('[]', 'null', '')
+                OR COALESCE(enabled_devices::text, '[]') NOT IN ('[]', 'null', '')
               )
             """
         ))
@@ -543,6 +544,8 @@ def run_lightweight_migrations(engine) -> None:
                 # 启用的技能 id 列表（注入到 system prompt，见 app/agent/prompt_assembler.py）
                 "enabled_skills": "JSON",
                 "enabled_workflows": "JSON",
+                # 启用的设备 id 列表（设备工具主配置入口，P2-3）
+                "enabled_devices": "JSON",
                 # 启用的资产类型 code 列表（关联 AssetTypeTemplate.code）
                 "enabled_asset_types": "JSON",
                 # 执行引擎：hermes（默认）；历史库可能仍为 langgraph 字符串
@@ -807,6 +810,16 @@ def run_lightweight_migrations(engine) -> None:
                 "avg_latency_ms": "INTEGER",
                 "example_payload": "TEXT",
                 "example_response": "TEXT",
+            },
+        )
+        # device_call_logs 新增幂等键 / 关联键（P2-1 DeviceGateway）
+        # 注：ensure_columns 只管列、不管索引；索引仍在 deploy/sql/p2_gateway_columns.sql（性能项，漏了不报错）
+        ensure_columns(
+            engine,
+            "device_call_logs",
+            {
+                "idempotency_key": "VARCHAR(128)",
+                "correlation_id": "VARCHAR(128)",
             },
         )
         # 资源级 owner 权限控制：5 个资源表新增 created_by 列（创建者用户ID）

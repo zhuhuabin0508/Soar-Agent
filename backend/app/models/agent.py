@@ -31,6 +31,11 @@ class Agent(Base):
     # 启用的技能 id 列表（注入到 system prompt，见 app/agent/prompt_assembler.py）
     enabled_skills = Column(JSON, nullable=True, default=list)
     enabled_workflows = Column(JSON, nullable=True, default=list)
+    # 启用的设备 id 列表（设备工具主配置入口，P2-3）：
+    # 勾选设备后装配该设备下所有启用动作的投影（device_{device_id}_{action_id}）
+    # + 枚举工具（list_devices/list_device_actions）+ 门面（device_action）。
+    # enabled_tools 仅用于显式追加单个投影名或门面，不作为主配置入口（架构 §5.5/§6.4）。
+    enabled_devices = Column(JSON, nullable=True, default=list)
     max_iterations = Column(Integer, nullable=False, default=5)
     # 创建者用户ID（资源级 owner 权限控制），null 表示历史数据/系统创建
     created_by = Column(Integer, nullable=True)

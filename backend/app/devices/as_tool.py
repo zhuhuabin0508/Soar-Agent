@@ -16,13 +16,11 @@
 from __future__ import annotations
 
 import json
-import logging
-from typing import Any
+from dataclasses import dataclass
+from typing import Optional
 
 from app.agent.tool_builders import _build_args_model
 from app.core.tools.descriptor import ToolDescriptor
-
-logger = logging.getLogger(__name__)
 
 # 写动作分类（架构 §6.4）：阻断类 / 处置类
 _WRITE_CATEGORIES = frozenset({"block", "dispose"})
@@ -87,15 +85,18 @@ def build_device_action_tool(db, device, action) -> ToolDescriptor:
     )
 
 
-def build_list_devices_tool(db) -> ToolDescriptor:
-    """枚举工具：``list_devices``，列出启用且在线的设备（C1-12）。"""
+def build_list_devices_tool(db, allowed_device_ids: Optional[set[int]] = None) -> ToolDescriptor:
+    """枚举工具：``list_devices``，列出启用且在线的设备（C1-12）。
+
+    Args:
+        allowed_device_ids: 若给定，仅返回本 Agent 勾选的设备（作用域收窄）。
+    """
     async def _coroutine(**kwargs):
         from app.models.device import Device
-        rows = (
-            db.query(Device)
-            .filter(Device.enabled.is_(True), Device.status == "online")
-            .all()
-        )
+        q = db.query(Device).filter(Device.enabled.is_(True), Device.status == "online")
+        if allowed_device_ids:
+            q = q.filter(Device.id.in_(allowed_device_ids))
+        rows = q.all()
         return [
             {
                 "id": d.id,
@@ -125,11 +126,17 @@ def build_list_devices_tool(db) -> ToolDescriptor:
     )
 
 
-def build_list_device_actions_tool(db) -> ToolDescriptor:
-    """枚举工具：``list_device_actions``，列出启用的设备动作（可选按设备过滤）。"""
+def build_list_device_actions_tool(db, allowed_device_ids: Optional[set[int]] = None) -> ToolDescriptor:
+    """枚举工具：``list_device_actions``，列出启用的设备动作（可选按设备过滤）。
+
+    Args:
+        allowed_device_ids: 若给定，仅返回本 Agent 勾选设备的动作（作用域收窄）。
+    """
     async def _coroutine(**kwargs):
         from app.models.device import DeviceAction
         q = db.query(DeviceAction).filter(DeviceAction.enabled.is_(True))
+        if allowed_device_ids:
+            q = q.filter(DeviceAction.device_id.in_(allowed_device_ids))
         device_id = kwargs.get("device_id")
         if device_id:
             try:
@@ -174,8 +181,15 @@ def build_list_device_actions_tool(db) -> ToolDescriptor:
     )
 
 
-def build_device_action_facade_tool(db) -> ToolDescriptor:
-    """门面工具：``device_action``，按 device_id + action_type 兜底调用任意设备动作。"""
+def build_device_action_facade_tool(
+    db, allowed_device_ids: Optional[set[int]] = None,
+) -> ToolDescriptor:
+    """门面工具：``device_action``，按 device_id + action_type 兜底调用任意设备动作。
+
+    Args:
+        allowed_device_ids: 若给定，仅允许调用本 Agent 勾选的设备（作用域收窄，
+            防越权：勾设备 3 却操作设备 5）。None=不限制（便于单测/运维）。
+    """
     async def _coroutine(**kwargs):
         from app.devices.gateway import DeviceGateway
         device_id = kwargs.pop("device_id", None)
@@ -186,6 +200,8 @@ def build_device_action_facade_tool(db) -> ToolDescriptor:
             device_id = int(device_id)
         except (TypeError, ValueError):
             return {"error": f"device_id 必须是整数: {device_id!r}"}
+        if allowed_device_ids is not None and device_id not in allowed_device_ids:
+            return {"error": f"设备 {device_id} 不在本智能体可用范围内（enabled_devices）"}
         # 入参支持两种风格：params 对象，或直接平铺剩余 kwargs
         params = kwargs.pop("params", None)
         if not isinstance(params, dict):
@@ -225,4 +241,184 @@ def build_device_action_facade_tool(db) -> ToolDescriptor:
         parallel_safe=False,
         deferrable=False,
         verification="device_action",
+    )
+
+
+# ============================================================================
+# P2-4a：语义 block_ip + 默认设备解析
+# ============================================================================
+# 装配条件（A1: enabled_devices 非空 / A2: 有能封的设备才给）与确认前置
+# （直调 Gateway / 走工作流）留空待定，P2-4b 拍板后接入 _register_device_tools。
+# 此处只实现解析 + 构建器，保证行为可测。
+# ============================================================================
+
+# tags 兜底匹配关键字（架构 §6.8：如「封禁」、「production」）
+_BLOCK_TAGS = frozenset({"封禁", "production", "block"})
+
+
+@dataclass
+class BlockDeviceResolution:
+    """默认封禁设备解析结果。"""
+    device: Optional[object] = None
+    action: Optional[object] = None
+    error: Optional[str] = None
+    hint: Optional[str] = None
+
+    @property
+    def ok(self) -> bool:
+        return self.device is not None and self.action is not None
+
+
+def _load_tags(device) -> list[str]:
+    try:
+        return json.loads(device.tags or "[]")
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+
+def _find_block_action(db, device_id: int):
+    """查设备的启用 block_ip 动作（不存在返回 None）。"""
+    from app.models.device import DeviceAction
+    return (
+        db.query(DeviceAction)
+        .filter(
+            DeviceAction.device_id == device_id,
+            DeviceAction.action_type == "block_ip",
+            DeviceAction.enabled.is_(True),
+        )
+        .first()
+    )
+
+
+def _device_blockable(db, device, allowed_device_ids: Optional[set[int]]) -> bool:
+    """设备是否「可封禁」：在 allowed 范围内、启用、在线、有启用的 block_ip 动作。"""
+    if allowed_device_ids is not None and device.id not in allowed_device_ids:
+        return False
+    if not getattr(device, "enabled", False):
+        return False
+    if getattr(device, "status", "") != "online":
+        return False
+    return _find_block_action(db, device.id) is not None
+
+
+def resolve_default_block_device(
+    db, agent, allowed_device_ids: Optional[set[int]] = None,
+) -> BlockDeviceResolution:
+    """解析默认封禁设备（架构 §6.8，三步）。
+
+    1. ``Agent.variables.default_device_id``：在 allowed 范围内且启用+在线+有
+       ``block_ip`` 动作 → 命中；
+    2. tags 兜底：在 allowed 范围内、启用+在线、有 ``block_ip`` 动作，且 tags 含
+       ``封禁``/``production``/``block`` 的设备，必须唯一；
+    3. 仍无法解析 → 返回结构化错误（不静默失败）。
+
+    Args:
+        db: 数据库 Session。
+        agent: Agent ORM/SimpleNamespace（读取 ``variables``）。
+        allowed_device_ids: 作用域（Agent.enabled_devices）；None=不限制。
+    """
+    from app.models.device import Device
+
+    variables = getattr(agent, "variables", None) or {}
+    default_id = variables.get("default_device_id")
+
+    # ① default_device_id 显式指定
+    if default_id is not None:
+        try:
+            default_id = int(default_id)
+        except (TypeError, ValueError):
+            return BlockDeviceResolution(
+                error=f"default_device_id 非法: {default_id!r}",
+                hint="请配置整数型设备 ID。",
+            )
+        device = db.query(Device).filter(Device.id == default_id).first()
+        if device and _device_blockable(db, device, allowed_device_ids):
+            return BlockDeviceResolution(device=device, action=_find_block_action(db, device.id))
+        return BlockDeviceResolution(
+            error=f"默认封禁设备 {default_id} 不可用（未启用/离线/无 block_ip 动作或不在本 Agent 设备范围内）",
+            hint="请在 Agent.variables 中配置有效的 default_device_id，或确保该设备启用、在线且有 block_ip 动作。",
+        )
+
+    # ② tags 兜底：在 allowed 范围内、启用+在线、有 block_ip 动作、tags 含封禁关键字
+    q = db.query(Device)
+    if allowed_device_ids:
+        q = q.filter(Device.id.in_(allowed_device_ids))
+    q = q.filter(Device.enabled.is_(True), Device.status == "online")
+    candidates = [
+        d for d in q.all()
+        if _find_block_action(db, d.id) is not None
+        and any(t in _BLOCK_TAGS for t in _load_tags(d))
+    ]
+    if len(candidates) == 1:
+        dev = candidates[0]
+        return BlockDeviceResolution(device=dev, action=_find_block_action(db, dev.id))
+    if len(candidates) > 1:
+        ids = [d.id for d in candidates]
+        return BlockDeviceResolution(
+            error=f"存在多个候选封禁设备 {ids}，无法自动选择",
+            hint="请在 Agent.variables 中显式配置 default_device_id 指定唯一设备。",
+        )
+
+    # ③ 无法解析
+    return BlockDeviceResolution(
+        error="无法解析默认封禁设备",
+        hint="请在 Agent.variables 中配置 default_device_id，或确保仅有一个带"
+             "「封禁/production/block」标签且有 block_ip 动作的在线设备，"
+             "也可先用 list_devices 查看可用设备。",
+    )
+
+
+_BLOCK_IP_SCHEMA = [
+    {"name": "ip", "type": "String", "required": True,
+     "description": "要封禁的目标 IP 地址"},
+    {"name": "duration", "type": "String", "required": False,
+     "description": "封禁时长，如 30m / 1h / 永久（可选）"},
+    {"name": "reason", "type": "String", "required": False,
+     "description": "封禁理由（可选，用于审计）"},
+]
+
+
+def build_block_ip_tool(db, agent, allowed_device_ids: Optional[set[int]] = None) -> ToolDescriptor:
+    """语义工具 ``block_ip(ip, duration, reason)``（架构 §6.8）。
+
+    内部按 ``resolve_default_block_device`` 解析默认封禁设备，找到 ``block_ip``
+    动作后调用 DeviceGateway。作用域收窄到 ``allowed_device_ids``（防越权）。
+    验证复用封禁证据链（白名单 + 资产），见 verification.py。
+    """
+    args_model = _build_args_model("block_ip", _BLOCK_IP_SCHEMA)
+
+    async def _coroutine(ip: str, duration: Optional[str] = None,
+                         reason: Optional[str] = None, **kwargs):
+        from app.devices.gateway import DeviceGateway
+        res = resolve_default_block_device(db, agent, allowed_device_ids)
+        if not res.ok:
+            return {"error": res.error, "hint": res.hint}
+        params = {"ip": ip}
+        if duration is not None:
+            params["duration"] = duration
+        if reason is not None:
+            params["reason"] = reason
+        return await DeviceGateway.invoke(
+            db, res.device.id, action_id=res.action.id, params=params, source="agent",
+        )
+
+    return ToolDescriptor(
+        name="block_ip",
+        description=(
+            "[语义] 封禁目标 IP（自动解析默认封禁设备并下发 block_ip 动作）。"
+            "何时用：研判确认恶意 IP 后执行封禁。无需手动指定设备 ID，系统按 "
+            "Agent.variables.default_device_id 或「封禁」标签设备自动解析；"
+            "若无法解析会返回错误，请先用 list_devices 查看或配置默认设备。"
+        ),
+        args_schema=args_model,
+        coroutine=_coroutine,
+        source="device",
+        tool_source="device",
+        tool_type="device",
+        category="block",
+        mutating=True,
+        risk_level="high",
+        parallel_safe=False,
+        deferrable=False,
+        verification="block_ip",
     )

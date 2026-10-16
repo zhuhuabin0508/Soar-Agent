@@ -122,10 +122,14 @@ def verify_write_tool(
     if tool_name not in effective_write_tools:
         return VerificationResult(approved=True, code="approved", message="非写工具，跳过验证")
 
-    if tool_name == "block_ip_on_firewall" and config.verify_block_ip:
+    if tool_name in ("block_ip_on_firewall", "block_ip") and config.verify_block_ip:
         return _verify_block_ip(arguments, context, config)
     if tool_name == "trigger_workflow_skill" and config.verify_trigger_workflow:
         return _verify_trigger_workflow(arguments, context, config)
+
+    # 设备工具（投影 device_{id}_{action_id} / 门面 device_action）统一走设备校验
+    if tool_name.startswith("device_") and config.verify_device_action:
+        return _verify_device_action(tool_name, arguments, context, config)
 
     return VerificationResult(approved=True, code="approved", message="验证已禁用")
 
@@ -195,29 +199,55 @@ def _verify_block_ip(
 
 
 def _verify_device_action(
+    tool_name: str,
     arguments: dict,
     context: dict,
     config: VerificationConfig,
 ) -> VerificationResult:
-    """验证 device_action 的证据链。"""
-    missing: list[str] = []
-    device_id = arguments.get("device_id") or arguments.get("device")
-    action = arguments.get("action") or arguments.get("action_name")
+    """验证设备动作的证据/前提。
 
-    if not device_id:
-        missing.append("设备 ID 未指定")
-    if not action:
-        missing.append("设备动作未指定")
+    - 门面 ``device_action``：``device_id`` + ``action_type`` 由 LLM 传入 → 校验两者齐全；
+    - 投影 ``device_{device_id}_{action_id}``：设备/动作在构建期固化，改为按参数做证据校验
+      （含 IP 的写动作复用封禁证据链：白名单 + 资产）。
+    """
+    # ① 门面：参数里必须显式给出 device_id + action_type
+    if tool_name == "device_action":
+        missing: list[str] = []
+        if not (arguments.get("device_id") or arguments.get("device")):
+            missing.append("设备 ID 未指定")
+        if not (arguments.get("action_type") or arguments.get("action")):
+            missing.append("设备动作未指定")
+        if missing:
+            return VerificationResult(
+                approved=False,
+                code="blocked",
+                message="设备操作参数不全: " + "; ".join(missing),
+                missing_evidence=missing,
+            )
+        return VerificationResult(approved=True, code="approved", message="device_action 参数完整")
 
-    if missing:
+    # ② 投影：设备/动作固化；若参数含 IP，复用封禁证据链（白名单 + 资产）
+    target_ip = (
+        arguments.get("ip") or arguments.get("target_ip")
+        or arguments.get("target") or arguments.get("src_ip")
+    )
+    if target_ip:
+        normalized = (
+            arguments
+            if (arguments.get("ip") or arguments.get("target_ip"))
+            else {**arguments, "ip": target_ip}
+        )
+        return _verify_block_ip(normalized, context, config)
+
+    # ③ 投影 · 非 IP 类动作：要求业务参数非空
+    if not any(v not in (None, "", [], {}) for v in arguments.values()):
         return VerificationResult(
             approved=False,
-            code="blocked",
-            message="设备操作参数不全: " + "; ".join(missing),
-            missing_evidence=missing,
+            code="needs_clarification",
+            message=f"设备动作 {tool_name} 未提供任何参数，请补充后重试。",
+            missing_evidence=["动作参数为空"],
         )
-
-    return VerificationResult(approved=True, code="approved", message="device_action 参数完整")
+    return VerificationResult(approved=True, code="approved", message="device 动作参数完整")
 
 
 def _verify_send_notification(

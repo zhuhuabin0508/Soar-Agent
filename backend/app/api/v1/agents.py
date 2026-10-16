@@ -79,6 +79,7 @@ class AgentBase(BaseModel):
     # 启用的技能 id 列表（纯文本指令，注入 system prompt，见 prompt_assembler.py）
     enabled_skills: list[int] | None = Field(None, description="启用的技能 id 列表（注入 system prompt）")
     enabled_workflows: list[int] | None = Field(None, description="作为工具绑定的工作流 id 列表")
+    enabled_devices: list[int] | None = Field(None, description="勾选的设备 id 列表（设备工具主配置入口，P2-3）")
     max_iterations: int = Field(5, description="最大迭代轮数")
     # 基础信息与形象
     avatar: str | None = Field(None, description="头像 URL")
@@ -191,6 +192,7 @@ def _agent_to_dsl(agent: Agent) -> dict[str, Any]:
         "enabled_asset_types": agent.enabled_asset_types or [],
         "enabled_skills": agent.enabled_skills or [],
         "enabled_workflows": agent.enabled_workflows or [],
+        "enabled_devices": getattr(agent, "enabled_devices", None) or [],
         "max_iterations": agent.max_iterations,
         "avatar": agent.avatar,
         "greeting": agent.greeting,
@@ -237,6 +239,7 @@ def _dsl_to_agent_base(dsl: dict[str, Any]) -> AgentBase:
         enabled_asset_types=dsl.get("enabled_asset_types") or [],
         enabled_skills=dsl.get("enabled_skills") or [],
         enabled_workflows=dsl.get("enabled_workflows") or [],
+        enabled_devices=dsl.get("enabled_devices") or [],
         max_iterations=int(dsl.get("max_iterations", 5)),
         avatar=dsl.get("avatar"),
         greeting=dsl.get("greeting"),
@@ -364,6 +367,7 @@ def create_agent_from_dsl(
         enabled_asset_types=base.enabled_asset_types or [],
         enabled_skills=base.enabled_skills or [],
         enabled_workflows=base.enabled_workflows or [],
+        enabled_devices=base.enabled_devices or [],
         max_iterations=base.max_iterations,
         avatar=base.avatar,
         greeting=base.greeting,
@@ -428,6 +432,7 @@ def create_agent(
         enabled_asset_types=body.enabled_asset_types or [],
         enabled_skills=body.enabled_skills or [],
         enabled_workflows=body.enabled_workflows or [],
+        enabled_devices=body.enabled_devices or [],
         max_iterations=body.max_iterations,
         avatar=body.avatar,
         greeting=body.greeting,
@@ -474,6 +479,7 @@ def update_agent(
     agent.enabled_asset_types = body.enabled_asset_types or []
     agent.enabled_skills = body.enabled_skills or []
     agent.enabled_workflows = body.enabled_workflows or []
+    agent.enabled_devices = body.enabled_devices or []
     agent.max_iterations = body.max_iterations
     agent.avatar = body.avatar
     agent.greeting = body.greeting

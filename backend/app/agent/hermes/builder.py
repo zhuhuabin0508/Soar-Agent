@@ -47,6 +47,7 @@ _AGENT_DEFAULTS: dict = {
     "enabled_asset_types": [],
     "enabled_skills": [],
     "enabled_workflows": [],
+    "enabled_devices": [],
     "max_iterations": 5,
     "suggested_questions": [],
     "context_turns": 10,
