@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from typing import Any
 
-from app.core.tool_runner import clear_tool_cache, run_tool
+from app.core.tool_runner import clear_tool_cache
 from app.core.tool_schema_infer import infer_tool_io
 from app.core.tool_templates import TOOL_TEMPLATES
 from app.core.tools.catalog import ToolCatalog
@@ -292,12 +292,31 @@ async def test_tool(
     def log_handler(level: str, message: str) -> None:
         logs.append({"level": level, "message": message})
 
-    result = await run_tool(tool, body.parameters, log_handler=log_handler)
-    if "error" in result:
-        logs.append({"level": "error", "message": f"执行失败: {result['error']}"})
+    from app.platform.tool_runtime import invoke_tool
+
+    inv = await invoke_tool(
+        tool.name,
+        body.parameters,
+        db=db,
+        log_handler=log_handler,
+        verify=False,          # 管理测试：跳过写工具证据验证（无证据上下文，由人工保证）
+    )
+    if not inv.ok:
+        logs.append({"level": "error", "message": f"执行失败: {inv.error}"})
     else:
-        logs.append({"level": "info", "message": f"执行成功: {result.get('result')}"})
-    return {"result": result.get("result"), "logs": logs, "raw": result}
+        logs.append({"level": "info", "message": "执行成功"})
+
+    return {
+        # 保持原有结构化返回，UI 表现不变；content（LLM 视角）放 raw 供排查
+        "result": inv.raw_content if inv.raw_content is not None else inv.content,
+        "logs": logs,
+        "raw": {
+            "result": inv.content,
+            "error": inv.error,
+            "guardrail_action": inv.guardrail_action,
+            "threat_findings": inv.threat_findings,
+        },
+    }
 
 
 @router.get("/{tool_id:int}/inferred-schema", dependencies=[Depends(require_permission("tool", "view"))])

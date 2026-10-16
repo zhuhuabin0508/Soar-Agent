@@ -57,6 +57,9 @@ class ToolResult:
     # 工具生成的输出文件（如 expand_risk_detail 的展开表）：{file_id, file_name, rows, columns}；
     # 由 executor 在 tool_end 事件后追加推送 file 事件，供前端消息气泡渲染下载卡片
     generated_file: Optional[dict] = None
+    # 工具原始返回（未经不可信包装 / 字符串化）；供非 LLM 调用方
+    # （工作流节点 / 脚本 / 管理 API）消费结构化结果。LLM 侧仍只用 content。
+    raw_content: Any = None
 
 
 @dataclass

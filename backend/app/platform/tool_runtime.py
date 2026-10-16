@@ -27,6 +27,7 @@ class ToolInvokeResult:
     preview: str = ""
     full_result_ref: str = ""
     threat_findings: list[str] = field(default_factory=list)
+    raw_content: Any = None      # 工具原始返回（结构化）；错误分支可能为 None
 
 
 def _resolve_agent(db: Session, agent=None, agent_id: Optional[int] = None):
@@ -101,4 +102,5 @@ async def invoke_tool(
         preview=r.preview,
         full_result_ref=r.full_result_ref,
         threat_findings=list(r.threat_findings or []),
+        raw_content=getattr(r, "raw_content", None),
     )

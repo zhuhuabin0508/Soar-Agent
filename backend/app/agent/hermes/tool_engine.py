@@ -707,6 +707,7 @@ class HermesToolEngine:
             threat_findings=threat_findings,
             guardrail_action=guard_action,
             generated_file=generated_file,
+            raw_content=raw_result,
         )
 
     async def _execute_bridge_tool(self, tc: ToolCall, start_time: float) -> ToolResult:
