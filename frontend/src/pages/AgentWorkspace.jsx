@@ -19,6 +19,7 @@ import {
 import {
   agentFiles as agentFilesApi,
   agents as agentsApi,
+  devices as devicesApi,
   knowledgeBases as kbApi,
   llmConfigs as llmApi,
   skills as skillsApi,
@@ -56,6 +57,7 @@ function emptyForm() {
     enabled_asset_types: [],
     enabled_skills: [],
     enabled_workflows: [],
+    enabled_devices: [],
     max_iterations: 8,
     enable_memory: false,
     tone_style: 'professional',
@@ -692,6 +694,7 @@ export default function AgentWorkspace() {
   const [skillOptions, setSkillOptions] = useState([])
   const [kbOptions, setKbOptions] = useState([])
   const [workflowOptions, setWorkflowOptions] = useState([])
+  const [deviceOptions, setDeviceOptions] = useState([])
   const [files, setFiles] = useState([])
   const [picker, setPicker] = useState(null)
   const [dirty, setDirty] = useState(false)
@@ -735,12 +738,13 @@ export default function AgentWorkspace() {
     let alive = true
     ;(async () => {
       try {
-        const [llms, tls, sks, kbs, wfs] = await Promise.all([
+        const [llms, tls, sks, kbs, wfs, devs] = await Promise.all([
           llmApi.list(),
           toolsApi.list(),
           skillsApi.list({ enabled: true }),
           kbApi.list(),
           workflowsApi.list(),
+          devicesApi.list(),
         ])
         if (!alive) return
         const models = (Array.isArray(llms) ? llms : []).map((m) => ({
@@ -779,6 +783,15 @@ export default function AgentWorkspace() {
               label: w.name,
               description: w.description || '',
             }))
+        )
+        setDeviceOptions(
+          (Array.isArray(devs) ? devs : []).map((d) => ({
+            value: String(d.id),
+            label: d.name || `设备 ${d.id}`,
+            description: [d.type, d.status === 'online' ? '在线' : '离线']
+              .filter(Boolean)
+              .join(' · '),
+          }))
         )
         setForm((prev) => {
           if (prev.model_config_id || !models.length) return prev
@@ -819,6 +832,7 @@ export default function AgentWorkspace() {
           enabled_asset_types: agent.enabled_asset_types || [],
           enabled_skills: (agent.enabled_skills || []).map(String),
           enabled_workflows: (agent.enabled_workflows || []).map(String),
+          enabled_devices: (agent.enabled_devices || []).map(String),
           max_iterations: agent.max_iterations ?? 8,
           enable_memory: agent.enable_memory ?? false,
           tone_style: agent.tone_style || 'professional',
@@ -881,6 +895,7 @@ export default function AgentWorkspace() {
         enabled_asset_types: form.enabled_asset_types,
         enabled_skills: form.enabled_skills.map(Number),
         enabled_workflows: form.enabled_workflows.map(Number),
+        enabled_devices: form.enabled_devices.map(Number),
         max_iterations: Number(form.max_iterations),
         enable_memory: form.enable_memory,
         tone_style: form.tone_style,
@@ -976,8 +991,10 @@ export default function AgentWorkspace() {
       return { title: '添加知识库', options: kbOptions, value: form.enabled_kbs, field: 'enabled_kbs' }
     if (picker === 'workflow')
       return { title: '添加工作流', options: workflowOptions, value: form.enabled_workflows, field: 'enabled_workflows' }
+    if (picker === 'device')
+      return { title: '添加设备', options: deviceOptions, value: form.enabled_devices, field: 'enabled_devices' }
     return null
-  }, [picker, skillOptions, toolOptions, kbOptions, workflowOptions, form])
+  }, [picker, skillOptions, toolOptions, kbOptions, workflowOptions, deviceOptions, form])
 
   if (loading) {
     return (
@@ -1218,6 +1235,29 @@ export default function AgentWorkspace() {
                   <ChipList
                     items={selected(workflowOptions, form.enabled_workflows)}
                     onRemove={(v) => setField('enabled_workflows')(form.enabled_workflows.filter((x) => x !== v))}
+                  />
+                )}
+              </div>
+              <div className="mb-6">
+                <div className="mb-1 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-medium">设备</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      勾选后该设备启用的动作会投影为工具（device_设备ID_动作ID），并装配 list_devices / device_action
+                    </div>
+                  </div>
+                  {canEdit && (
+                    <button type="button" onClick={() => setPicker('device')} className="inline-flex items-center gap-1 text-xs text-primary">
+                      <Plus className="h-3.5 w-3.5" /> 添加
+                    </button>
+                  )}
+                </div>
+                {form.enabled_devices.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">暂无设备</p>
+                ) : (
+                  <ChipList
+                    items={selected(deviceOptions, form.enabled_devices)}
+                    onRemove={(v) => setField('enabled_devices')(form.enabled_devices.filter((x) => x !== v))}
                   />
                 )}
               </div>

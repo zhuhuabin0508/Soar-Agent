@@ -21,6 +21,8 @@ export default function AgentDslPanel({ agentId, form, onApplyDsl, canEdit = tru
     enabled_kbs: (form.enabled_kbs || []).map(Number),
     enabled_asset_types: form.enabled_asset_types || [],
     enabled_skills: (form.enabled_skills || []).map(Number),
+    enabled_workflows: (form.enabled_workflows || []).map(Number),
+    enabled_devices: (form.enabled_devices || []).map(Number),
     max_iterations: Number(form.max_iterations),
     avatar: form.avatar || null,
     greeting: form.greeting || null,

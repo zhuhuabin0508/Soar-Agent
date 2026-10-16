@@ -177,6 +177,8 @@ function AgentQuickCreate() {
       enabled_kbs: enabledKbs.map(Number),
       enabled_asset_types: enabledAssetTypes,
       enabled_skills: [],
+      enabled_workflows: base?.enabled_workflows || [],
+      enabled_devices: base?.enabled_devices || [],
       max_iterations: base?.max_iterations ?? 8,
       enable_memory: false,
       tone_style: 'professional',
