@@ -3,6 +3,7 @@
 > **定位**：`deploy/sql/` 存放**部署期需要手工执行的 SQL**（加列、索引、扩展等）。
 > **为什么有这套**：项目**不用 Alembic**，`Base.metadata.create_all` 只建缺失的表、**不会给已存在的表加列/加索引**。因此凡是「给存量表补结构」的变更，都必须落一个 `.sql` 文件到本目录，并在部署时手工执行。
 > **维护规则**：新增结构变更 → 在此目录加 `.sql` + 在本文件 §二 登记一行 + 提交信息里注明「部署需执行本 SQL」。
+> **本分支的完整部署步骤**（SQL 只是其中一步）见 [`docs/architecture/模块化阶段-部署手册.md`](../../docs/architecture/模块化阶段-部署手册.md)。
 
 ---
 
@@ -30,6 +31,7 @@ docker exec soar-postgres psql -U <user> -d <db> -v ON_ERROR_STOP=1 -f /tmp/mig.
 | `assets_keyword_search.sql` | 资产清单 8 字段模糊搜索：`pg_trgm` + GIN 索引 | 资产搜索性能优化 | 已发布 |
 | `deliverable_module.sql` | 交付物模块建表 | 交付物模块 | 已发布 |
 | `p2_gateway_columns.sql` | `device_call_logs` 加 `idempotency_key` / `correlation_id` 两列 + 索引 | **P2-1 DeviceGateway** | 本次新增 |
+| `p2_3_agent_enabled_devices.sql` | `agents` 加 `enabled_devices` JSON 列（设备 id 列表，默认 `[]`） | **P2-3 enabled_devices + 接线** | 本次新增 |
 
 ---
 
