@@ -479,7 +479,9 @@ def update_agent(
     agent.enabled_asset_types = body.enabled_asset_types or []
     agent.enabled_skills = body.enabled_skills or []
     agent.enabled_workflows = body.enabled_workflows or []
-    agent.enabled_devices = body.enabled_devices or []
+    # 部分更新：未传 enabled_devices 保持原值，显式传 [] 才清空（防止老客户端保存时误清空）
+    if body.enabled_devices is not None:
+        agent.enabled_devices = body.enabled_devices
     agent.max_iterations = body.max_iterations
     agent.avatar = body.avatar
     agent.greeting = body.greeting
