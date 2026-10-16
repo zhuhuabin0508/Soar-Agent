@@ -750,6 +750,7 @@ async def execute_device_action(
     from app.database import SessionLocal
     from app.models.device import Device, DeviceAction
     from app.devices.gateway import DeviceGateway, build_idempotency_key
+    from app.devices.as_tool import is_write_action
 
     db = SessionLocal()
     try:
@@ -788,7 +789,7 @@ async def execute_device_action(
         log(nid, _INFO, f"设备动作: device={device.name}, action={action.name}, url={device.api_url}/{action.api_path}, method={action.http_method}")
 
         # 统一执行缝：经 DeviceGateway（幂等键 + correlation_id + 统一调用日志）
-        # device_action 已是 async，无需 _run_sync_call
+        # 已是 async，无需线程池包装；幂等键仅对写动作生效（读动作每次都要真实查询）
         workflow_id = ctx.get("workflow_id")
         result = await DeviceGateway.invoke(
             db,
@@ -798,12 +799,14 @@ async def execute_device_action(
             source="workflow",
             workflow_id=workflow_id,
             correlation_id=f"wf-{workflow_id}-{nid}" if workflow_id else None,
-            idempotency_key=build_idempotency_key(
-                source="workflow",
-                device_id=device_id,
-                action_type=action.action_type,
-                params=resolved_params,
-                workflow_id=workflow_id,
+            idempotency_key=(
+                build_idempotency_key(
+                    source="workflow",
+                    device_id=device_id,
+                    action_type=action.action_type,
+                    params=resolved_params,
+                    workflow_id=workflow_id,
+                ) if is_write_action(action) else None
             ),
         )
         try:
