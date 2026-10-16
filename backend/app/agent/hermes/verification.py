@@ -210,7 +210,6 @@ def _verify_device_action(
     - 投影 ``device_{device_id}_{action_id}``：设备/动作在构建期固化，改为按参数做证据校验
       （含 IP 的写动作复用封禁证据链：白名单 + 资产）。
     """
-    # ① 门面：参数里必须显式给出 device_id + action_type
     if tool_name == "device_action":
         missing: list[str] = []
         if not (arguments.get("device_id") or arguments.get("device")):
@@ -224,6 +223,28 @@ def _verify_device_action(
                 message="设备操作参数不全: " + "; ".join(missing),
                 missing_evidence=missing,
             )
+        action_type = str(
+            arguments.get("action_type") or arguments.get("action") or ""
+        ).lower()
+        params = arguments.get("params") if isinstance(arguments.get("params"), dict) else {}
+        merged = {**arguments, **params}
+        if config.verify_block_ip and (
+            action_type in ("block_ip", "block") or "block" in action_type
+        ):
+            return _verify_block_ip(merged, context, config)
+        target_ip = (
+            merged.get("ip") or merged.get("target_ip")
+            or merged.get("target") or merged.get("src_ip")
+        )
+        if target_ip and config.verify_block_ip and action_type in (
+            "quarantine_host", "isolate_endpoint", "dispose",
+        ):
+            normalized = (
+                merged
+                if (merged.get("ip") or merged.get("target_ip"))
+                else {**merged, "ip": target_ip}
+            )
+            return _verify_block_ip(normalized, context, config)
         return VerificationResult(approved=True, code="approved", message="device_action 参数完整")
 
     # ② 投影：设备/动作固化；若参数含 IP，复用封禁证据链（白名单 + 资产）

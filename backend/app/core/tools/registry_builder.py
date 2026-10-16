@@ -288,6 +288,7 @@ class ToolRegistryBuilder:
         from app.devices.as_tool import (
             build_device_action_facade_tool, build_device_action_tool,
             build_list_device_actions_tool, build_list_devices_tool,
+            is_core_write_action, is_write_action,
         )
         from app.models.device import Device, DeviceAction
 
@@ -295,11 +296,11 @@ class ToolRegistryBuilder:
         if not allowed:
             return
 
-        # 1) 纯只读枚举（作用域收窄到本 Agent 勾选的设备）
+        agent_id = getattr(self.agent, "id", None)
+
         registry["list_devices"] = build_list_devices_tool(self.db, allowed)
         registry["list_device_actions"] = build_list_device_actions_tool(self.db, allowed)
 
-        # 2) 仅「启用且在线」的设备参与投影（C1-12 装配过滤）
         devices = (
             self.db.query(Device)
             .filter(Device.id.in_(allowed), Device.enabled.is_(True), Device.status == "online")
@@ -312,9 +313,14 @@ class ToolRegistryBuilder:
                 .all()
             )
             for action in actions:
-                desc = build_device_action_tool(self.db, device, action)
+                if is_write_action(action) and not is_core_write_action(action):
+                    continue
+                desc = build_device_action_tool(
+                    self.db, device, action, agent_id=agent_id,
+                )
                 registry[desc.name] = desc
 
-        # 3) 门面兜底（同样收窄；勾选设备全离线时不暴露门面）
         if devices:
-            registry["device_action"] = build_device_action_facade_tool(self.db, allowed)
+            registry["device_action"] = build_device_action_facade_tool(
+                self.db, allowed, agent_id=agent_id,
+            )

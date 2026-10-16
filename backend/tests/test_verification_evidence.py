@@ -100,10 +100,37 @@ def test_device_projection_ip_with_evidence_approved():
     assert res.approved
 
 
-def test_device_facade_full_args_approved():
+def test_device_facade_block_without_evidence_rejected():
     res = verify_write_tool(
         "device_action",
-        {"device_id": 3, "action_type": "block_ip"},
+        {"device_id": 3, "action_type": "block_ip", "params": {"ip": "1.1.1.1"}},
+        context={"tool_history": []},
+        config=VerificationConfig(),
+        write_tools=_DEVICE_WRITE_TOOLS,
+    )
+    assert not res.approved
+    assert res.missing_evidence
+
+
+def test_device_facade_block_with_evidence_approved():
+    history = [
+        _entry("check_whitelist", "1.1.1.1", {"ip": "1.1.1.1", "in_whitelist": False}),
+        _entry("get_asset_info", "1.1.1.1", {"ip": "1.1.1.1", "found": True}),
+    ]
+    res = verify_write_tool(
+        "device_action",
+        {"device_id": 3, "action_type": "block_ip", "ip": "1.1.1.1"},
+        context={"tool_history": history},
+        config=VerificationConfig(),
+        write_tools=_DEVICE_WRITE_TOOLS,
+    )
+    assert res.approved
+
+
+def test_device_facade_non_block_full_args_approved():
+    res = verify_write_tool(
+        "device_action",
+        {"device_id": 3, "action_type": "query_logs"},
         context={"tool_history": []},
         config=VerificationConfig(),
         write_tools=_DEVICE_WRITE_TOOLS,

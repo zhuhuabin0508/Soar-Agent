@@ -324,8 +324,8 @@ async def import_banned_ips(
     if not file.filename or not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="请上传 CSV 文件")
 
-    # 校验设备 block_ip 动作存在
-    from app.devices.action_executor import find_device_action_by_type, execute_device_action
+    from app.devices.action_executor import find_device_action_by_type
+    from app.devices.gateway import DeviceGateway, build_idempotency_key
 
     device, action, dev_err = find_device_action_by_type(db, device_id, "block_ip")
     if dev_err:
@@ -381,7 +381,6 @@ async def import_banned_ips(
             reason = row[6].strip() if len(row) > 6 else ""
             status = row[7].strip() if len(row) > 7 else "active"
 
-            # 调用设备 API 执行封禁
             params = {
                 "ip": ip,
                 "duration": str(ban_duration),
@@ -389,7 +388,14 @@ async def import_banned_ips(
                 "reason": reason or "CSV 导入封禁",
                 "region": region,
             }
-            result = execute_device_action(device, action, params, db=db, source="api")
+            idem = build_idempotency_key(
+                source="api", device_id=device_id,
+                action_type="block_ip", params={"ip": ip},
+            )
+            result = await DeviceGateway.invoke(
+                db, device_id, action_id=action.id, params=params,
+                source="api", idempotency_key=idem,
+            )
             if not result["success"]:
                 errors.append(
                     f"第 {idx} 行: IP {ip} 封禁失败: {result.get('error')} "

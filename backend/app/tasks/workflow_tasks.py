@@ -16,8 +16,16 @@ from app.core.celery_app import celery_app
 from app.core.dag import find_next_nodes
 from app.core.redis_client import get_redis
 from app.database import SessionLocal
-from app.devices.firewall import block_ip_on_firewall
 from app.models import Execution, ExecutionLog, ExecutionTrace
+
+_CELERY_NATIVE_NODES = frozenset({
+    "webhook_trigger",
+    "http_request",
+    "ai_agent",
+    "condition_branch",
+    "human_review",
+    "end",
+})
 
 logger = logging.getLogger(__name__)
 
@@ -411,33 +419,6 @@ def _execute_node(
         _emit("info", f"condition_branch: 当前决策={decision}")
         return {"decision": decision}
 
-    if node_type == "block_ip":
-        agent_decision = context.get("agent_decision", {}) or {}
-        target_ip = agent_decision.get("target_ip") or payload.get(
-            "src_ip", "unknown"
-        )
-        duration = agent_decision.get("duration", "24h")
-        reason = agent_decision.get("reason", "auto block by SOAR")
-        logger.info(
-            "block_ip: 调用防火墙封禁 ip=%s, duration=%s, reason=%s",
-            target_ip,
-            duration,
-            reason,
-        )
-        _emit("info", f"block_ip: 封禁 ip={target_ip}, duration={duration}")
-        result = asyncio.run(
-            block_ip_on_firewall(target_ip, duration, reason)
-        )
-        logger.info("block_ip: 封禁结果=%s", result)
-        _emit("info", f"block_ip: 封禁结果={result.get('status')}")
-        context["block_result"] = result
-        return result
-
-    if node_type == "send_notification":
-        logger.info("send_notification: mock 发送通知")
-        _emit("info", "send_notification: mock 发送通知")
-        return {"sent": True, "channel": node_data.get("channel", "email")}
-
     if node_type == "end":
         logger.info("end: 工作流结束节点")
         _emit("info", "end: 工作流结束节点")
@@ -453,6 +434,23 @@ def _execute_node(
             return await execute_human_review_node(node_data, payload, context, log_cb)
 
         return asyncio.run(_run_human_review())
+
+    if node_type not in _CELERY_NATIVE_NODES:
+        from app.core.node_executors import NODE_EXECUTORS, execute_node
+
+        if node_type in NODE_EXECUTORS:
+            async def _run_delegated():
+                def log_cb(nid: str, level: str, message: str) -> None:
+                    _emit(level, message)
+
+                return await execute_node(
+                    node_type, node_data, payload, context, log_cb,
+                )
+
+            result = asyncio.run(_run_delegated())
+            if node_type == "block_ip":
+                context["block_result"] = result
+            return result
 
     logger.warning("未知节点类型，返回默认结果: type=%s", node_type)
     _emit("warning", f"未知节点类型，返回默认结果: type={node_type}")

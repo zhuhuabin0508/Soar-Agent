@@ -43,7 +43,15 @@ def _parse_params_schema(action) -> list[dict]:
     return []
 
 
-def build_device_action_tool(db, device, action) -> ToolDescriptor:
+def is_core_write_action(action) -> bool:
+    return is_write_action(action) and (
+        (getattr(action, "category", "") or "").lower() in _WRITE_CATEGORIES
+    )
+
+
+def build_device_action_tool(
+    db, device, action, *, agent_id: Optional[int] = None,
+) -> ToolDescriptor:
     """投影工具：单个设备动作 → ``device_{device_id}_{action_id}``。
 
     设备/动作在构建期固化，LLM 只需填动作自身的参数。
@@ -52,11 +60,22 @@ def build_device_action_tool(db, device, action) -> ToolDescriptor:
     args_schema = _build_args_model(
         f"device_action_{action.id}", _parse_params_schema(action)
     )
+    _agent_id = agent_id
 
     async def _coroutine(**kwargs):
-        from app.devices.gateway import DeviceGateway
+        from app.devices.gateway import DeviceGateway, build_idempotency_key
+        key = None
+        if write:
+            key = build_idempotency_key(
+                source="agent",
+                device_id=device.id,
+                action_type=action.action_type,
+                params=kwargs,
+                agent_id=_agent_id,
+            )
         return await DeviceGateway.invoke(
             db, device.id, action_id=action.id, params=kwargs, source="agent",
+            agent_id=_agent_id, idempotency_key=key,
         )
 
     kind = "写动作（会改变设备状态，需证据验证）" if write else "读动作（只读查询，无副作用）"
@@ -127,14 +146,22 @@ def build_list_devices_tool(db, allowed_device_ids: Optional[set[int]] = None) -
 
 
 def build_list_device_actions_tool(db, allowed_device_ids: Optional[set[int]] = None) -> ToolDescriptor:
-    """枚举工具：``list_device_actions``，列出启用的设备动作（可选按设备过滤）。
+    """枚举工具：``list_device_actions``，列出启用且设备在线的动作（可选按设备过滤）。
 
     Args:
         allowed_device_ids: 若给定，仅返回本 Agent 勾选设备的动作（作用域收窄）。
     """
     async def _coroutine(**kwargs):
-        from app.models.device import DeviceAction
-        q = db.query(DeviceAction).filter(DeviceAction.enabled.is_(True))
+        from app.models.device import Device, DeviceAction
+        q = (
+            db.query(DeviceAction)
+            .join(Device, Device.id == DeviceAction.device_id)
+            .filter(
+                DeviceAction.enabled.is_(True),
+                Device.enabled.is_(True),
+                Device.status == "online",
+            )
+        )
         if allowed_device_ids:
             q = q.filter(DeviceAction.device_id.in_(allowed_device_ids))
         device_id = kwargs.get("device_id")
@@ -160,7 +187,7 @@ def build_list_device_actions_tool(db, allowed_device_ids: Optional[set[int]] = 
     return ToolDescriptor(
         name="list_device_actions",
         description=(
-            "列出安全设备的可用动作（如 block_ip/unblock_ip 等，仅启用的）。"
+            "列出安全设备的可用动作（如 block_ip/unblock_ip 等，仅启用且设备在线的）。"
             "何时用：需要查看某设备支持哪些动作、或需要 action_type 供 device_action "
             "兜底工具调用时使用；传 device_id 只看该设备。"
         ),
@@ -183,6 +210,7 @@ def build_list_device_actions_tool(db, allowed_device_ids: Optional[set[int]] = 
 
 def build_device_action_facade_tool(
     db, allowed_device_ids: Optional[set[int]] = None,
+    *, agent_id: Optional[int] = None,
 ) -> ToolDescriptor:
     """门面工具：``device_action``，按 device_id + action_type 兜底调用任意设备动作。
 
@@ -190,8 +218,11 @@ def build_device_action_facade_tool(
         allowed_device_ids: 若给定，仅允许调用本 Agent 勾选的设备（作用域收窄，
             防越权：勾设备 3 却操作设备 5）。None=不限制（便于单测/运维）。
     """
+    _agent_id = agent_id
+
     async def _coroutine(**kwargs):
-        from app.devices.gateway import DeviceGateway
+        from app.devices.action_executor import find_device_action_by_type
+        from app.devices.gateway import DeviceGateway, build_idempotency_key
         device_id = kwargs.pop("device_id", None)
         action_type = kwargs.pop("action_type", None)
         if device_id is None or not action_type:
@@ -202,14 +233,26 @@ def build_device_action_facade_tool(
             return {"error": f"device_id 必须是整数: {device_id!r}"}
         if allowed_device_ids is not None and device_id not in allowed_device_ids:
             return {"error": f"设备 {device_id} 不在本智能体可用范围内（enabled_devices）"}
-        # 入参支持两种风格：params 对象，或直接平铺剩余 kwargs
         params = kwargs.pop("params", None)
         if not isinstance(params, dict):
             params = dict(kwargs)
         elif kwargs:
             params = {**kwargs, **params}
+        _device, action, err = find_device_action_by_type(db, device_id, str(action_type))
+        if err:
+            return {"error": err}
+        key = None
+        if is_write_action(action):
+            key = build_idempotency_key(
+                source="agent",
+                device_id=device_id,
+                action_type=str(action_type),
+                params=params,
+                agent_id=_agent_id,
+            )
         return await DeviceGateway.invoke(
-            db, device_id, action_type=str(action_type), params=params, source="agent",
+            db, device_id, action_id=action.id, params=params, source="agent",
+            agent_id=_agent_id, idempotency_key=key,
         )
 
     return ToolDescriptor(
@@ -386,10 +429,11 @@ def build_block_ip_tool(db, agent, allowed_device_ids: Optional[set[int]] = None
     验证复用封禁证据链（白名单 + 资产），见 verification.py。
     """
     args_model = _build_args_model("block_ip", _BLOCK_IP_SCHEMA)
+    _agent_id = getattr(agent, "id", None)
 
     async def _coroutine(ip: str, duration: Optional[str] = None,
                          reason: Optional[str] = None, **kwargs):
-        from app.devices.gateway import DeviceGateway
+        from app.devices.gateway import DeviceGateway, build_idempotency_key
         res = resolve_default_block_device(db, agent, allowed_device_ids)
         if not res.ok:
             return {"error": res.error, "hint": res.hint}
@@ -398,8 +442,16 @@ def build_block_ip_tool(db, agent, allowed_device_ids: Optional[set[int]] = None
             params["duration"] = duration
         if reason is not None:
             params["reason"] = reason
+        key = build_idempotency_key(
+            source="agent",
+            device_id=res.device.id,
+            action_type="block_ip",
+            params=params,
+            agent_id=_agent_id,
+        )
         return await DeviceGateway.invoke(
             db, res.device.id, action_id=res.action.id, params=params, source="agent",
+            agent_id=_agent_id, idempotency_key=key,
         )
 
     return ToolDescriptor(

@@ -27,7 +27,6 @@ from app.core.security import decrypt_device_secret, encrypt_device_secret
 from app.core.timezone import beijing_now, beijing_now_iso
 from app.database import get_db
 from app.dependencies import get_current_user, require_role
-from app.devices.action_executor import execute_device_action
 from app.models.device import Device, DeviceAction, DeviceCallLog
 from app.models.user import User
 from app.schemas.common import paginate, to_dict, to_dict_list
@@ -975,7 +974,7 @@ def toggle_device_action(
     "/{device_id}/actions/{action_id}/test",
     summary="测试设备动作连通性",
 )
-def test_device_action(
+async def test_device_action(
     device_id: int,
     action_id: int,
     body: ActionTestRequest,
@@ -993,6 +992,8 @@ def test_device_action(
     - 记录一条 DeviceCallLog（source=manual_test）
     - 更新动作的 last_call_at / call_count_24h / success_count_24h / avg_latency_ms
     """
+    from app.devices.gateway import DeviceGateway
+
     logger.info("测试设备动作: device_id=%s, action_id=%s", device_id, action_id)
     device = db.query(Device).filter(Device.id == device_id).first()
     if device is None:
@@ -1007,15 +1008,13 @@ def test_device_action(
 
     params = body.params or {}
 
-    # 统一执行引擎（复用 devices/action_executor：超时/TLS/重试 + 写 DeviceCallLog）
-    result = execute_device_action(
-        device,
-        action,
-        params,
-        db=db,
+    result = await DeviceGateway.invoke(
+        db,
+        device_id,
+        action_id=action_id,
+        params=params,
         source="manual_test",
         user_id=user.id if user else None,
-        source_ip=get_client_ip(request) if request else None,
     )
 
     latency_ms = result.get("latency_ms")

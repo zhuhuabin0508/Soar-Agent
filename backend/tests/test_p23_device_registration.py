@@ -100,16 +100,26 @@ class TestFacadeScope:
 
     def test_facade_allows_in_scope_device(self):
         tool = build_device_action_facade_tool(None, allowed_device_ids={3})
-        with patch("app.devices.gateway.DeviceGateway.invoke") as mock_invoke:
+        action = _action(id=7, device_id=3, category="block", risk_level="high_risk")
+        with patch(
+            "app.devices.action_executor.find_device_action_by_type",
+            return_value=(None, action, None),
+        ), patch("app.devices.gateway.DeviceGateway.invoke") as mock_invoke:
             mock_invoke.return_value = {"ok": True}
             out = asyncio.run(tool.coroutine(device_id=3, action_type="block_ip", ip="1.1.1.1"))
         assert out == {"ok": True}
         mock_invoke.assert_called_once()
+        kwargs = mock_invoke.call_args.kwargs
+        assert kwargs.get("idempotency_key")
+        assert kwargs.get("action_id") == 7
 
     def test_facade_none_allowed_unrestricted(self):
-        # allowed_device_ids=None → 不限制（便于单测/运维）
         tool = build_device_action_facade_tool(None, allowed_device_ids=None)
-        with patch("app.devices.gateway.DeviceGateway.invoke") as mock_invoke:
+        action = _action(id=1, device_id=999, category="block", risk_level="high_risk")
+        with patch(
+            "app.devices.action_executor.find_device_action_by_type",
+            return_value=(None, action, None),
+        ), patch("app.devices.gateway.DeviceGateway.invoke") as mock_invoke:
             mock_invoke.return_value = {"ok": True}
             out = asyncio.run(tool.coroutine(device_id=999, action_type="block_ip"))
         assert out == {"ok": True}
@@ -185,14 +195,33 @@ class TestDeviceRegistration:
         assert "device_3_7" not in registry
 
     def test_invalid_device_ids_ignored(self):
-        # enabled_devices 含非数字 → 被过滤
         devices = [_device(id=3)]
         actions = [_action(id=7, device_id=3)]
         db = _fake_db(devices, actions)
         agent = _agent(enabled_devices=[3, "abc", None, "5x"])
         registry = ToolRegistryBuilder(db, agent).build()
-        # 只有 3 被当作有效 id；5x 被忽略不查
         assert "device_3_7" in registry
+
+    def test_non_core_write_not_projected(self):
+        devices = [_device(id=3)]
+        actions = [
+            _action(id=7, device_id=3, category="block", risk_level="high_risk"),
+            _action(
+                id=9, device_id=3, action_type="custom_write",
+                category="other", risk_level="high_risk",
+            ),
+            _action(
+                id=8, device_id=3, action_type="query_logs",
+                category="query", risk_level="readonly",
+            ),
+        ]
+        db = _fake_db(devices, actions)
+        agent = _agent(enabled_devices=[3])
+        registry = ToolRegistryBuilder(db, agent).build()
+        assert "device_3_7" in registry
+        assert "device_3_8" in registry
+        assert "device_3_9" not in registry
+        assert "device_action" in registry
 
 
 # ============================================================================
