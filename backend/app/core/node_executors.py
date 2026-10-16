@@ -34,19 +34,6 @@ def _node_id(node_data: dict) -> str:
     return str(node_data.get("id", "") or node_data.get("node_id", "") or "unknown")
 
 
-def _run_sync_call(func, *args, **kwargs):
-    """在事件循环的默认执行器里运行同步函数，返回其结果。
-
-    供异步节点执行器调用同步 IO 密集逻辑（如设备动作 HTTP 调用），
-    避免阻塞事件循环。
-    """
-    import asyncio
-
-    loop = asyncio.get_event_loop()
-    return loop.run_in_executor(None, lambda: func(*args, **kwargs))
-
-
-
 def _resolve_variable(ctx: dict, path: str) -> Any:
     """按点号路径从 ctx 取值，如 ``agent_decision.target_ip``。
 
@@ -762,7 +749,7 @@ async def execute_device_action(
 
     from app.database import SessionLocal
     from app.models.device import Device, DeviceAction
-    from app.devices.action_executor import execute_device_action
+    from app.devices.gateway import DeviceGateway, build_idempotency_key
 
     db = SessionLocal()
     try:
@@ -800,14 +787,24 @@ async def execute_device_action(
 
         log(nid, _INFO, f"设备动作: device={device.name}, action={action.name}, url={device.api_url}/{action.api_path}, method={action.http_method}")
 
-        # 统一执行引擎（复用 devices/action_executor，含超时/TLS/重试配置与调用日志）
-        result = await _run_sync_call(
-            execute_device_action,
-            device,
-            action,
-            resolved_params,
-            db=db,
+        # 统一执行缝：经 DeviceGateway（幂等键 + correlation_id + 统一调用日志）
+        # device_action 已是 async，无需 _run_sync_call
+        workflow_id = ctx.get("workflow_id")
+        result = await DeviceGateway.invoke(
+            db,
+            device_id,
+            action_id=action_id,
+            params=resolved_params,
             source="workflow",
+            workflow_id=workflow_id,
+            correlation_id=f"wf-{workflow_id}-{nid}" if workflow_id else None,
+            idempotency_key=build_idempotency_key(
+                source="workflow",
+                device_id=device_id,
+                action_type=action.action_type,
+                params=resolved_params,
+                workflow_id=workflow_id,
+            ),
         )
         try:
             resp_body = result.get("response_body")
