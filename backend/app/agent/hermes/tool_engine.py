@@ -210,7 +210,7 @@ class HermesToolEngine:
             )
         logger.info(
             "HermesToolEngine 注册表构建完成: agent_id=%s, tools=%s",
-            self.agent.id,
+            getattr(self.agent, "id", None),
             list(self._registry.keys()),
         )
 

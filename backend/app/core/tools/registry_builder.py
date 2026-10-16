@@ -30,6 +30,12 @@ def descriptor_to_tool_entry(d: ToolDescriptor):
 
 
 class ToolRegistryBuilder:
+    """唯一工具装配工厂。
+
+    agent=None 时为**系统级注册表**：仅含全部启用的 DB 工具；
+    KB / 资产 / 工作流 / 设备类工具因需显式勾选，系统级不含
+    （调用方须传 agent / agent_id 才能装配）。
+    """
     def __init__(
         self,
         db,
@@ -93,12 +99,17 @@ class ToolRegistryBuilder:
         return _safe_coroutine
 
     def _register_db_tools(self, registry: dict[str, ToolDescriptor]) -> None:
-        enabled_tools = self.agent.enabled_tools or []
-        if not enabled_tools:
-            return
         from app.models.tool import Tool
 
-        for name in enabled_tools:
+        if self.agent is None:
+            # 系统级（管理 API / 脚本直调）：注册全部启用工具，不按 agent 过滤
+            names = [t.name for t in self.db.query(Tool).filter(Tool.enabled.is_(True)).all()]
+        else:
+            names = self.agent.enabled_tools or []
+        if not names:
+            return
+
+        for name in names:
             tool = self.db.query(Tool).filter(Tool.name == name, Tool.enabled.is_(True)).first()
             if tool is None:
                 logger.warning("DB 工具未找到或未启用: %s", name)
@@ -112,8 +123,8 @@ class ToolRegistryBuilder:
 
                 run_fn = load_tool_function(
                     tool,
-                    enabled_kbs=self.agent.enabled_kbs or [],
-                    agent_id=self.agent.id,
+                    enabled_kbs=(self.agent.enabled_kbs or []) if self.agent is not None else [],
+                    agent_id=getattr(self.agent, "id", None),
                     user_id=self.user_id,
                 )
             except Exception as exc:  # noqa: BLE001
@@ -162,6 +173,8 @@ class ToolRegistryBuilder:
             )
 
     def _register_kb_tools(self, registry: dict[str, ToolDescriptor]) -> None:
+        if self.agent is None:
+            return
         enabled_kbs = self.agent.enabled_kbs or []
         if not enabled_kbs:
             return
@@ -191,6 +204,8 @@ class ToolRegistryBuilder:
             )
 
     def _register_asset_tools(self, registry: dict[str, ToolDescriptor]) -> None:
+        if self.agent is None:
+            return
         enabled_asset_types = self.agent.enabled_asset_types or []
         if not enabled_asset_types:
             return
@@ -212,6 +227,8 @@ class ToolRegistryBuilder:
             )
 
     def _register_workflow_tools(self, registry: dict[str, ToolDescriptor]) -> None:
+        if self.agent is None:
+            return
         from app.agent.workflow_as_tool import infer_parameters, invoke_workflow_as_tool, make_tool_name
         from app.models.workflow import Workflow
 
@@ -262,6 +279,8 @@ class ToolRegistryBuilder:
         既有 Agent 无 enabled_devices 列值（NULL）→ 空 → 不装配任何 device 工具，
         保证 A-4 逐字节回归安全。
         """
+        if self.agent is None:
+            return
         enabled_ids = getattr(self.agent, "enabled_devices", None) or []
         if not enabled_ids:
             return
