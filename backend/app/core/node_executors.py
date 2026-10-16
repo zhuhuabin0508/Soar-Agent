@@ -600,14 +600,15 @@ async def execute_tool_node(
 
     node_data 字段：``tool_name`` (str) 与 ``parameters`` (dict)。
     ``parameters`` 中的值若为 ``"{{path}}"`` 形式则从 ``ctx`` 按点号路径解析变量，
-    否则原样传递。查 DB 找到启用工具后调 ``run_tool`` 执行。
+    否则原样传递。查 DB 找到启用工具后经 ``invoke_tool`` 统一入口执行
+    （与 Agent 共用注册表 + 治理链，架构 §7.1）。
 
     返回 ``{"result": <工具返回>, "error": <错误或 None>, "tool_name": <名>}``。
     """
     # 延迟导入避免循环依赖
-    from app.core.tool_runner import run_tool
     from app.database import SessionLocal
     from app.models.tool import Tool
+    from app.platform.tool_runtime import invoke_tool
 
     nid = _node_id(node_data)
     tool_name = node_data.get("tool_name") or ""
@@ -626,20 +627,33 @@ async def execute_tool_node(
 
     db = SessionLocal()
     try:
+        # 前置校验：工具存在且启用（错误信息比注册表检查更具体）
         tool = db.query(Tool).filter(Tool.name == tool_name, Tool.enabled.is_(True)).first()
+        if tool is None:
+            log(nid, _ERROR, f"工具未找到或未启用: {tool_name}")
+            return {"error": f"工具未找到或未启用: {tool_name}", "tool_name": tool_name}
+
+        # 统一入口（C2-2）：与 Agent 共用注册表 + 治理链
+        # verify=False：工作流 SOP 即保证，无对话证据上下文（与 device_action 节点一致）
+        inv = await invoke_tool(
+            tool_name,
+            resolved,
+            db=db,
+            log_handler=lambda level, message: log(nid, level, message),
+            verify=False,
+        )
     finally:
         db.close()
 
-    if tool is None:
-        log(nid, _ERROR, f"工具未找到或未启用: {tool_name}")
-        return {"error": f"工具未找到或未启用: {tool_name}", "tool_name": tool_name}
+    if not inv.ok:
+        log(nid, _ERROR, f"工具执行失败: {inv.error}")
+        return {"error": inv.error or str(inv.content), "tool_name": tool_name}
 
-    result = await run_tool(tool, resolved)
-    if "error" in result:
-        log(nid, _ERROR, f"工具执行失败: {result['error']}")
-        return {"error": result["error"], "tool_name": tool_name}
-    log(nid, _INFO, f"工具执行完成: {result.get('result')}")
-    return {"result": result.get("result"), "tool_name": tool_name}
+    # 用 raw_content（结构化）保证下游 {{node.result.字段}} 引用不断；
+    # content 是 LLM 视角的不可信包装字符串，节点侧不需要
+    result_value = inv.raw_content if inv.raw_content is not None else inv.content
+    log(nid, _INFO, f"工具执行完成: {result_value}")
+    return {"result": result_value, "tool_name": tool_name}
 
 
 async def execute_human_review_node(
