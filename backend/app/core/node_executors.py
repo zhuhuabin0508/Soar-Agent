@@ -11,8 +11,6 @@
 import logging
 from typing import Any, Callable
 
-from app.devices.firewall import block_ip_on_firewall
-
 logger = logging.getLogger(__name__)
 
 # 日志级别常量
@@ -377,10 +375,72 @@ async def execute_block_ip(
         return {"status": "logged", "action": "unblock", "ip": target_ip, "reason": reason}
 
     log(nid, _INFO, f"封禁 IP: {target_ip}, duration={duration}, reason={reason}")
-    result = await block_ip_on_firewall(target_ip, duration, reason)
-    log(nid, _INFO, f"封禁结果: {result.get('status')}, rule_id={result.get('rule_id')}")
-    ctx["block_result"] = result
-    return result
+
+    from app.database import SessionLocal
+    from app.devices.as_tool import resolve_default_block_device
+    from app.devices.gateway import DeviceGateway, build_idempotency_key
+
+    db = SessionLocal()
+    try:
+        # 设备解析：节点显式 device_id 优先；否则走默认解析（O1=Y：唯一即用 / 多台 tags 消歧）
+        explicit_id = node_data.get("device_id")
+        if explicit_id:
+            from types import SimpleNamespace
+            resolver_agent = SimpleNamespace(variables={"default_device_id": int(explicit_id)})
+            res = resolve_default_block_device(db, resolver_agent, None)
+        else:
+            res = resolve_default_block_device(db, None, None)   # 工作流无 agent 作用域
+
+        if not res.ok:
+            log(nid, _ERROR, f"封禁设备解析失败: {res.error}")
+            return {
+                "status": "failed", "success": False, "action": "block",
+                "ip": target_ip, "error": res.error, "hint": res.hint,
+            }
+
+        params = {"ip": target_ip, "duration": duration, "reason": reason}
+        workflow_id = ctx.get("workflow_id")
+        result = await DeviceGateway.invoke(
+            db,
+            res.device.id,
+            action_id=res.action.id,
+            params=params,
+            source="workflow",
+            workflow_id=workflow_id,
+            correlation_id=f"wf-{workflow_id}-{nid}" if workflow_id else None,
+            idempotency_key=build_idempotency_key(
+                source="workflow",
+                device_id=res.device.id,
+                action_type=res.action.action_type,
+                params=params,
+                workflow_id=workflow_id,
+            ),
+        )
+    finally:
+        db.close()
+
+    ok = bool(result.get("success"))
+    out = {
+        "status": "success" if ok else "failed",
+        "success": ok,
+        "action": "block",
+        "ip": target_ip,
+        "duration": duration,
+        "reason": reason,
+        "device_id": res.device.id,
+        "device_name": getattr(res.device, "name", ""),
+        "status_code": result.get("status_code"),
+        "error": result.get("error"),
+        "response_body": result.get("response_body"),
+        # 兼容旧字段：mock 曾返回 rule_id；真实值在 response_body 里
+        "rule_id": None,
+        "idempotent_replay": result.get("idempotent_replay", False),
+    }
+    log(nid, _INFO if ok else _ERROR,
+        f"封禁{'成功' if ok else '失败'}: device={out['device_name']}, "
+        f"status_code={out['status_code']}, err={out['error']}")
+    ctx["block_result"] = out
+    return out
 
 
 async def execute_send_notification(
