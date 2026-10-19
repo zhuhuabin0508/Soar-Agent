@@ -33,12 +33,12 @@ def requires_confirmation(danger_level: str, scenario: str) -> bool:
 class ConfirmationConfig:
     """确认闸开关（Stage B 配置，读 Agent.tool_configs["confirmation"]）。
 
-    默认 **enabled=False**：阶段 1 只让策略存在，不改变现网行为；
-    阶段 6（审批回路就绪）再打开。
+    **默认开启**（阶段 6c）：高危工具在 Agent 侧一律需人工确认。
+    单个 Agent 可在 ``tool_configs["confirmation"]["enabled"] = False`` 关闭。
     """
-    enabled: bool = False
+    enabled: bool = True
 
     @classmethod
     def from_mapping(cls, data: dict | None) -> "ConfirmationConfig":
         data = data or {}
-        return cls(enabled=bool(data.get("enabled", False)))
+        return cls(enabled=bool(data.get("enabled", True)))

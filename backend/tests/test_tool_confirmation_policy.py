@@ -23,12 +23,12 @@ class TestRequiresConfirmation:
 
 
 class TestConfirmationConfig:
-    def test_default_disabled(self):
-        assert ConfirmationConfig().enabled is False
+    def test_default_enabled(self):
+        assert ConfirmationConfig().enabled is True
 
     def test_from_mapping(self):
-        assert ConfirmationConfig.from_mapping({"enabled": True}).enabled is True
-        assert ConfirmationConfig.from_mapping(None).enabled is False
+        assert ConfirmationConfig.from_mapping({"enabled": False}).enabled is False
+        assert ConfirmationConfig.from_mapping({}).enabled is True
 
 
 def test_descriptor_contract_fields():

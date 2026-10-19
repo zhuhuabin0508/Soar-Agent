@@ -835,6 +835,7 @@ def run_lightweight_migrations(engine) -> None:
                 "requested_by": "INTEGER",
                 "dedup_key": "VARCHAR(64)",
                 "result": "TEXT",
+                "result_delivered": "BOOLEAN NOT NULL DEFAULT FALSE",
             },
         )
         # 资源级 owner 权限控制：5 个资源表新增 created_by 列（创建者用户ID）

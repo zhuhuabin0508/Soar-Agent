@@ -311,6 +311,44 @@ class HermesAgentExecutor:
         start = 1 + self._history_len
         return self.messages[start:]
 
+    def _inject_approval_results(self, *, session_id: str) -> None:
+        """把本会话已审批完毕的 agent_tool 工单结果注入 context（每张单只注入一次）。"""
+        if not session_id:
+            return
+        try:
+            from app.models.workflow_ban import ApprovalTicket
+
+            rows = (
+                self.db.query(ApprovalTicket)
+                .filter(
+                    ApprovalTicket.kind == "agent_tool",
+                    ApprovalTicket.agent_id == getattr(self.agent, "id", None),
+                    ApprovalTicket.session_id == session_id,
+                    ApprovalTicket.status.in_(("approved", "rejected")),
+                    ApprovalTicket.result.isnot(None),
+                    ApprovalTicket.result_delivered.is_(False),
+                )
+                .order_by(ApprovalTicket.id.asc())
+                .limit(5)
+                .all()
+            )
+            if not rows:
+                return
+            lines = [
+                f"- 工单 #{t.id}（工具 {t.tool_name}，审批结果 {t.status}）：{t.result}"
+                for t in rows
+            ]
+            for t in rows:
+                t.result_delivered = True
+            self.db.commit()
+            self.messages.append({
+                "role": "system",
+                "content": "[人工审批结果]\n" + "\n".join(lines),
+            })
+            self._log("info", f"注入审批结果 {len(rows)} 条")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("注入审批结果失败: %s", exc)
+
     def _log(self, level: str, message: str) -> None:
         """输出日志并回调。"""
         logger.log(getattr(logging, level.upper(), logging.INFO), message)
@@ -355,7 +393,10 @@ class HermesAgentExecutor:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("记忆预取失败: %s", exc)
 
-        # 2. 追加用户消息
+        # 2. 注入上一轮被闸拦下、现已审批完毕的工具调用结果
+        self._inject_approval_results(session_id=session_id)
+
+        # 3. 追加用户消息（原编号顺延）
         user_content = user_input
         if memory_block:
             user_content = f"{user_input}\n\n[相关记忆]\n{memory_block}"

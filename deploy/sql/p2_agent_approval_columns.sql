@@ -7,6 +7,7 @@ ALTER TABLE approval_tickets ADD COLUMN IF NOT EXISTS session_id VARCHAR(128);
 ALTER TABLE approval_tickets ADD COLUMN IF NOT EXISTS requested_by INTEGER;
 ALTER TABLE approval_tickets ADD COLUMN IF NOT EXISTS dedup_key VARCHAR(64);
 ALTER TABLE approval_tickets ADD COLUMN IF NOT EXISTS result TEXT;
+ALTER TABLE approval_tickets ADD COLUMN IF NOT EXISTS result_delivered BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE INDEX IF NOT EXISTS ix_approval_tickets_kind ON approval_tickets (kind);
 CREATE INDEX IF NOT EXISTS ix_approval_tickets_tool_name ON approval_tickets (tool_name);

@@ -113,6 +113,7 @@ class ApprovalTicket(Base):
     requested_by = Column(Integer, nullable=True)    # 发起调用的 user_id
     dedup_key = Column(String(64), nullable=True, index=True)
     result = Column(Text, nullable=True)             # 执行结果 JSON（6b 写入）
+    result_delivered = Column(Boolean, nullable=False, default=False, server_default="false")
     created_at = Column(DateTime, default=beijing_now, index=True)
 
     def __repr__(self) -> str:
