@@ -54,3 +54,10 @@ def file_mutating_tool_names(r: Registry) -> frozenset[str]:
 def danger_levels(r: Registry) -> dict[str, str]:
     """工具名 → danger_level（来自描述符声明，缺省 low）。"""
     return {n: (getattr(d, "danger_level", None) or "low") for n, d in r.items()}
+
+
+def self_gating_tool_names(r: Registry) -> frozenset[str]:
+    """工具名 → 自带人工审批的工作流工具（Agent 侧免二次确认）。"""
+    return frozenset(
+        n for n, d in r.items() if (getattr(d, "extra", None) or {}).get("self_gating")
+    )

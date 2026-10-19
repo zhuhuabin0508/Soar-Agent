@@ -1211,6 +1211,42 @@ class HermesAgentExecutor:
             })
             return
 
+        # 确认闸（与 tool_engine 同源策略）：trigger_workflow_skill 不经 tool_engine，
+        # 需在此按「目标工作流的图」判定；resume 是审批后的恢复，不重复拦。
+        if (
+            not resume_token
+            and self.confirmation_config is not None
+            and self.confirmation_config.enabled
+        ):
+            import json
+
+            from app.agent.workflow_as_tool import workflow_danger, workflow_self_gates
+            from app.core.tools.policy import SCENARIO_AGENT, requires_confirmation
+            from app.models.workflow import Workflow
+
+            try:
+                _wf_id = int(workflow_id)
+            except (TypeError, ValueError):
+                _wf_id = None
+            if _wf_id is not None:
+                _wf = self.db.query(Workflow).filter(Workflow.id == _wf_id).first()
+                if _wf is not None:
+                    _danger = workflow_danger(_wf.graph_config)
+                    if requires_confirmation(_danger, SCENARIO_AGENT) and not workflow_self_gates(_wf.graph_config):
+                        self.messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "name": tc.name,
+                            "content": json.dumps({
+                                "status": "needs_confirmation",
+                                "tool": tc.name,
+                                "workflow_id": _wf_id,
+                                "danger_level": _danger,
+                                "message": f"该工作流危险等级为 {_danger}，需人工确认后才能执行。",
+                            }, ensure_ascii=False),
+                        })
+                        return
+
         try:
             if resume_token:
                 # 恢复技能

@@ -60,6 +60,46 @@ def infer_parameters(graph_config: Any) -> dict:
     return schema
 
 
+# ============================================================================
+# 工作流 → 危险等级 / 自门控（供确认闸使用）
+# ============================================================================
+
+# 节点类型 → 危险等级（保守映射：不确定的一律 high，避免绕过确认）
+_DANGER_NODE_TYPES = {
+    "block_ip": "high",
+    "device_action": "high",
+    "tool": "high",              # 图内调工具，具体工具未知 → 保守 high
+    "send_notification": "low",
+}
+_DANGER_RANK = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+# 自带人工审批的节点 → 该工作流「自门控」，Agent 侧不再二次确认
+_APPROVAL_NODE_TYPES = frozenset({"human_review", "approval_ticket"})
+
+
+def _iter_nodes(graph_config: Any) -> list[dict]:
+    if isinstance(graph_config, dict):
+        return [n for n in (graph_config.get("nodes") or []) if isinstance(n, dict)]
+    return []
+
+
+def _node_type(node: dict) -> str:
+    data = node.get("data") or {}
+    return str(node.get("type") or data.get("type") or "")
+
+
+def workflow_danger(graph_config: Any) -> str:
+    """工作流危险等级 = 图内节点的最高危险（无节点 → low）。"""
+    levels = [_DANGER_NODE_TYPES.get(_node_type(n), "low") for n in _iter_nodes(graph_config)]
+    if not levels:
+        return "low"
+    return max(levels, key=lambda x: _DANGER_RANK.get(x, 0))
+
+
+def workflow_self_gates(graph_config: Any) -> bool:
+    """图内是否含 human_review / approval_ticket 节点（自带人工审批）。"""
+    return any(_node_type(n) in _APPROVAL_NODE_TYPES for n in _iter_nodes(graph_config))
+
+
 async def invoke_workflow_as_tool(
     *,
     db,

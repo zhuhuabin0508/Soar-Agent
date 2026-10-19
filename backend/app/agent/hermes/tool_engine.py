@@ -156,6 +156,7 @@ class HermesToolEngine:
         self._mutating_tool_names: frozenset[str] = frozenset()
         self._file_mutating_tool_names: frozenset[str] = frozenset()
         self._danger_levels: dict[str, str] = {}
+        self._self_gating: frozenset[str] = frozenset()
         self._build_registry()
 
     def reset_for_turn(
@@ -190,6 +191,7 @@ class HermesToolEngine:
             never_parallel_names,
             no_effect_names,
             parallel_safe_names,
+            self_gating_tool_names,
             write_tools_requiring_verification,
         )
         from app.core.tools.registry_builder import ToolRegistryBuilder, descriptor_to_tool_entry
@@ -207,6 +209,7 @@ class HermesToolEngine:
         self._mutating_tool_names = mutating_tool_names(descriptors)
         self._file_mutating_tool_names = file_mutating_tool_names(descriptors)
         self._danger_levels = danger_levels(descriptors)
+        self._self_gating = self_gating_tool_names(descriptors)
         if self.guardrail_controller is not None:
             self.guardrail_controller.set_derived_sets(
                 mutating=self._mutating_tool_names,
@@ -592,7 +595,8 @@ class HermesToolEngine:
             from app.core.tools.policy import SCENARIO_AGENT, requires_confirmation
 
             _danger = self._danger_levels.get(effective_name, "low")
-            if requires_confirmation(_danger, SCENARIO_AGENT):
+            # 自门控豁免：工作流工具且图内已有审批节点 → 不再二次确认
+            if requires_confirmation(_danger, SCENARIO_AGENT) and effective_name not in self._self_gating:
                 import json as _json
                 _msg = {
                     "status": "needs_confirmation",

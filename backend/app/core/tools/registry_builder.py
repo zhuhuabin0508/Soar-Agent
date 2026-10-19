@@ -231,7 +231,10 @@ class ToolRegistryBuilder:
     def _register_workflow_tools(self, registry: dict[str, ToolDescriptor]) -> None:
         if self.agent is None:
             return
-        from app.agent.workflow_as_tool import infer_parameters, invoke_workflow_as_tool, make_tool_name
+        from app.agent.workflow_as_tool import (
+            infer_parameters, invoke_workflow_as_tool, make_tool_name,
+            workflow_danger, workflow_self_gates,
+        )
         from app.models.workflow import Workflow
 
         for raw_id in getattr(self.agent, "enabled_workflows", None) or []:
@@ -267,8 +270,9 @@ class ToolRegistryBuilder:
                 parallel_safe=False,
                 mutating=True,
                 deferrable=True,
-                danger_level="high",        # 保守：阶段 5 改为「按图推导」
+                danger_level=workflow_danger(wf.graph_config),
                 required_permission=("workflow", "execute"),
+                extra={"self_gating": workflow_self_gates(wf.graph_config)},
                 parameters=parameters,
             )
 
