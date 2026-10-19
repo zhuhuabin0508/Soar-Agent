@@ -298,7 +298,7 @@ def build_device_action_facade_tool(
 # ============================================================================
 
 # tags 兜底匹配关键字（架构 §6.8：如「封禁」、「production」）
-_BLOCK_TAGS = frozenset({"封禁", "production", "block"})
+_BLOCK_TAGS = frozenset({"封禁", "生产", "production", "block"})
 
 
 @dataclass
@@ -353,8 +353,9 @@ def resolve_default_block_device(
 
     1. ``Agent.variables.default_device_id``：在 allowed 范围内且启用+在线+有
        ``block_ip`` 动作 → 命中；
-    2. tags 兜底：在 allowed 范围内、启用+在线、有 ``block_ip`` 动作，且 tags 含
-       ``封禁``/``production``/``block`` 的设备，必须唯一；
+    2. 兜底（O1 = Y）：在 allowed 范围内、启用+在线、有 ``block_ip`` 动作的设备
+       **唯一即用**；多台时再按 tags（``封禁``/``production``/``block``）消歧，
+       仍不唯一 → 报错；
     3. 仍无法解析 → 返回结构化错误（不静默失败）。
 
     Args:
@@ -384,21 +385,24 @@ def resolve_default_block_device(
             hint="请在 Agent.variables 中配置有效的 default_device_id，或确保该设备启用、在线且有 block_ip 动作。",
         )
 
-    # ② tags 兜底：在 allowed 范围内、启用+在线、有 block_ip 动作、tags 含封禁关键字
+    # ② 兜底（O1 = Y）：范围内「启用+在线+有 block_ip 动作」的设备
+    #    唯一 → 直接用（不再要求打标签）；多台 → 先按 tags 消歧，仍不唯一则报错
     q = db.query(Device)
     if allowed_device_ids:
         q = q.filter(Device.id.in_(allowed_device_ids))
     q = q.filter(Device.enabled.is_(True), Device.status == "online")
-    candidates = [
-        d for d in q.all()
-        if _find_block_action(db, d.id) is not None
-        and any(t in _BLOCK_TAGS for t in _load_tags(d))
-    ]
-    if len(candidates) == 1:
-        dev = candidates[0]
+    blockable = [d for d in q.all() if _find_block_action(db, d.id) is not None]
+
+    if len(blockable) == 1:
+        dev = blockable[0]
         return BlockDeviceResolution(device=dev, action=_find_block_action(db, dev.id))
-    if len(candidates) > 1:
-        ids = [d.id for d in candidates]
+
+    if len(blockable) > 1:
+        tagged = [d for d in blockable if any(t in _BLOCK_TAGS for t in _load_tags(d))]
+        if len(tagged) == 1:
+            dev = tagged[0]
+            return BlockDeviceResolution(device=dev, action=_find_block_action(db, dev.id))
+        ids = [d.id for d in (tagged or blockable)]
         return BlockDeviceResolution(
             error=f"存在多个候选封禁设备 {ids}，无法自动选择",
             hint="请在 Agent.variables 中显式配置 default_device_id 指定唯一设备。",
@@ -407,8 +411,8 @@ def resolve_default_block_device(
     # ③ 无法解析
     return BlockDeviceResolution(
         error="无法解析默认封禁设备",
-        hint="请在 Agent.variables 中配置 default_device_id，或确保仅有一个带"
-             "「封禁/production/block」标签且有 block_ip 动作的在线设备，"
+        hint="请确保本智能体勾选（enabled_devices）的设备中至少有一台启用、在线且有 block_ip 动作；"
+             "若有多台，给其中一台打「封禁/production」标签，或配置 Agent.variables.default_device_id。"
              "也可先用 list_devices 查看可用设备。",
     )
 

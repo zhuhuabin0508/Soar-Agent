@@ -173,6 +173,33 @@ class TestResolveDefaultBlockDevice:
         assert res.error
         assert res.hint  # 不静默失败，给提示
 
+    def test_single_untagged_device_resolves(self):
+        """O1=Y：唯一可封设备即使没打标签也能直接用。"""
+        from app.devices.as_tool import resolve_default_block_device
+        db = _fake_db([_device(7, tags="[]")], [_action(1, 7, "block_ip")])
+        res = resolve_default_block_device(db, _agent(variables={}), allowed_device_ids={7})
+        assert res.ok and res.device.id == 7
+
+    def test_multi_candidates_tag_disambiguates(self):
+        """多台可封设备中只有一台带标签 → 用那台。"""
+        from app.devices.as_tool import resolve_default_block_device
+        db = _fake_db(
+            [_device(7, tags="[]"), _device(8, tags='["封禁"]')],
+            [_action(1, 7, "block_ip"), _action(2, 8, "block_ip")],
+        )
+        res = resolve_default_block_device(db, _agent(variables={}), allowed_device_ids={7, 8})
+        assert res.ok and res.device.id == 8
+
+    def test_multi_candidates_no_tags_errors(self):
+        """多台可封设备且都没标签 → 报错（不猜）。"""
+        from app.devices.as_tool import resolve_default_block_device
+        db = _fake_db(
+            [_device(7, tags="[]"), _device(8, tags="[]")],
+            [_action(1, 7, "block_ip"), _action(2, 8, "block_ip")],
+        )
+        res = resolve_default_block_device(db, _agent(variables={}), allowed_device_ids={7, 8})
+        assert not res.ok
+
 
 # ---------------------------------------------------------------------------
 # build_block_ip_tool
