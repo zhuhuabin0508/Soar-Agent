@@ -304,6 +304,10 @@ class ResumeRequest(BaseModel):
     decision: str = Field("approve", description="审批决定：approve | reject")
 
 
+class ToolConfirmationRejectRequest(BaseModel):
+    comment: str = Field("", description="拒绝原因（可选）")
+
+
 @router.get("")
 def list_agents(
     usable: bool = Query(False, description="仅返回已发布、可在对话中使用的智能体"),
@@ -783,6 +787,53 @@ async def chat_agent(
         media_type="text/event-stream",
         headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
     )
+
+
+@router.post("/{agent_id}/tool-confirmations/{ticket_id}/confirm")
+async def confirm_tool_in_chat(
+    agent_id: int,
+    ticket_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("agent", "execute")),
+) -> dict:
+    """对话内确认高危工具：记录当前登录用户并当场执行。"""
+    from app.platform.approval import confirm_and_execute_tool
+
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    try:
+        return await confirm_and_execute_tool(
+            db, ticket_id=ticket_id, agent_id=agent_id, user=current_user,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{agent_id}/tool-confirmations/{ticket_id}/reject")
+def reject_tool_in_chat(
+    agent_id: int,
+    ticket_id: int,
+    body: ToolConfirmationRejectRequest | None = None,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("agent", "execute")),
+) -> dict:
+    """对话内拒绝高危工具：记录当前登录用户，不执行。"""
+    from app.platform.approval import reject_tool_confirmation
+
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    try:
+        return reject_tool_confirmation(
+            db,
+            ticket_id=ticket_id,
+            agent_id=agent_id,
+            user=current_user,
+            comment=(body.comment if body else "") or "",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 async def _resume_workflow_run(agent_id: int, run_id: str, body: ResumeRequest, db: Session, current_user):

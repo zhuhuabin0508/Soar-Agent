@@ -31,9 +31,9 @@ def requires_confirmation(danger_level: str, scenario: str) -> bool:
 
 @dataclass
 class ConfirmationConfig:
-    """确认闸开关（Stage B 配置，读 Agent.tool_configs["confirmation"]）。
+    """确认闸开关（读 Agent.tool_configs["confirmation"]）。
 
-    **默认开启**（阶段 6c）：高危工具在 Agent 侧一律需人工确认。
+    **默认开启**：高危工具在 Agent 对话中弹出确认框，由当前登录用户确认/拒绝。
     单个 Agent 可在 ``tool_configs["confirmation"]["enabled"] = False`` 关闭。
     """
     enabled: bool = True

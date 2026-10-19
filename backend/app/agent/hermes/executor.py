@@ -1171,8 +1171,26 @@ class HermesAgentExecutor:
                 message=f"工具 {tc.name} 完成" + ("（错误）" if result.is_error else ""),
             )
 
-            # 工具生成的输出文件（如 expand_risk_detail 的展开表）：追加 file 事件，
-            # 前端在消息气泡内渲染下载卡片
+            pending = None
+            raw_for_pending = result.content
+            if isinstance(raw_for_pending, str):
+                try:
+                    pending = json.loads(raw_for_pending)
+                except Exception:  # noqa: BLE001
+                    pending = None
+            elif isinstance(raw_for_pending, dict):
+                pending = raw_for_pending
+            if isinstance(pending, dict) and pending.get("status") == "pending_approval":
+                yield make_event(
+                    "tool_confirm",
+                    tool_name=tc.name,
+                    tool_call_id=tc.id,
+                    message=pending.get("message") or f"高危工具 {tc.name} 待确认",
+                    args=pending.get("arguments") if isinstance(pending.get("arguments"), dict) else tc.arguments,
+                    ticket_id=pending.get("ticket_id"),
+                    danger_level=pending.get("danger_level") or "",
+                )
+
             if getattr(result, "generated_file", None):
                 yield make_event("file", **result.generated_file)
 

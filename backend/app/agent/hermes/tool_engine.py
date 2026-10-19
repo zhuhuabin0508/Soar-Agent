@@ -621,8 +621,9 @@ class HermesToolEngine:
                     "ticket_id": _ticket.id,
                     "tool": effective_name,
                     "danger_level": _danger,
-                    "message": f"该操作危险等级为 {_danger}，已提交人工确认（工单 #{_ticket.id}）。",
-                    "hint": "请告知用户已提交审批，待审批中心通过后由后台执行。",
+                    "arguments": tc.arguments,
+                    "message": f"该操作危险等级为 {_danger}，需您在对话中确认后才会执行（工单 #{_ticket.id}）。",
+                    "hint": "请在对话界面点击「确认」或「拒绝」。",
                 }
                 self._log_tool("warning", f"确认闸拦截并建单: {effective_name} ticket={_ticket.id}")
                 return ToolResult(

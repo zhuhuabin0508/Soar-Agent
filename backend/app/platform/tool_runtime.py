@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -80,7 +81,17 @@ async def invoke_tool(
                 name=name, ok=False,
                 error=f"审批凭据无效（ticket={approved_ticket_id}）",
             )
-        verify = False        # 人工已确认，跳过证据链
+        if _t.result:
+            try:
+                _prev = json.loads(_t.result) if isinstance(_t.result, str) else (_t.result or {})
+            except Exception:  # noqa: BLE001
+                _prev = {}
+            if not (isinstance(_prev, dict) and _prev.get("status") == "executing"):
+                return ToolInvokeResult(
+                    name=name, ok=False,
+                    error=f"审批凭据已使用（ticket={approved_ticket_id}）",
+                )
+        verify = False
 
     agent_obj = _resolve_agent(db, agent, agent_id)
 
