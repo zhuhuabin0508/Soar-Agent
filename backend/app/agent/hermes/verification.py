@@ -228,23 +228,12 @@ def _verify_device_action(
         ).lower()
         params = arguments.get("params") if isinstance(arguments.get("params"), dict) else {}
         merged = {**arguments, **params}
+        # 封禁类动作 → 走封禁证据链（显式前缀，天然排除 unblock*）
         if config.verify_block_ip and (
-            action_type in ("block_ip", "block") or "block" in action_type
+            action_type in ("block", "block_ip") or action_type.startswith("block_")
         ):
             return _verify_block_ip(merged, context, config)
-        target_ip = (
-            merged.get("ip") or merged.get("target_ip")
-            or merged.get("target") or merged.get("src_ip")
-        )
-        if target_ip and config.verify_block_ip and action_type in (
-            "quarantine_host", "isolate_endpoint", "dispose",
-        ):
-            normalized = (
-                merged
-                if (merged.get("ip") or merged.get("target_ip"))
-                else {**merged, "ip": target_ip}
-            )
-            return _verify_block_ip(normalized, context, config)
+        # 其余动作（unblock_ip / unblock / query / quarantine …）只校验参数完整
         return VerificationResult(approved=True, code="approved", message="device_action 参数完整")
 
     # ② 投影：设备/动作固化；若参数含 IP，复用封禁证据链（白名单 + 资产）

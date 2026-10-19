@@ -151,6 +151,18 @@ def test_device_facade_missing_action_rejected():
     assert "设备动作未指定" in res.missing_evidence
 
 
+def test_device_facade_unblock_not_treated_as_block():
+    """解封（unblock_ip）不应走封禁证据链。"""
+    res = verify_write_tool(
+        "device_action",
+        {"device_id": 3, "action_type": "unblock_ip", "params": {"rule_name": "r-1"}},
+        context={"tool_history": []},
+        config=VerificationConfig(),
+        write_tools=_DEVICE_WRITE_TOOLS,
+    )
+    assert res.approved
+
+
 def test_device_projection_non_ip_with_args_approved():
     res = verify_write_tool(
         "device_3_8",
