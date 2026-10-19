@@ -102,6 +102,17 @@ class ApprovalTicket(Base):
     approval_comment = Column(Text, nullable=True)
     approved_at = Column(DateTime, nullable=True)
     deadline = Column(DateTime, nullable=True, index=True)
+    # 工单来源：workflow（工作流审批，默认）/ agent_tool（Agent 高危工具确认）
+    kind = Column(String(16), nullable=False, default="workflow",
+                  server_default="workflow", index=True)
+    # --- 以下为 agent_tool 专用 ---
+    tool_name = Column(String(128), nullable=True, index=True)
+    tool_arguments = Column(Text, nullable=True)     # JSON 字符串
+    agent_id = Column(Integer, nullable=True)
+    session_id = Column(String(128), nullable=True, index=True)
+    requested_by = Column(Integer, nullable=True)    # 发起调用的 user_id
+    dedup_key = Column(String(64), nullable=True, index=True)
+    result = Column(Text, nullable=True)             # 执行结果 JSON（6b 写入）
     created_at = Column(DateTime, default=beijing_now, index=True)
 
     def __repr__(self) -> str:

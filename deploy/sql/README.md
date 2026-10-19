@@ -32,6 +32,7 @@ docker exec soar-postgres psql -U <user> -d <db> -v ON_ERROR_STOP=1 -f /tmp/mig.
 | `deliverable_module.sql` | 交付物模块建表 | 交付物模块 | 已发布 |
 | `p2_gateway_columns.sql` | `device_call_logs` 加 `idempotency_key` / `correlation_id` 两列 + 索引 | **P2-1 DeviceGateway** | 本次新增 |
 | `p2_3_agent_enabled_devices.sql` | `agents` 加 `enabled_devices` JSON 列（设备 id 列表，默认 `[]`） | **P2-3 enabled_devices + 接线** | 本次新增 |
+| `p2_agent_approval_columns.sql` | `approval_tickets` 加 Agent 高危工具确认字段（kind/tool_name 等 8 列 + 索引） | **P2 阶段 6a 审批单承载** | 本次新增 |
 
 ---
 

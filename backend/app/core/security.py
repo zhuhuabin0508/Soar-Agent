@@ -822,6 +822,21 @@ def run_lightweight_migrations(engine) -> None:
                 "correlation_id": "VARCHAR(128)",
             },
         )
+        # approval_tickets：新增 Agent 高危工具确认所需字段（P2 阶段 6a）
+        ensure_columns(
+            engine,
+            "approval_tickets",
+            {
+                "kind": "VARCHAR(16) NOT NULL DEFAULT 'workflow'",
+                "tool_name": "VARCHAR(128)",
+                "tool_arguments": "TEXT",
+                "agent_id": "INTEGER",
+                "session_id": "VARCHAR(128)",
+                "requested_by": "INTEGER",
+                "dedup_key": "VARCHAR(64)",
+                "result": "TEXT",
+            },
+        )
         # 资源级 owner 权限控制：5 个资源表新增 created_by 列（创建者用户ID）
         # resource_shares 表由 Base.metadata.create_all 自动创建（新表）
         for _owner_tbl in ("workflows", "agents", "tools", "skills", "knowledge_bases"):
