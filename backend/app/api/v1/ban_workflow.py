@@ -448,11 +448,23 @@ def list_approvals(
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
 ) -> dict:
-    """审批工单列表（三个 Tab + 关键词筛选 + 分页）。"""
+    """审批工单列表（三个 Tab + 关键词筛选 + 分页）。
+
+    仅工作流封禁审批；Agent 对话高危工具确认不进审批中心。
+    """
     statuses = _TAB_STATUS.get(tab)
     if statuses is None:
         raise HTTPException(status_code=400, detail="tab 取值须为 pending / approved / timeout")
-    query = db.query(ApprovalTicket).filter(ApprovalTicket.status.in_(statuses))
+    # kind 缺省/空视为 workflow；排除 agent_tool（对话内确认，不进本列表）
+    workflow_only = or_(
+        ApprovalTicket.kind.is_(None),
+        ApprovalTicket.kind == "",
+        ApprovalTicket.kind == "workflow",
+    )
+    query = (
+        db.query(ApprovalTicket)
+        .filter(ApprovalTicket.status.in_(statuses), workflow_only)
+    )
     if keyword:
         like = f"%{keyword}%"
         query = query.filter(or_(ApprovalTicket.ip.ilike(like), ApprovalTicket.alert_summary.ilike(like)))
@@ -464,7 +476,9 @@ def list_approvals(
         .all()
     )
     counts = {
-        key: db.query(ApprovalTicket).filter(ApprovalTicket.status.in_(sts)).count()
+        key: db.query(ApprovalTicket).filter(
+            ApprovalTicket.status.in_(sts), workflow_only,
+        ).count()
         for key, sts in _TAB_STATUS.items()
     }
     return {
@@ -504,29 +518,11 @@ def _apply_approval(
     if ticket.status != "pending":
         raise HTTPException(status_code=400, detail=f"工单已处理（{_TICKET_STATUS_LABELS.get(ticket.status, ticket.status)}），不可重复操作")
 
-    # --- Agent 高危工具确认工单（kind=agent_tool）：不恢复工作流实例，改为派任务执行 ---
     if (ticket.kind or "workflow") == "agent_tool":
-        ticket.status = result
-        ticket.approver = user.username
-        ticket.approval_comment = comment or ""
-        ticket.approved_at = beijing_now()
-        db.commit()
-
-        if result == "approved":
-            from app.tasks.approval_tasks import execute_approved_tool
-            execute_approved_tool.delay(ticket.id)
-
-        write_audit(
-            db, action="approval", resource_type="approval_ticket", resource_id=ticket.id,
-            detail={"result": result, "kind": "agent_tool", "tool_name": ticket.tool_name,
-                    "comment": comment},
-            operator=user.username, ip_address=request.client.host if request.client else "",
-            user_id=user.id,
+        raise HTTPException(
+            status_code=400,
+            detail="Agent 高危工具请在对话界面确认或拒绝，审批中心不处理此类工单",
         )
-        return {
-            "ok": True, "ticket_id": ticket.id, "result": result,
-            "kind": "agent_tool", "dispatched": result == "approved",
-        }
 
     instance = db.query(WorkflowInstance).filter(WorkflowInstance.id == ticket.workflow_instance_id).first()
     if instance is None:
@@ -899,14 +895,29 @@ def workflow_stats(db: Session = Depends(get_db)) -> dict:
     today_instances = q_today.count()
     today_auto_bans = q_today.filter(WorkflowInstance.final_result == "banned").count()
     today_errors = q_today.filter(WorkflowInstance.status == "error").count()
-    pending_approvals = (
-        db.query(ApprovalTicket).filter(ApprovalTicket.status == "pending").count()
+    _wf_kind = or_(
+        ApprovalTicket.kind.is_(None),
+        ApprovalTicket.kind == "",
+        ApprovalTicket.kind == "workflow",
     )
-    # 审批通过率：已出结论的工单中 approved 占比
-    approved_n = db.query(ApprovalTicket).filter(ApprovalTicket.status == "approved").count()
-    concluded_n = db.query(ApprovalTicket).filter(
-        ApprovalTicket.status.in_(["approved", "rejected", "timeout"])
-    ).count()
+    pending_approvals = (
+        db.query(ApprovalTicket)
+        .filter(ApprovalTicket.status == "pending", _wf_kind)
+        .count()
+    )
+    approved_n = (
+        db.query(ApprovalTicket)
+        .filter(ApprovalTicket.status == "approved", _wf_kind)
+        .count()
+    )
+    concluded_n = (
+        db.query(ApprovalTicket)
+        .filter(
+            ApprovalTicket.status.in_(["approved", "rejected", "timeout"]),
+            _wf_kind,
+        )
+        .count()
+    )
     approval_rate = round(approved_n * 100.0 / concluded_n, 1) if concluded_n else None
     # 平均研判耗时：今日成功智能体调用
     avg_row = (
