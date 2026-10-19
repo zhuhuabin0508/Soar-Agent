@@ -1015,6 +1015,7 @@ async def test_device_action(
         params=params,
         source="manual_test",
         user_id=user.id if user else None,
+        source_ip=get_client_ip(request),
     )
 
     latency_ms = result.get("latency_ms")

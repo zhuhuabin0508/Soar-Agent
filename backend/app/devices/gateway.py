@@ -35,6 +35,7 @@ class DeviceGateway:
         params: Optional[dict] = None,
         source: str,                     # manual_test / workflow / agent / api
         user_id: Optional[int] = None,
+        source_ip: Optional[str] = None,
         agent_id: Optional[int] = None,
         workflow_id: Optional[int] = None,
         correlation_id: Optional[str] = None,
@@ -103,6 +104,7 @@ class DeviceGateway:
         _write_call_log(
             db, device=device, action=action, source=source, params=params,
             workflow_id=workflow_id, agent_id=agent_id, user_id=user_id,
+            source_ip=source_ip,
             result=result, idempotency_key=idempotency_key,
             correlation_id=correlation_id,
         )
@@ -110,7 +112,7 @@ class DeviceGateway:
 
 
 def _write_call_log(db, *, device, action, source, params, workflow_id, agent_id,
-                    user_id, result, idempotency_key, correlation_id) -> None:
+                    user_id, source_ip=None, result, idempotency_key, correlation_id) -> None:
     """在主线程写 DeviceCallLog（避免 SQLAlchemy Session 跨线程使用）。"""
     import json as _json
 
@@ -132,6 +134,7 @@ def _write_call_log(db, *, device, action, source, params, workflow_id, agent_id
     record_device_call(
         db, device=device, action=action, source=source,
         workflow_id=workflow_id, agent_id=agent_id, user_id=user_id,
+        source_ip=source_ip,
         request_summary=req_summary, response_summary=resp_summary,
         status="success" if result.get("success") else "failed",
         status_code=result.get("status_code"),
