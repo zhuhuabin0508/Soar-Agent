@@ -257,8 +257,15 @@ export const agents = {
     })
     return resp
   },
+  confirmTool: (id, ticketId) =>
+    request(`/agents/${id}/tool-confirmations/${ticketId}/confirm`, { method: 'POST', body: {} }),
+  rejectTool: (id, ticketId, comment = '') =>
+    request(`/agents/${id}/tool-confirmations/${ticketId}/reject`, {
+      method: 'POST',
+      body: { comment },
+    }),
   // 流式对话（Hermes 引擎）：返回 fetch Response，SSE 事件契约见后端 chat_agent 端点
-  // 事件类型：start | status | token | tool_start | tool_end | skill_interrupt | delegate | log | done | error
+  // 事件类型：start | status | token | tool_start | tool_end | tool_confirm | skill_interrupt | delegate | log | done | error
   // signal 可选：传入 AbortSignal 以支持中途取消流式
   // sessionId 可选：会话 ID，Hermes 引擎按 (agentId, sessionId) 持久化多轮对话上下文
   // options 可选：会话级参数覆盖（同 testStream）

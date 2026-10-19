@@ -26,6 +26,7 @@ import SystemPromptEditor from '../components/chat/SystemPromptEditor'
 import MessageEditor from '../components/chat/MessageEditor'
 import ThinkingPanel from '../components/chat/ThinkingPanel'
 import ToolTimeline from '../components/chat/ToolTimeline'
+import ToolConfirmModal from '../components/ToolConfirmModal'
 
 // ============================================================================
 // 常量 & 工具
@@ -138,6 +139,10 @@ export default function ChatPage() {
   // ----- 流式状态 -----
   const [streaming, setStreaming] = useState(false)
   const abortControllerRef = useRef(null)
+
+  // ----- 高危工具对话内确认 -----
+  const [toolConfirm, setToolConfirm] = useState(null)
+  const [toolConfirmBusy, setToolConfirmBusy] = useState(false)
 
   // ----- 输入文本 -----
   const [inputText, setInputText] = useState('')
@@ -263,6 +268,67 @@ export default function ChatPage() {
     },
     [selectedAgentId]
   )
+
+  const handleToolConfirm = useCallback(async () => {
+    if (!toolConfirm?.ticketId || !toolConfirm?.agentId) return
+    setToolConfirmBusy(true)
+    try {
+      const res = await agentsApi.confirmTool(toolConfirm.agentId, toolConfirm.ticketId)
+      const summary = res?.ok
+        ? `已确认执行 ${res.tool_name || toolConfirm.toolName}（操作人：${res.approver || '当前用户'}）`
+        : `确认后执行失败：${res?.result?.error || res?.error || '未知错误'}`
+      if (res?.ok) toast.success(summary)
+      else toast.error(summary)
+      if (toolConfirm.messageId) {
+        updateMessages((prev) =>
+          prev.map((m) => {
+            if (m.id !== toolConfirm.messageId) return m
+            const tcs = (m.toolCalls || []).map((tc) =>
+              tc.call_id === toolConfirm.callId
+                ? { ...tc, status: 'done', result: res?.result, message: summary }
+                : tc
+            )
+            return {
+              ...m,
+              toolCalls: tcs,
+              statusMsgs: [...(m.statusMsgs || []), summary],
+            }
+          })
+        )
+      }
+      setToolConfirm(null)
+    } catch (err) {
+      toast.error(err?.message || '确认失败')
+    } finally {
+      setToolConfirmBusy(false)
+    }
+  }, [toolConfirm, updateMessages])
+
+  const handleToolReject = useCallback(async () => {
+    if (!toolConfirm?.ticketId || !toolConfirm?.agentId) return
+    setToolConfirmBusy(true)
+    try {
+      const res = await agentsApi.rejectTool(toolConfirm.agentId, toolConfirm.ticketId)
+      const summary = `已拒绝 ${res.tool_name || toolConfirm.toolName}（操作人：${res.approver || '当前用户'}）`
+      toast.success(summary)
+      if (toolConfirm.messageId) {
+        updateMessages((prev) =>
+          prev.map((m) => {
+            if (m.id !== toolConfirm.messageId) return m
+            return {
+              ...m,
+              statusMsgs: [...(m.statusMsgs || []), summary],
+            }
+          })
+        )
+      }
+      setToolConfirm(null)
+    } catch (err) {
+      toast.error(err?.message || '拒绝失败')
+    } finally {
+      setToolConfirmBusy(false)
+    }
+  }, [toolConfirm, updateMessages])
 
   // ----- 更新当前智能体的 overrides（参数覆盖配置）-----
   // 与 updateMessages 同款按 agentId 隔离 + localStorage 持久化
@@ -590,6 +656,19 @@ export default function ChatPage() {
                       return { ...m, toolCalls: tcs }
                     })
                   )
+                  break
+                case 'tool_confirm':
+                  if (data.ticket_id) {
+                    setToolConfirm({
+                      ticketId: data.ticket_id,
+                      toolName: data.tool_name || '',
+                      dangerLevel: data.danger_level || 'high',
+                      args: data.args || {},
+                      callId: data.tool_call_id || '',
+                      messageId: aiMsg.id,
+                      agentId: selectedAgentId,
+                    })
+                  }
                   break
                 case 'file':
                   // 工具生成的输出文件：附加到 AI 消息，气泡内提供下载卡片
@@ -1007,6 +1086,17 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-full w-full overflow-hidden">
+      <ToolConfirmModal
+        open={!!toolConfirm}
+        toolName={toolConfirm?.toolName}
+        dangerLevel={toolConfirm?.dangerLevel}
+        ticketId={toolConfirm?.ticketId}
+        args={toolConfirm?.args}
+        busy={toolConfirmBusy}
+        onConfirm={handleToolConfirm}
+        onReject={handleToolReject}
+        onClose={() => !toolConfirmBusy && setToolConfirm(null)}
+      />
       {/* ===== 左侧边栏 ===== */}
       <ChatSidebar
         width={SIDEBAR_WIDTH}

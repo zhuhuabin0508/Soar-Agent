@@ -32,6 +32,7 @@ import { useUnsavedChanges } from '../hooks/useUnsavedChanges'
 import { toast } from '../store/toastStore'
 import { canEditResource } from '../utils/permissions'
 import MarkdownRenderer from '../components/MarkdownRenderer'
+import ToolConfirmModal from '../components/ToolConfirmModal'
 
 const NAV_ITEMS = [
   { id: 'config', label: '配置', icon: Settings },
@@ -320,6 +321,7 @@ async function readSse(resp, handlers) {
         else if (data.type === 'log') handlers.onLog?.(data)
         else if (data.type === 'tool_start') handlers.onToolStart?.(data)
         else if (data.type === 'tool_end') handlers.onToolEnd?.(data)
+        else if (data.type === 'tool_confirm') handlers.onToolConfirm?.(data)
         else if (data.type === 'file') handlers.onFile?.(data)
         else if (data.type === 'delegate') handlers.onDelegate?.(data)
         else if (data.type === 'done') handlers.onDone?.(data)
@@ -405,6 +407,8 @@ function AgentPreviewPane({ agentId, engine, ensureSaved }) {
   const [previewMsgs, setPreviewMsgs] = useState([])
   const [previewInput, setPreviewInput] = useState('')
   const [previewBusy, setPreviewBusy] = useState(false)
+  const [toolConfirm, setToolConfirm] = useState(null)
+  const [toolConfirmBusy, setToolConfirmBusy] = useState(false)
   const replyRef = useRef('')
   const thinkingRef = useRef('')
   const toolsRef = useRef([])
@@ -574,6 +578,16 @@ function AgentPreviewPane({ agentId, engine, ensureSaved }) {
           }
           patchLast()
         },
+        onToolConfirm: (d) => {
+          if (!d.ticket_id) return
+          setToolConfirm({
+            ticketId: d.ticket_id,
+            toolName: d.tool_name || '',
+            dangerLevel: d.danger_level || 'high',
+            args: d.args || {},
+            agentId: id,
+          })
+        },
         onFile: (d) => {
           filesRef.current.push({ file_id: d.file_id, file_name: d.file_name })
           patchLast()
@@ -599,8 +613,56 @@ function AgentPreviewPane({ agentId, engine, ensureSaved }) {
     }
   }
 
+  const handleToolConfirm = async () => {
+    if (!toolConfirm?.ticketId || !toolConfirm?.agentId) return
+    setToolConfirmBusy(true)
+    try {
+      const res = await agentsApi.confirmTool(toolConfirm.agentId, toolConfirm.ticketId)
+      const summary = res?.ok
+        ? `已确认执行 ${res.tool_name || toolConfirm.toolName}（操作人：${res.approver || '当前用户'}）`
+        : `确认后执行失败：${res?.result?.error || '未知错误'}`
+      if (res?.ok) toast.success(summary)
+      else toast.error(summary)
+      logsRef.current.push(summary)
+      patchLast()
+      setToolConfirm(null)
+    } catch (err) {
+      toast.error(err?.message || '确认失败')
+    } finally {
+      setToolConfirmBusy(false)
+    }
+  }
+
+  const handleToolReject = async () => {
+    if (!toolConfirm?.ticketId || !toolConfirm?.agentId) return
+    setToolConfirmBusy(true)
+    try {
+      const res = await agentsApi.rejectTool(toolConfirm.agentId, toolConfirm.ticketId)
+      const summary = `已拒绝 ${res.tool_name || toolConfirm.toolName}（操作人：${res.approver || '当前用户'}）`
+      toast.success(summary)
+      logsRef.current.push(summary)
+      patchLast()
+      setToolConfirm(null)
+    } catch (err) {
+      toast.error(err?.message || '拒绝失败')
+    } finally {
+      setToolConfirmBusy(false)
+    }
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      <ToolConfirmModal
+        open={!!toolConfirm}
+        toolName={toolConfirm?.toolName}
+        dangerLevel={toolConfirm?.dangerLevel}
+        ticketId={toolConfirm?.ticketId}
+        args={toolConfirm?.args}
+        busy={toolConfirmBusy}
+        onConfirm={handleToolConfirm}
+        onReject={handleToolReject}
+        onClose={() => !toolConfirmBusy && setToolConfirm(null)}
+      />
       <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-2">
         <span className="text-xs font-medium text-foreground">调试预览</span>
         <button
