@@ -68,7 +68,16 @@ class DeviceGateway:
         # 2) 幂等查重（写日志前，5 分钟窗口）
         # 注意：created_at 由 server_default=func.now() 写 DB 服务器时钟，
         # 窗口起点须用同一时钟（func.now()）计算，用 beijing_now 会产生 8 小时偏差。
+        # 事务级咨询锁串行化同 key 并发，避免「双查未命中 → 双发设备」。
         if idempotency_key:
+            try:
+                lock_key = int(
+                    hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()[:15],
+                    16,
+                )
+                db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": lock_key})
+            except Exception:  # noqa: BLE001
+                logger.debug("幂等咨询锁不可用，降级为无锁查重: key=%s", idempotency_key)
             window_start = func.now() - text(
                 f"interval '{IDEMPOTENCY_WINDOW_SECONDS} seconds'"
             )

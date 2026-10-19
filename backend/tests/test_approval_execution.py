@@ -12,16 +12,40 @@ from app.platform.tool_runtime import invoke_tool
 
 def _db_with_ticket(ticket):
     db = MagicMock()
-    db.query.return_value.filter.return_value.first.return_value = ticket
-    db.query.return_value.filter.return_value.all.return_value = []
+    q = db.query.return_value
+    q.filter.return_value = q
+    q.with_for_update.return_value = q
+    q.first.return_value = ticket
+    q.all.return_value = []
     return db
 
 
 def test_invoke_tool_rejects_invalid_ticket():
-    db = _db_with_ticket(SimpleNamespace(id=1, status="pending", tool_name="block_ip"))
+    db = _db_with_ticket(SimpleNamespace(id=1, status="pending", tool_name="block_ip", result=None))
     r = asyncio.run(invoke_tool("block_ip", {}, db=db, approved_ticket_id=1))
     assert r.ok is False
     assert "审批凭据无效" in r.error
+
+
+def test_invoke_tool_consumes_executing_ticket():
+    ticket = SimpleNamespace(
+        id=2, status="approved", tool_name="block_ip",
+        result='{"status":"executing"}',
+    )
+    db = _db_with_ticket(ticket)
+
+    async def _fake_engine(*args, **kwargs):
+        class _E:
+            def has_tool(self, name):
+                return False
+        return _E()
+
+    from unittest.mock import patch
+    with patch("app.agent.hermes.tool_engine.HermesToolEngine", side_effect=lambda *a, **k: type("E", (), {"has_tool": lambda self, n: False})()):
+        r = asyncio.run(invoke_tool("block_ip", {}, db=db, approved_ticket_id=2))
+    assert ticket.result == '{"status": "consumed"}' or '"consumed"' in str(ticket.result)
+    assert r.ok is False
+    assert "不在注册表" in r.error
 
 
 def test_engine_gate_skipped_when_approved():

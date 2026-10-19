@@ -75,22 +75,28 @@ async def invoke_tool(
     if approved_ticket_id is not None:
         from app.models.workflow_ban import ApprovalTicket
 
-        _t = db.query(ApprovalTicket).filter(ApprovalTicket.id == approved_ticket_id).first()
+        _t = (
+            db.query(ApprovalTicket)
+            .filter(ApprovalTicket.id == approved_ticket_id)
+            .with_for_update()
+            .first()
+        )
         if _t is None or _t.status != "approved" or (_t.tool_name or "") != name:
             return ToolInvokeResult(
                 name=name, ok=False,
                 error=f"审批凭据无效（ticket={approved_ticket_id}）",
             )
-        if _t.result:
-            try:
-                _prev = json.loads(_t.result) if isinstance(_t.result, str) else (_t.result or {})
-            except Exception:  # noqa: BLE001
-                _prev = {}
-            if not (isinstance(_prev, dict) and _prev.get("status") == "executing"):
-                return ToolInvokeResult(
-                    name=name, ok=False,
-                    error=f"审批凭据已使用（ticket={approved_ticket_id}）",
-                )
+        try:
+            _prev = json.loads(_t.result) if isinstance(_t.result, str) else (_t.result or {})
+        except Exception:  # noqa: BLE001
+            _prev = {}
+        if not (isinstance(_prev, dict) and _prev.get("status") == "executing"):
+            return ToolInvokeResult(
+                name=name, ok=False,
+                error=f"审批凭据已使用（ticket={approved_ticket_id}）",
+            )
+        _t.result = json.dumps({"status": "consumed"}, ensure_ascii=False)
+        db.flush()
         verify = False
 
     agent_obj = _resolve_agent(db, agent, agent_id)

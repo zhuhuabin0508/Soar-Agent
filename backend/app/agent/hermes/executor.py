@@ -1270,8 +1270,6 @@ class HermesAgentExecutor:
             })
             return
 
-        # 确认闸（与 tool_engine 同源策略）：trigger_workflow_skill 不经 tool_engine，
-        # 需在此按「目标工作流的图」判定；resume 是审批后的恢复，不重复拦。
         if (
             not resume_token
             and self.confirmation_config is not None
@@ -1282,6 +1280,7 @@ class HermesAgentExecutor:
             from app.agent.workflow_as_tool import workflow_danger, workflow_self_gates
             from app.core.tools.policy import SCENARIO_AGENT, requires_confirmation
             from app.models.workflow import Workflow
+            from app.platform.approval import create_tool_approval
 
             try:
                 _wf_id = int(workflow_id)
@@ -1292,18 +1291,51 @@ class HermesAgentExecutor:
                 if _wf is not None:
                     _danger = workflow_danger(_wf.graph_config)
                     if requires_confirmation(_danger, SCENARIO_AGENT) and not workflow_self_gates(_wf.graph_config):
+                        _ticket = create_tool_approval(
+                            self.db,
+                            tool_name=tc.name,
+                            arguments=tc.arguments if isinstance(tc.arguments, dict) else {},
+                            danger_level=_danger,
+                            agent_id=getattr(self.agent, "id", None),
+                            user_id=getattr(self.user, "id", None),
+                            session_id=self.session_id or None,
+                        )
+                        pending = {
+                            "status": "pending_approval",
+                            "ticket_id": _ticket.id,
+                            "tool": tc.name,
+                            "workflow_id": _wf_id,
+                            "danger_level": _danger,
+                            "arguments": tc.arguments if isinstance(tc.arguments, dict) else {},
+                            "message": (
+                                f"该工作流危险等级为 {_danger}，"
+                                f"需您在对话中确认后才会执行（工单 #{_ticket.id}）。"
+                            ),
+                            "hint": "请在对话界面点击「确认」或「拒绝」。",
+                        }
+                        content = json.dumps(pending, ensure_ascii=False)
                         self.messages.append({
                             "role": "tool",
                             "tool_call_id": tc.id,
                             "name": tc.name,
-                            "content": json.dumps({
-                                "status": "needs_confirmation",
-                                "tool": tc.name,
-                                "workflow_id": _wf_id,
-                                "danger_level": _danger,
-                                "message": f"该工作流危险等级为 {_danger}，需人工确认后才能执行。",
-                            }, ensure_ascii=False),
+                            "content": content,
                         })
+                        yield make_event(
+                            "tool_end",
+                            tool_name=tc.name,
+                            tool_call_id=tc.id,
+                            result=content,
+                            message=f"工具 {tc.name} 待确认",
+                        )
+                        yield make_event(
+                            "tool_confirm",
+                            tool_name=tc.name,
+                            tool_call_id=tc.id,
+                            message=pending["message"],
+                            args=pending["arguments"],
+                            ticket_id=_ticket.id,
+                            danger_level=_danger,
+                        )
                         return
 
         try:

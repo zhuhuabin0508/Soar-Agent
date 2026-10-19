@@ -86,10 +86,13 @@ def create_tool_approval(
     return ticket
 
 
-def _load_agent_tool_ticket(db: Session, ticket_id: int, *, agent_id: int):
+def _load_agent_tool_ticket(db: Session, ticket_id: int, *, agent_id: int, for_update: bool = False):
     from app.models.workflow_ban import ApprovalTicket
 
-    ticket = db.query(ApprovalTicket).filter(ApprovalTicket.id == ticket_id).first()
+    q = db.query(ApprovalTicket).filter(ApprovalTicket.id == ticket_id)
+    if for_update:
+        q = q.with_for_update()
+    ticket = q.first()
     if ticket is None:
         raise ValueError("确认工单不存在")
     if (ticket.kind or "") != KIND_AGENT_TOOL:
@@ -97,6 +100,75 @@ def _load_agent_tool_ticket(db: Session, ticket_id: int, *, agent_id: int):
     if ticket.agent_id is not None and int(ticket.agent_id) != int(agent_id):
         raise ValueError("工单与当前智能体不匹配")
     return ticket
+
+
+def _claim_pending_ticket(db: Session, ticket, *, user, decision: str, comment: str):
+    if ticket.status != "pending":
+        raise ValueError(f"工单已处理（{ticket.status}），不可重复操作")
+    if decision == "approved" and ticket.result is not None:
+        raise ValueError("工单已执行过，不可重复确认")
+    ticket.status = decision
+    ticket.approver = getattr(user, "username", None) or str(getattr(user, "id", ""))
+    ticket.approval_comment = comment
+    ticket.approved_at = beijing_now()
+    if decision == "approved":
+        ticket.result = json.dumps({"status": "executing"}, ensure_ascii=False)
+    db.flush()
+
+
+async def _execute_claimed_tool(db: Session, ticket, *, agent_id: int, user, args: dict) -> dict[str, Any]:
+    if (ticket.tool_name or "") == "trigger_workflow_skill":
+        from app.models.agent import Agent
+        from app.agent.hermes.skill_engine import WorkflowSkillBridge
+
+        agent = db.query(Agent).filter(Agent.id == (ticket.agent_id or agent_id)).first()
+        if agent is None:
+            return {"ok": False, "error": "Agent 不存在", "content": None, "raw_content": None}
+        bridge = WorkflowSkillBridge(db, agent, user)
+        resume_token = args.get("resume_token")
+        try:
+            if resume_token:
+                ctx = await bridge.resume_skill(resume_token, "approve")
+            else:
+                wf_id = int(args.get("workflow_id"))
+                payload = args.get("input", {})
+                ctx = await bridge.trigger_skill(
+                    workflow_id=wf_id,
+                    payload=payload if isinstance(payload, dict) else {},
+                )
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc), "content": None, "raw_content": None}
+        content = {
+            "status": ctx.status,
+            "skill_run_id": getattr(ctx, "skill_run_id", None),
+            "execution_id": getattr(ctx, "execution_id", None),
+            "node_outputs": getattr(ctx, "node_outputs", None),
+            "pending_approval": getattr(ctx, "pending_approval", None),
+        }
+        return {
+            "ok": ctx.status in ("completed", "interrupted"),
+            "error": "" if ctx.status in ("completed", "interrupted") else f"技能状态: {ctx.status}",
+            "content": content,
+            "raw_content": content,
+        }
+
+    from app.platform.tool_runtime import invoke_tool
+
+    inv = await invoke_tool(
+        ticket.tool_name,
+        args,
+        db=db,
+        agent_id=ticket.agent_id or agent_id,
+        user=user,
+        verify=False,
+        approved_ticket_id=ticket.id,
+    )
+    return {
+        "ok": inv.ok,
+        "error": inv.error,
+        "content": inv.content,
+        "raw_content": inv.raw_content,
+    }
 
 
 async def confirm_and_execute_tool(
@@ -108,19 +180,11 @@ async def confirm_and_execute_tool(
 ) -> dict[str, Any]:
     """对话内确认：当前用户批准后当场执行工具（一次性凭据）。"""
     from app.workflow.audit import write_audit
-    from app.platform.tool_runtime import invoke_tool
 
-    ticket = _load_agent_tool_ticket(db, ticket_id, agent_id=agent_id)
-    if ticket.status != "pending":
-        raise ValueError(f"工单已处理（{ticket.status}），不可重复确认")
-    if ticket.result is not None:
-        raise ValueError("工单已执行过，不可重复确认")
-
-    ticket.status = "approved"
-    ticket.approver = getattr(user, "username", None) or str(getattr(user, "id", ""))
-    ticket.approval_comment = "对话内确认"
-    ticket.approved_at = beijing_now()
-    ticket.result = json.dumps({"status": "executing"}, ensure_ascii=False)
+    ticket = _load_agent_tool_ticket(db, ticket_id, agent_id=agent_id, for_update=True)
+    _claim_pending_ticket(
+        db, ticket, user=user, decision="approved", comment="对话内确认",
+    )
     db.commit()
 
     try:
@@ -128,25 +192,13 @@ async def confirm_and_execute_tool(
     except Exception:  # noqa: BLE001
         args = {}
 
-    inv = await invoke_tool(
-        ticket.tool_name,
-        args,
-        db=db,
-        agent_id=ticket.agent_id or agent_id,
-        user=user,
-        verify=False,
-        approved_ticket_id=ticket.id,
+    payload = await _execute_claimed_tool(
+        db, ticket, agent_id=agent_id, user=user, args=args,
     )
-    payload = {
-        "ok": inv.ok,
-        "error": inv.error,
-        "content": inv.content,
-        "raw_content": inv.raw_content,
-    }
     try:
         ticket.result = json.dumps(payload, ensure_ascii=False, default=str)[:8000]
     except Exception:  # noqa: BLE001
-        ticket.result = json.dumps({"ok": inv.ok, "error": inv.error})[:8000]
+        ticket.result = json.dumps({"ok": payload.get("ok"), "error": payload.get("error")})[:8000]
     ticket.result_delivered = False
     db.commit()
 
@@ -160,7 +212,7 @@ async def confirm_and_execute_tool(
                 "result": "approved",
                 "tool_name": ticket.tool_name,
                 "agent_id": agent_id,
-                "ok": inv.ok,
+                "ok": payload.get("ok"),
             },
             operator=ticket.approver,
             user_id=getattr(user, "id", None),
@@ -169,7 +221,7 @@ async def confirm_and_execute_tool(
         logger.warning("写工具确认审计失败: %s", exc)
 
     return {
-        "ok": inv.ok,
+        "ok": bool(payload.get("ok")),
         "ticket_id": ticket.id,
         "tool_name": ticket.tool_name,
         "approver": ticket.approver,
@@ -189,14 +241,11 @@ def reject_tool_confirmation(
     """对话内拒绝：记录当前用户，不执行工具。"""
     from app.workflow.audit import write_audit
 
-    ticket = _load_agent_tool_ticket(db, ticket_id, agent_id=agent_id)
-    if ticket.status != "pending":
-        raise ValueError(f"工单已处理（{ticket.status}），不可重复操作")
-
-    ticket.status = "rejected"
-    ticket.approver = getattr(user, "username", None) or str(getattr(user, "id", ""))
-    ticket.approval_comment = comment or "对话内拒绝"
-    ticket.approved_at = beijing_now()
+    ticket = _load_agent_tool_ticket(db, ticket_id, agent_id=agent_id, for_update=True)
+    _claim_pending_ticket(
+        db, ticket, user=user, decision="rejected",
+        comment=comment or "对话内拒绝",
+    )
     payload = {
         "ok": False,
         "status": "rejected",

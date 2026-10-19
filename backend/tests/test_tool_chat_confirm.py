@@ -26,10 +26,18 @@ def _ticket(**kwargs):
     return SimpleNamespace(**defaults)
 
 
+def _db_with_ticket(ticket):
+    db = MagicMock()
+    q = db.query.return_value
+    q.filter.return_value = q
+    q.with_for_update.return_value = q
+    q.first.return_value = ticket
+    return db
+
+
 def test_reject_tool_records_approver():
     ticket = _ticket()
-    db = MagicMock()
-    db.query.return_value.filter.return_value.first.return_value = ticket
+    db = _db_with_ticket(ticket)
     user = SimpleNamespace(id=7, username="ops_alice")
 
     out = reject_tool_confirmation(db, ticket_id=9, agent_id=3, user=user, comment="误报")
@@ -42,8 +50,7 @@ def test_reject_tool_records_approver():
 
 def test_confirm_and_execute_claims_then_runs():
     ticket = _ticket()
-    db = MagicMock()
-    db.query.return_value.filter.return_value.first.return_value = ticket
+    db = _db_with_ticket(ticket)
     user = SimpleNamespace(id=7, username="ops_alice")
     inv = SimpleNamespace(ok=True, error="", content={"status": "success"}, raw_content={"status": "success"})
 
@@ -63,3 +70,60 @@ def test_confirm_and_execute_claims_then_runs():
     assert payload["ok"] is True
     mocked.assert_awaited()
     assert mocked.await_args.kwargs.get("approved_ticket_id") == 9
+
+
+def test_confirm_rejects_non_pending():
+    ticket = _ticket(status="approved", result='{"status":"executing"}')
+    db = _db_with_ticket(ticket)
+    user = SimpleNamespace(id=7, username="ops_alice")
+    try:
+        asyncio.run(confirm_and_execute_tool(db, ticket_id=9, agent_id=3, user=user))
+        assert False, "should raise"
+    except ValueError as exc:
+        assert "不可重复" in str(exc) or "已处理" in str(exc)
+
+
+def test_confirm_trigger_workflow_skill_uses_bridge():
+    ticket = _ticket(
+        tool_name="trigger_workflow_skill",
+        tool_arguments='{"workflow_id": 12, "input": {"ip": "1.2.3.4"}}',
+    )
+    agent = SimpleNamespace(id=3, enabled_workflows=None)
+    ticket_q = MagicMock()
+    ticket_q.filter.return_value = ticket_q
+    ticket_q.with_for_update.return_value = ticket_q
+    ticket_q.first.return_value = ticket
+    agent_q = MagicMock()
+    agent_q.filter.return_value = agent_q
+    agent_q.first.return_value = agent
+    db = MagicMock()
+
+    def _query(model):
+        mod = getattr(model, "__name__", "")
+        if mod == "ApprovalTicket":
+            return ticket_q
+        return agent_q
+
+    db.query.side_effect = _query
+    user = SimpleNamespace(id=7, username="ops_alice")
+    ctx = SimpleNamespace(
+        status="completed",
+        skill_run_id="abc",
+        execution_id=99,
+        node_outputs={"a": 1},
+        pending_approval=None,
+    )
+    bridge = MagicMock()
+    bridge.trigger_skill = AsyncMock(return_value=ctx)
+
+    with patch(
+        "app.agent.hermes.skill_engine.WorkflowSkillBridge",
+        return_value=bridge,
+    ):
+        out = asyncio.run(
+            confirm_and_execute_tool(db, ticket_id=9, agent_id=3, user=user)
+        )
+
+    assert out["ok"] is True
+    assert out["result"]["content"]["status"] == "completed"
+    bridge.trigger_skill.assert_awaited()
