@@ -278,7 +278,8 @@ class ToolRegistryBuilder:
         主配置入口为 ``Agent.enabled_devices``（设备 id 列表）。勾选设备后装配：
           1. 枚举工具 ``list_devices`` / ``list_device_actions``（作用域收窄到勾选设备）；
           2. 每台「启用且在线」设备的所有启用动作投影 ``device_{device_id}_{action_id}``；
-          3. 门面 ``device_action``（作用域收窄，防越权操作未勾选设备）。
+          3. 门面 ``device_action``（作用域收窄，防越权操作未勾选设备）；
+          4. 语义工具 ``block_ip``（**仅当存在「启用+在线+有 block_ip 动作」的设备**才装配，§11.1 = A2）。
 
         既有 Agent 无 enabled_devices 列值（NULL）→ 空 → 不装配任何 device 工具，
         保证 A-4 逐字节回归安全。
@@ -290,6 +291,7 @@ class ToolRegistryBuilder:
             return
 
         from app.devices.as_tool import (
+            build_block_ip_tool,
             build_device_action_facade_tool, build_device_action_tool,
             build_list_device_actions_tool, build_list_devices_tool,
             is_core_write_action, is_write_action,
@@ -310,6 +312,7 @@ class ToolRegistryBuilder:
             .filter(Device.id.in_(allowed), Device.enabled.is_(True), Device.status == "online")
             .all()
         )
+        has_blockable = False
         for device in devices:
             actions = (
                 self.db.query(DeviceAction)
@@ -317,6 +320,10 @@ class ToolRegistryBuilder:
                 .all()
             )
             for action in actions:
+                # A2 判定：任一启用的 block_ip 动作 → 具备语义封禁能力
+                # （须在 continue 之前，防止 block_ip 被非核心写过滤时漏标）
+                if (getattr(action, "action_type", "") or "").lower() == "block_ip":
+                    has_blockable = True
                 if is_write_action(action) and not is_core_write_action(action):
                     continue
                 desc = build_device_action_tool(
@@ -328,3 +335,7 @@ class ToolRegistryBuilder:
             registry["device_action"] = build_device_action_facade_tool(
                 self.db, allowed, agent_id=agent_id,
             )
+
+        # 语义工具 block_ip：仅当范围内存在可封设备才装配（§11.1 = A2）
+        if has_blockable:
+            registry["block_ip"] = build_block_ip_tool(self.db, self.agent, allowed)

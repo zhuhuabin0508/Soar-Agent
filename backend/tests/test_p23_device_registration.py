@@ -253,3 +253,35 @@ class TestDerivedGovernance:
         # 门面：写动作
         assert "device_action" in never
         assert "device_action" in verify
+
+
+# ============================================================================
+# P2-4b：语义 block_ip 装配（§11.1 = A2）
+# ============================================================================
+
+class TestBlockIpAssembly:
+    def test_assembled_when_blockable_device_exists(self):
+        db = _fake_db([_device(id=3)], [_action(id=7, device_id=3, action_type="block_ip")])
+        registry = ToolRegistryBuilder(db, _agent(enabled_devices=[3])).build()
+        assert "block_ip" in registry
+        assert registry["block_ip"].danger_level == "high"
+
+    def test_not_assembled_when_no_block_action(self):
+        db = _fake_db(
+            [_device(id=3)],
+            [_action(id=7, device_id=3, action_type="query_logs",
+                     category="query", risk_level="readonly")],
+        )
+        registry = ToolRegistryBuilder(db, _agent(enabled_devices=[3])).build()
+        assert "block_ip" not in registry
+
+    def test_not_assembled_when_device_offline(self):
+        db = _fake_db([_device(id=3, status="offline")],
+                      [_action(id=7, device_id=3, action_type="block_ip")])
+        registry = ToolRegistryBuilder(db, _agent(enabled_devices=[3])).build()
+        assert "block_ip" not in registry
+
+    def test_not_assembled_without_enabled_devices(self):
+        db = _fake_db([_device(id=3)], [_action(id=7, device_id=3, action_type="block_ip")])
+        registry = ToolRegistryBuilder(db, _agent(enabled_devices=[])).build()
+        assert "block_ip" not in registry
