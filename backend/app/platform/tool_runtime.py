@@ -49,6 +49,7 @@ async def invoke_tool(
     user=None,
     log_handler=None,
     verify: bool = True,
+    approved_ticket_id: Optional[int] = None,      # 审批通过后的执行凭据
 ) -> ToolInvokeResult:
     """经与 Agent 相同的注册表与治理链执行单个工具。
 
@@ -60,6 +61,8 @@ async def invoke_tool(
         user: 调用用户（工具沙箱 current_user_id / 文件归属）
         verify: 是否启用写工具**证据验证**。无证据上下文的调用方（工作流 SOP /
                 脚本直调 / 管理测试）传 False，由 SOP 或人工保证
+        approved_ticket_id: 审批工单 id（阶段 6b）。校验通过（status=approved 且
+                工具名一致）后放行确认闸并跳过证据链
 
     注：不传 middleware/guardrail/budget —— 前两者是 per-turn 循环守卫（单次调用
         无意义），budget 需 Execution.variables 挂载点（无则降级为截断）。
@@ -67,6 +70,17 @@ async def invoke_tool(
     from app.agent.hermes.tool_engine import HermesToolEngine
     from app.agent.hermes.types import ToolCall
     from app.agent.hermes.verification import VerificationConfig
+
+    if approved_ticket_id is not None:
+        from app.models.workflow_ban import ApprovalTicket
+
+        _t = db.query(ApprovalTicket).filter(ApprovalTicket.id == approved_ticket_id).first()
+        if _t is None or _t.status != "approved" or (_t.tool_name or "") != name:
+            return ToolInvokeResult(
+                name=name, ok=False,
+                error=f"审批凭据无效（ticket={approved_ticket_id}）",
+            )
+        verify = False        # 人工已确认，跳过证据链
 
     agent_obj = _resolve_agent(db, agent, agent_id)
 
@@ -77,6 +91,7 @@ async def invoke_tool(
         log_handler=log_handler,
         user=user,
         verification_config=(VerificationConfig() if verify else None),
+        approved_ticket_id=approved_ticket_id,
     )
     if not engine.has_tool(name):
         return ToolInvokeResult(

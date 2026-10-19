@@ -102,6 +102,7 @@ class HermesToolEngine:
         budget_config: Optional[BudgetConfig] = None,
         verification_config: Optional[VerificationConfig] = None,
         confirmation_config: Optional["ConfirmationConfig"] = None,
+        approved_ticket_id: Optional[int] = None,
         tool_timeout_sec: float = 30.0,
     ):
         """初始化工具引擎。
@@ -128,6 +129,7 @@ class HermesToolEngine:
         self.budget_config = budget_config
         self.verification_config = verification_config
         self.confirmation_config = confirmation_config
+        self.approved_ticket_id = approved_ticket_id
 
         # per-turn 状态（由 reset_for_turn 重置/注入）
         self.guardrail_controller: Optional[ToolCallGuardrailController] = (
@@ -590,24 +592,39 @@ class HermesToolEngine:
                     guardrail_action="allow",
                 )
 
-        # ===== 确认闸（阶段 1：默认关闭）=====
-        if self.confirmation_config is not None and self.confirmation_config.enabled:
+        # ===== 确认闸（阶段 6b）=====
+        if (
+            self.confirmation_config is not None
+            and self.confirmation_config.enabled
+            and self.approved_ticket_id is None        # 已批准工单执行 → 放行
+        ):
             from app.core.tools.policy import SCENARIO_AGENT, requires_confirmation
 
             _danger = self._danger_levels.get(effective_name, "low")
             # 自门控豁免：工作流工具且图内已有审批节点 → 不再二次确认
             if requires_confirmation(_danger, SCENARIO_AGENT) and effective_name not in self._self_gating:
                 import json as _json
+
+                from app.platform.approval import create_tool_approval
+
+                _ticket = create_tool_approval(
+                    self.db,
+                    tool_name=effective_name,
+                    arguments=tc.arguments,
+                    danger_level=_danger,
+                    agent_id=getattr(self.agent, "id", None),
+                    user_id=self.user_id,
+                    session_id=getattr(self.middleware_ctx, "session_id", None),
+                )
                 _msg = {
-                    "status": "needs_confirmation",
+                    "status": "pending_approval",
+                    "ticket_id": _ticket.id,
                     "tool": effective_name,
                     "danger_level": _danger,
-                    "message": (
-                        f"该操作危险等级为 {_danger}，需人工确认后才能执行。"
-                    ),
-                    "hint": "请先向用户说明将要执行的动作并取得确认（可用 clarify 工具）。",
+                    "message": f"该操作危险等级为 {_danger}，已提交人工确认（工单 #{_ticket.id}）。",
+                    "hint": "请告知用户已提交审批，待审批中心通过后由后台执行。",
                 }
-                self._log_tool("warning", f"确认闸拦截: {effective_name} (danger={_danger})")
+                self._log_tool("warning", f"确认闸拦截并建单: {effective_name} ticket={_ticket.id}")
                 return ToolResult(
                     tool_call_id=tc.id,
                     name=tc.name,

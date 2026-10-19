@@ -504,6 +504,30 @@ def _apply_approval(
     if ticket.status != "pending":
         raise HTTPException(status_code=400, detail=f"工单已处理（{_TICKET_STATUS_LABELS.get(ticket.status, ticket.status)}），不可重复操作")
 
+    # --- Agent 高危工具确认工单（kind=agent_tool）：不恢复工作流实例，改为派任务执行 ---
+    if (ticket.kind or "workflow") == "agent_tool":
+        ticket.status = result
+        ticket.approver = user.username
+        ticket.approval_comment = comment or ""
+        ticket.approved_at = beijing_now()
+        db.commit()
+
+        if result == "approved":
+            from app.tasks.approval_tasks import execute_approved_tool
+            execute_approved_tool.delay(ticket.id)
+
+        write_audit(
+            db, action="approval", resource_type="approval_ticket", resource_id=ticket.id,
+            detail={"result": result, "kind": "agent_tool", "tool_name": ticket.tool_name,
+                    "comment": comment},
+            operator=user.username, ip_address=request.client.host if request.client else "",
+            user_id=user.id,
+        )
+        return {
+            "ok": True, "ticket_id": ticket.id, "result": result,
+            "kind": "agent_tool", "dispatched": result == "approved",
+        }
+
     instance = db.query(WorkflowInstance).filter(WorkflowInstance.id == ticket.workflow_instance_id).first()
     if instance is None:
         raise HTTPException(status_code=404, detail="关联工作流实例不存在")
