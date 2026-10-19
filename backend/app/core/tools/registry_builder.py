@@ -170,6 +170,8 @@ class ToolRegistryBuilder:
                 deferrable=gov["deferrable"],
                 verification=gov["verification"],
                 untrusted=untrusted,
+                danger_level=("high" if (gov["mutating"] and gov["verification"]) else "low"),
+                required_permission=(("device", "edit") if gov["mutating"] else None),
             )
 
     def _register_kb_tools(self, registry: dict[str, ToolDescriptor]) -> None:
@@ -265,6 +267,8 @@ class ToolRegistryBuilder:
                 parallel_safe=False,
                 mutating=True,
                 deferrable=True,
+                danger_level="high",        # 保守：阶段 5 改为「按图推导」
+                required_permission=("workflow", "execute"),
                 parameters=parameters,
             )
 

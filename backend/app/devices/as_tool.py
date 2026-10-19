@@ -101,6 +101,7 @@ def build_device_action_tool(
         parallel_safe=not write,
         deferrable=not write,
         verification="device_action" if write else None,
+        danger_level="high" if write else "low",
     )
 
 
@@ -284,6 +285,7 @@ def build_device_action_facade_tool(
         parallel_safe=False,
         deferrable=False,
         verification="device_action",
+        danger_level="high",
     )
 
 
@@ -473,4 +475,5 @@ def build_block_ip_tool(db, agent, allowed_device_ids: Optional[set[int]] = None
         parallel_safe=False,
         deferrable=False,
         verification="block_ip",
+        danger_level="high",
     )

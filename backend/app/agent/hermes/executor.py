@@ -107,6 +107,10 @@ class HermesAgentExecutor:
         self.middleware_registry = MiddlewareRegistry.from_agent_config(tool_configs)
         self.guardrail_config = ToolCallGuardrailConfig.from_mapping(tool_configs.get("guardrails"))
         self.verification_config = VerificationConfig.from_mapping(tool_configs.get("verification"))
+        from app.core.tools.policy import ConfirmationConfig
+        self.confirmation_config = ConfirmationConfig.from_mapping(
+            tool_configs.get("confirmation") if isinstance(tool_configs, dict) else None
+        )
         # 模型上下文窗口未存库，用默认预算（200K token 基准；budget_for_context_window(None) 降级为 DEFAULT_BUDGET）
         self.budget_config = budget_for_context_window(None)
 
@@ -122,6 +126,7 @@ class HermesAgentExecutor:
             guardrail_config=self.guardrail_config,
             budget_config=self.budget_config,
             verification_config=self.verification_config,
+            confirmation_config=self.confirmation_config,
         )
 
         # 绑定工具到 LLM

@@ -101,6 +101,7 @@ class HermesToolEngine:
         guardrail_config: Optional[ToolCallGuardrailConfig] = None,
         budget_config: Optional[BudgetConfig] = None,
         verification_config: Optional[VerificationConfig] = None,
+        confirmation_config: Optional["ConfirmationConfig"] = None,
         tool_timeout_sec: float = 30.0,
     ):
         """初始化工具引擎。
@@ -126,6 +127,7 @@ class HermesToolEngine:
         self.middleware_registry = middleware_registry
         self.budget_config = budget_config
         self.verification_config = verification_config
+        self.confirmation_config = confirmation_config
 
         # per-turn 状态（由 reset_for_turn 重置/注入）
         self.guardrail_controller: Optional[ToolCallGuardrailController] = (
@@ -153,6 +155,7 @@ class HermesToolEngine:
         self._no_effect: frozenset[str] = frozenset()
         self._mutating_tool_names: frozenset[str] = frozenset()
         self._file_mutating_tool_names: frozenset[str] = frozenset()
+        self._danger_levels: dict[str, str] = {}
         self._build_registry()
 
     def reset_for_turn(
@@ -180,6 +183,7 @@ class HermesToolEngine:
 
     def _build_registry(self) -> None:
         from app.core.tools.derive import (
+            danger_levels,
             deferrable_names,
             file_mutating_tool_names,
             mutating_tool_names,
@@ -202,6 +206,7 @@ class HermesToolEngine:
         self._no_effect = no_effect_names(descriptors)
         self._mutating_tool_names = mutating_tool_names(descriptors)
         self._file_mutating_tool_names = file_mutating_tool_names(descriptors)
+        self._danger_levels = danger_levels(descriptors)
         if self.guardrail_controller is not None:
             self.guardrail_controller.set_derived_sets(
                 mutating=self._mutating_tool_names,
@@ -580,6 +585,31 @@ class HermesToolEngine:
                     is_error=True,
                     duration_ms=duration_ms,
                     guardrail_action="allow",
+                )
+
+        # ===== 确认闸（阶段 1：默认关闭）=====
+        if self.confirmation_config is not None and self.confirmation_config.enabled:
+            from app.core.tools.policy import SCENARIO_AGENT, requires_confirmation
+
+            _danger = self._danger_levels.get(effective_name, "low")
+            if requires_confirmation(_danger, SCENARIO_AGENT):
+                import json as _json
+                _msg = {
+                    "status": "needs_confirmation",
+                    "tool": effective_name,
+                    "danger_level": _danger,
+                    "message": (
+                        f"该操作危险等级为 {_danger}，需人工确认后才能执行。"
+                    ),
+                    "hint": "请先向用户说明将要执行的动作并取得确认（可用 clarify 工具）。",
+                }
+                self._log_tool("warning", f"确认闸拦截: {effective_name} (danger={_danger})")
+                return ToolResult(
+                    tool_call_id=tc.id,
+                    name=tc.name,
+                    content=_json.dumps(_msg, ensure_ascii=False),
+                    is_error=False,
+                    duration_ms=int((time.time() - start_time) * 1000),
                 )
 
         # 5. 执行工具

@@ -49,3 +49,8 @@ def file_mutating_tool_names(r: Registry) -> frozenset[str]:
         if d.mutating and (d.verification or d.name in ("record_ban", "save_memory"))
     )
     return derived | LEGACY_FILE_MUTATING
+
+
+def danger_levels(r: Registry) -> dict[str, str]:
+    """工具名 → danger_level（来自描述符声明，缺省 low）。"""
+    return {n: (getattr(d, "danger_level", None) or "low") for n, d in r.items()}
