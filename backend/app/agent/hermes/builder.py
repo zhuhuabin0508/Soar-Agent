@@ -18,11 +18,9 @@
 import ast
 import logging
 
-from app.core.permissions import DEFAULT_ROLES, has_permission, migrate_permissions
 from app.core.tool_runner import CodeValidationError, validate_tool_code
 from app.core.tools.catalog import ToolCatalog
 from app.core.tools.types import TOOL_SOURCE_CUSTOM
-from app.models.role import Role
 
 logger = logging.getLogger(__name__)
 
@@ -69,18 +67,10 @@ _AGENT_FIELDS = set(_AGENT_DEFAULTS) | {
 
 def _check_permission(db, user, module: str, action: str) -> None:
     """对齐 dependencies.require_permission 的权限矩阵校验（供框架工具复用）。"""
-    from app.dependencies import is_admin
-    if is_admin(user, db):
+    from app.core.tools.authz import user_may_call
+
+    if user_may_call(user, db, (module, action)):
         return
-    if getattr(user, "role_id", None):
-        role = db.query(Role).filter(Role.id == user.role_id).first()
-        if role and has_permission(migrate_permissions(role.permissions), module, action):
-            return
-    for default_role in DEFAULT_ROLES:
-        if default_role["name"] == user.role:
-            if has_permission(default_role["permissions"], module, action):
-                return
-            break
     raise PermissionError(f"权限不足：需要 {module}:{action} 权限（仅管理员可执行此操作）")
 
 

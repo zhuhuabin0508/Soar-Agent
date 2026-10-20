@@ -84,9 +84,21 @@ def test_confirm_rejects_non_pending():
 
 
 def test_confirm_trigger_workflow_skill_uses_bridge():
+    from datetime import timedelta
+
+    from app.core.timezone import beijing_now
+    from app.platform.approval import make_dedup_key
+
+    args = {"workflow_id": 12, "input": {"ip": "1.2.3.4"}}
     ticket = _ticket(
         tool_name="trigger_workflow_skill",
-        tool_arguments='{"workflow_id": 12, "input": {"ip": "1.2.3.4"}}',
+        tool_arguments=json.dumps(args, ensure_ascii=False),
+        requested_by=7,
+        session_id="",
+        deadline=beijing_now() + timedelta(minutes=10),
+        dedup_key=make_dedup_key(
+            tool_name="trigger_workflow_skill", arguments=args, agent_id=3, session_id="",
+        ),
     )
     agent = SimpleNamespace(id=3, enabled_workflows=None)
     ticket_q = MagicMock()
@@ -105,7 +117,7 @@ def test_confirm_trigger_workflow_skill_uses_bridge():
         return agent_q
 
     db.query.side_effect = _query
-    user = SimpleNamespace(id=7, username="ops_alice")
+    user = SimpleNamespace(id=7, username="ops_alice", role="analyst", role_id=None)
     ctx = SimpleNamespace(
         status="completed",
         skill_run_id="abc",

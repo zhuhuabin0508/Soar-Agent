@@ -27,23 +27,18 @@ def test_invoke_tool_rejects_invalid_ticket():
     assert "审批凭据无效" in r.error
 
 
-def test_invoke_tool_consumes_executing_ticket():
+def test_invoke_tool_keeps_executing_ticket_until_gateway():
     ticket = SimpleNamespace(
         id=2, status="approved", tool_name="block_ip",
         result='{"status":"executing"}',
     )
     db = _db_with_ticket(ticket)
 
-    async def _fake_engine(*args, **kwargs):
-        class _E:
-            def has_tool(self, name):
-                return False
-        return _E()
-
     from unittest.mock import patch
     with patch("app.agent.hermes.tool_engine.HermesToolEngine", side_effect=lambda *a, **k: type("E", (), {"has_tool": lambda self, n: False})()):
         r = asyncio.run(invoke_tool("block_ip", {}, db=db, approved_ticket_id=2))
-    assert ticket.result == '{"status": "consumed"}' or '"consumed"' in str(ticket.result)
+    assert "executing" in str(ticket.result)
+    assert "consumed" not in str(ticket.result)
     assert r.ok is False
     assert "不在注册表" in r.error
 

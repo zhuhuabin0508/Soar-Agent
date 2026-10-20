@@ -50,6 +50,7 @@ class ToolRegistryBuilder:
             self.user_id = user_id
         else:
             self.user_id = getattr(user, "id", None) if user is not None else None
+        self.user = user
         self._preset_index: Optional[dict[str, dict]] = None
 
     def build(self) -> dict[str, ToolDescriptor]:
@@ -59,7 +60,32 @@ class ToolRegistryBuilder:
         self._register_asset_tools(registry)
         self._register_workflow_tools(registry)
         self._register_device_tools(registry)
+        if self.user is not None:
+            registry = self._filter_for_user(registry)
         return registry
+
+    def _filter_for_user(self, registry: dict[str, ToolDescriptor]) -> dict[str, ToolDescriptor]:
+        from app.core.tools.authz import user_may_call
+
+        kept: dict[str, ToolDescriptor] = {}
+        for name, desc in registry.items():
+            if (desc.danger_level or "low").lower() == "critical":
+                logger.info(
+                    "工具因最高危未装配到对话: name=%s user_id=%s",
+                    name,
+                    getattr(self.user, "id", None),
+                )
+                continue
+            if user_may_call(self.user, self.db, desc.required_permission):
+                kept[name] = desc
+            else:
+                logger.info(
+                    "工具因角色权限未装配: name=%s need=%s user_id=%s",
+                    name,
+                    desc.required_permission,
+                    getattr(self.user, "id", None),
+                )
+        return kept
 
     def _preset_meta(self, name: str) -> dict:
         if self._preset_index is None:
@@ -144,6 +170,11 @@ class ToolRegistryBuilder:
 
             preset = self._preset_meta(name)
             gov = self._governance_from_preset(name, preset)
+            declared = preset.get("required_permission")
+            if isinstance(declared, (list, tuple)) and len(declared) == 2:
+                required_permission = (str(declared[0]), str(declared[1]))
+            else:
+                required_permission = ("tool", "execute")
             if not preset:
                 gov["parallel_safe"] = self._resolve_parallel_safe(name, {})
             # deferrable 与 tool_search 原 source 判定逐字节等价：
@@ -171,7 +202,7 @@ class ToolRegistryBuilder:
                 verification=gov["verification"],
                 untrusted=untrusted,
                 danger_level=("high" if (gov["mutating"] and gov["verification"]) else "low"),
-                required_permission=(("device", "edit") if gov["mutating"] else None),
+                required_permission=required_permission,
             )
 
     def _register_kb_tools(self, registry: dict[str, ToolDescriptor]) -> None:
@@ -192,6 +223,7 @@ class ToolRegistryBuilder:
                 source="kb",
                 parallel_safe=True,
                 untrusted=True,
+                required_permission=("knowledge_base", "view"),
             )
         file_tool = _build_file_query_tool(enabled_kbs)
         if file_tool is not None:
@@ -203,6 +235,7 @@ class ToolRegistryBuilder:
                 source="kb",
                 parallel_safe=True,
                 untrusted=True,
+                required_permission=("knowledge_base", "view"),
             )
 
     def _register_asset_tools(self, registry: dict[str, ToolDescriptor]) -> None:
@@ -226,6 +259,7 @@ class ToolRegistryBuilder:
                 parallel_safe=gov.get("parallel_safe", True),
                 mutating=gov.get("mutating", False),
                 untrusted=True,
+                required_permission=("asset_list", "view"),
             )
 
     def _register_workflow_tools(self, registry: dict[str, ToolDescriptor]) -> None:
@@ -271,7 +305,7 @@ class ToolRegistryBuilder:
                 mutating=True,
                 deferrable=True,
                 danger_level=workflow_danger(wf.graph_config),
-                required_permission=("workflow", "execute"),
+                required_permission=("workflow_list", "execute"),
                 extra={"self_gating": workflow_self_gates(wf.graph_config)},
                 parameters=parameters,
             )

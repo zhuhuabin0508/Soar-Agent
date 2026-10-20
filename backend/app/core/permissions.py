@@ -269,6 +269,26 @@ DEFAULT_ROLES: list[dict[str, Any]] = [
 ]
 
 
+def resolve_user_permissions(user, db) -> dict[str, list[str]]:
+    """当前用户的模块权限。超管为全量矩阵，其余取角色或默认角色。"""
+    if user is None:
+        return {}
+    from app.dependencies import is_admin
+    from app.models.role import Role
+
+    if is_admin(user, db):
+        return {mod: list(actions) for mod, actions in PERMISSION_MODULES.items()}
+    if getattr(user, "role_id", None):
+        role = db.query(Role).filter(Role.id == user.role_id).first()
+        if role is not None:
+            return migrate_permissions(role.permissions)
+    role_name = getattr(user, "role", None)
+    for default_role in DEFAULT_ROLES:
+        if default_role["name"] == role_name:
+            return {k: list(v) for k, v in default_role["permissions"].items()}
+    return {}
+
+
 def has_permission(permissions: dict[str, list[str]] | None, module: str, action: str) -> bool:
     """检查权限矩阵是否包含指定模块的动作。
 

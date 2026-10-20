@@ -33,7 +33,9 @@ def write_audit(
         operator: 操作人（系统节点为 "system"，人工操作为账号名）。
         ip_address: 来源 IP（人工操作记录；系统操作为空）。
     """
+    nested = None
     try:
+        nested = db.begin_nested()
         db.add(AuditLog(
             user_id=user_id,
             username=operator,
@@ -44,8 +46,13 @@ def write_audit(
             ip_address=ip_address or "",
             result=result,
         ))
+        nested.commit()
         if commit:
             db.commit()
     except Exception:  # noqa: BLE001
-        db.rollback()
         logger.exception("审计日志写入失败: action=%s resource=%s", action, resource_id)
+        if nested is not None:
+            try:
+                nested.rollback()
+            except Exception:  # noqa: BLE001
+                pass

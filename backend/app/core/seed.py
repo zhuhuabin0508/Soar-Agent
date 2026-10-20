@@ -652,6 +652,7 @@ def ensure_seed_data() -> None:
 
     # 3.5 智能体创建助手（幂等：按 name 查询，不存在才创建）
     ensure_builder_agent()
+    ensure_platform_agent()
 
     # 4. 预设资产类型模板（幂等：按 code 查询，不存在才插入）
     ensure_preset_asset_templates()
@@ -818,6 +819,68 @@ def ensure_builder_agent() -> None:
         logger.info("已创建智能体「%s」: id=%s, engine=hermes", BUILDER_AGENT_NAME, agent.id)
     except Exception as e:  # noqa: BLE001
         logger.exception("智能体创建助手 seed 失败: %s", e)
+        db.rollback()
+    finally:
+        db.close()
+
+
+PLATFORM_AGENT_NAME = "统一对话"
+_PLATFORM_QUERY_TOOLS = [
+    "check_whitelist",
+    "get_asset_info",
+    "get_threat_intel",
+    "check_subnet",
+    "query_banned_ip",
+    "query_asset",
+    "list_assets",
+]
+
+
+def ensure_platform_agent() -> None:
+    """幂等创建已发布的统一对话入口。白名单只有查询工具，不挂设备写。"""
+    db: Session = SessionLocal()
+    try:
+        from app.models.agent import Agent as AgentModel
+        from app.models.llm_config import LLMConfig
+        from app.models.user import User
+
+        existing = db.query(AgentModel).filter(AgentModel.name == PLATFORM_AGENT_NAME).first()
+        if existing is not None:
+            return
+        cfg = db.query(LLMConfig).order_by(LLMConfig.id.asc()).first()
+        admin = db.query(User).filter(User.role == "admin").order_by(User.id.asc()).first()
+        agent = AgentModel(
+            name=PLATFORM_AGENT_NAME,
+            description="平台统一入口。只查询已挂载的只读工具，封禁和设备写入请使用处置智能体或工作流。",
+            model_config_id=cfg.id if cfg else None,
+            system_prompt=(
+                "你是平台统一对话入口。只能使用已经挂载的查询工具回答问题。"
+                "不要调用封禁、设备写入或修改类操作。需要处置时，告诉用户去对应的处置智能体或已发布工作流。"
+            ),
+            temperature=0.3,
+            max_tokens=2048,
+            enabled_tools=list(_PLATFORM_QUERY_TOOLS),
+            enabled_devices=[],
+            enabled_workflows=[],
+            max_iterations=8,
+            greeting="你好，我是统一对话。可以帮你查资产、威胁情报和白名单。封禁请使用处置智能体。",
+            suggested_questions=[
+                "查一下这个 IP 是否在白名单",
+                "这个 IP 的威胁情报是什么",
+                "帮我查这个 IP 对应的资产",
+            ],
+            context_turns=10,
+            variables={"platform_entry": True, "_publish_status": "published"},
+            tool_configs={},
+            engine="hermes",
+            publish_status="published",
+            created_by=admin.id if admin else None,
+        )
+        db.add(agent)
+        db.commit()
+        logger.info("已创建智能体「%s」: id=%s", PLATFORM_AGENT_NAME, agent.id)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("统一对话 seed 失败: %s", e)
         db.rollback()
     finally:
         db.close()

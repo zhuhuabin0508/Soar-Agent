@@ -238,6 +238,7 @@ HERMES_BUILTIN_TOOLS: list[dict[str, Any]] = [
         "parallel_safe": False,
         "deferrable": False,
         "verification": "block_ip",
+        "required_permission": ("device", "edit"),
     },
     {
         "name": "read_document",

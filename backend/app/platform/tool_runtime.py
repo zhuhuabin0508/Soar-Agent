@@ -95,8 +95,6 @@ async def invoke_tool(
                 name=name, ok=False,
                 error=f"审批凭据已使用（ticket={approved_ticket_id}）",
             )
-        _t.result = json.dumps({"status": "consumed"}, ensure_ascii=False)
-        db.flush()
         verify = False
 
     agent_obj = _resolve_agent(db, agent, agent_id)

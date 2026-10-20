@@ -102,6 +102,7 @@ def build_device_action_tool(
         deferrable=not write,
         verification="device_action" if write else None,
         danger_level="high" if write else "low",
+        required_permission=("device", "edit") if write else ("device", "view"),
     )
 
 
@@ -143,6 +144,7 @@ def build_list_devices_tool(db, allowed_device_ids: Optional[set[int]] = None) -
         mutating=False,
         parallel_safe=True,
         deferrable=False,
+        required_permission=("device", "view"),
     )
 
 
@@ -206,6 +208,7 @@ def build_list_device_actions_tool(db, allowed_device_ids: Optional[set[int]] = 
         mutating=False,
         parallel_safe=True,
         deferrable=False,
+        required_permission=("device", "view"),
     )
 
 
@@ -286,6 +289,7 @@ def build_device_action_facade_tool(
         deferrable=False,
         verification="device_action",
         danger_level="high",
+        required_permission=("device", "edit"),
     )
 
 
@@ -480,4 +484,5 @@ def build_block_ip_tool(db, agent, allowed_device_ids: Optional[set[int]] = None
         deferrable=False,
         verification="block_ip",
         danger_level="high",
+        required_permission=("device", "edit"),
     )

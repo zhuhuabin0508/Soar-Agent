@@ -18,6 +18,7 @@ from app.core.timezone import beijing_now
 logger = logging.getLogger(__name__)
 
 DEDUP_WINDOW_MINUTES = 30
+CREDENTIAL_TTL_MINUTES = 15
 
 KIND_AGENT_TOOL = "agent_tool"
 
@@ -64,6 +65,8 @@ def create_tool_approval(
         .first()
     )
     if existing is not None:
+        existing.deadline = beijing_now() + timedelta(minutes=CREDENTIAL_TTL_MINUTES)
+        db.commit()
         return existing
 
     ticket = ApprovalTicket(
@@ -78,7 +81,7 @@ def create_tool_approval(
         requested_by=user_id,
         dedup_key=key,
         alert_summary=f"Agent 高危工具确认：{tool_name}（danger={danger_level}）",
-        deadline=beijing_now() + timedelta(hours=24),
+        deadline=beijing_now() + timedelta(minutes=CREDENTIAL_TTL_MINUTES),
     )
     db.add(ticket)
     db.commit()
@@ -120,6 +123,34 @@ async def _execute_claimed_tool(db: Session, ticket, *, agent_id: int, user, arg
     if (ticket.tool_name or "") == "trigger_workflow_skill":
         from app.models.agent import Agent
         from app.agent.hermes.skill_engine import WorkflowSkillBridge
+        from app.agent.workflow_as_tool import workflow_danger, workflow_self_gates
+        from app.core.tools.call_gateway import authorize_tool_call
+        from app.models.workflow import Workflow
+
+        _danger = "high"
+        _self_gating = False
+        _wf = None
+        try:
+            _wf_id = int(args.get("workflow_id"))
+        except (TypeError, ValueError):
+            _wf_id = None
+        if _wf_id is not None:
+            _wf = db.query(Workflow).filter(Workflow.id == _wf_id).first()
+        if _wf is not None and getattr(_wf, "graph_config", None) is not None:
+            _danger = workflow_danger(_wf.graph_config)
+            _self_gating = workflow_self_gates(_wf.graph_config)
+        _decision = authorize_tool_call(
+            db,
+            tool_name=ticket.tool_name,
+            arguments=args,
+            danger_level=_danger,
+            required_permission=("workflow_list", "execute"),
+            user=user,
+            approved_ticket_id=ticket.id,
+            self_gating=_self_gating,
+        )
+        if not _decision.allow:
+            return {"ok": False, "error": _decision.reason, "content": None, "raw_content": None}
 
         agent = db.query(Agent).filter(Agent.id == (ticket.agent_id or agent_id)).first()
         if agent is None:

@@ -55,6 +55,14 @@ function resolveModuleGroups(modules) {
 }
 
 // 模块分组定义：顺序与侧边栏目录（AppShell NAV_GROUPS）保持一致
+const MODULE_AGENT_HINTS = {
+  tool: '控制对话里的库工具。勾上「执行」后，智能体白名单里的普通工具才会出现。',
+  device: '控制对话里的设备工具。只勾「查看」只能看设备；勾上「编辑」才能封禁和写设备。',
+  knowledge_base: '控制对话里的知识库检索，需要「查看」。',
+  workflow_list: '控制把已发布工作流当成工具调用，需要「执行」。',
+  asset_list: '控制对话里的资产检索，需要「查看」。',
+}
+
 const MODULE_GROUPS = [
   {
     key: 'workspace',
@@ -398,7 +406,11 @@ function PermissionMatrixTable({ form, moduleDef, onToggle, onSetModuleAll, onSe
                       <tr key={modName} className="border-b border-border/50 last:border-0 hover:bg-secondary/20">
                         <td className="px-3 py-3 text-xs text-foreground">
                           <div className="font-medium">{moduleLabels[modName] || LOCAL_MODULE_LABELS[modName] || modName}</div>
-                          <div className="text-[10px] text-muted-foreground/60">{modName}</div>
+                          {MODULE_AGENT_HINTS[modName] ? (
+                            <div className="mt-0.5 max-w-[280px] text-[10px] leading-4 text-muted-foreground">{MODULE_AGENT_HINTS[modName]}</div>
+                          ) : (
+                            <div className="text-[10px] text-muted-foreground/60">{modName}</div>
+                          )}
                         </td>
                         {actionsInUse.map((action) => {
                           const supported = actions.includes(action)

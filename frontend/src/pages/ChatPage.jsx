@@ -170,8 +170,9 @@ export default function ChatPage() {
         setAgentList(arr)
         const restored = localStorage.getItem(LS_SELECTED)
         const exists = restored && arr.find((a) => String(a.id) === String(restored))
+        const platform = arr.find((a) => a?.variables?.platform_entry || a?.name === '统一对话')
         if (arr.length > 0) {
-          setSelectedAgentId(exists ? String(exists.id) : String(arr[0].id))
+          setSelectedAgentId(exists ? String(exists.id) : String((platform || arr[0]).id))
         } else {
           setSelectedAgentId('')
         }
@@ -1052,7 +1053,13 @@ export default function ChatPage() {
   }, [agentList, searchQuery])
 
   // ----- 分组 -----
-  const pinnedAgents = filteredAgents
+  const platformAgents = filteredAgents.filter(
+    (a) => a?.variables?.platform_entry || a?.name === '统一对话',
+  )
+  const sceneAgents = filteredAgents.filter(
+    (a) => !(a?.variables?.platform_entry || a?.name === '统一对话'),
+  )
+  const pinnedAgents = sceneAgents
     .filter((a) => pinnedIds.includes(String(a.id)))
     .map((a) => ({ ...a, _pinned: true }))
   // 各智能体最近一次对话时间（优先用内存中的历史，未加载的从 localStorage 读取）
@@ -1070,7 +1077,7 @@ export default function ChatPage() {
     return map
   }, [agentList, histories])
   // 全部智能体：按最近对话时间倒序（最新对话的智能体放最上面，无对话的保持原顺序）
-  const otherAgents = filteredAgents
+  const otherAgents = sceneAgents
     .filter((a) => !pinnedIds.includes(String(a.id)))
     .slice()
     .sort((a, b) => (lastActiveMap[String(b.id)] || 0) - (lastActiveMap[String(a.id)] || 0))
@@ -1104,6 +1111,7 @@ export default function ChatPage() {
         agents={agentList}
         filteredAgents={filteredAgents}
         pinnedAgents={pinnedAgents}
+        platformAgents={platformAgents}
         otherAgents={otherAgents}
         selectedAgentId={selectedAgentId}
         searchQuery={searchQuery}
@@ -1152,6 +1160,7 @@ function ChatSidebar({
   agents,
   filteredAgents,
   pinnedAgents,
+  platformAgents,
   otherAgents,
   selectedAgentId,
   searchQuery,
@@ -1198,6 +1207,17 @@ function ChatSidebar({
         )}
 
         {/* 已置顶分组 */}
+        {platformAgents.length > 0 && (
+          <AgentGroup
+            title="统一对话"
+            agents={platformAgents}
+            selectedAgentId={selectedAgentId}
+            onSelect={onSelect}
+            onTogglePin={onTogglePin}
+            defaultExpanded
+          />
+        )}
+
         {pinnedAgents.length > 0 && (
           <AgentGroup
             title="已置顶"

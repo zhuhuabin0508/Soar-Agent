@@ -121,7 +121,7 @@ class HermesToolEngine:
         self.agent = agent
         self.log_handler = log_handler
         self.tool_timeout_sec = tool_timeout_sec
-        # 当前对话用户 id（工具沙箱 current_user_id，文件归属 created_by）
+        self.user = user
         self.user_id = getattr(user, "id", None) if user is not None else None
 
         # Stage B 配置（不可变，跨 turn 复用）
@@ -158,6 +158,7 @@ class HermesToolEngine:
         self._mutating_tool_names: frozenset[str] = frozenset()
         self._file_mutating_tool_names: frozenset[str] = frozenset()
         self._danger_levels: dict[str, str] = {}
+        self._required_permissions: dict[str, tuple[str, str] | None] = {}
         self._self_gating: frozenset[str] = frozenset()
         self._build_registry()
 
@@ -198,8 +199,11 @@ class HermesToolEngine:
         )
         from app.core.tools.registry_builder import ToolRegistryBuilder, descriptor_to_tool_entry
 
-        builder = ToolRegistryBuilder(self.db, self.agent, user_id=self.user_id)
+        builder = ToolRegistryBuilder(self.db, self.agent, user=self.user, user_id=self.user_id)
         descriptors = builder.build()
+        self._required_permissions = {
+            n: d.required_permission for n, d in descriptors.items()
+        }
         self._registry = {n: descriptor_to_tool_entry(d) for n, d in descriptors.items()}
         self._write_tools_requiring_verification = (
             write_tools_requiring_verification(descriptors) | WRITE_TOOLS_REQUIRING_VERIFICATION
@@ -593,15 +597,55 @@ class HermesToolEngine:
                 )
 
         # ===== 确认闸（阶段 6b）=====
+        if self.user is not None:
+            from app.core.tools.authz import user_may_call
+
+            _need = self._required_permissions.get(effective_name)
+            if not user_may_call(self.user, self.db, _need):
+                duration_ms = int((time.time() - start_time) * 1000)
+                module, action = _need or ("", "")
+                self._log_tool("warning", f"工具 {effective_name} 因角色权限被拒绝")
+                return ToolResult(
+                    tool_call_id=tc.id,
+                    name=tc.name,
+                    content={
+                        "error": f"当前角色无权调用 {effective_name}，需要 {module}:{action}",
+                    },
+                    is_error=True,
+                    duration_ms=duration_ms,
+                )
+
+        from app.core.tools.call_gateway import authorize_tool_call, tier_of
+
+        _danger = self._danger_levels.get(effective_name, "low")
+        if self.user is not None and tier_of(_danger) == "L3":
+            _decision = authorize_tool_call(
+                self.db,
+                tool_name=effective_name,
+                arguments=tc.arguments if isinstance(tc.arguments, dict) else {},
+                danger_level=_danger,
+                required_permission=self._required_permissions.get(effective_name),
+                user=self.user,
+                approved_ticket_id=self.approved_ticket_id,
+                self_gating=effective_name in self._self_gating,
+            )
+            duration_ms = int((time.time() - start_time) * 1000)
+            self._log_tool("warning", f"工具 {effective_name} 被网关拒绝: {_decision.reason}")
+            return ToolResult(
+                tool_call_id=tc.id,
+                name=tc.name,
+                content={"error": _decision.reason},
+                is_error=True,
+                duration_ms=duration_ms,
+            )
+
         if (
             self.confirmation_config is not None
             and self.confirmation_config.enabled
-            and self.approved_ticket_id is None        # 已批准工单执行 → 放行
+            and self.approved_ticket_id is None
         ):
             from app.core.tools.policy import SCENARIO_AGENT, requires_confirmation
 
-            _danger = self._danger_levels.get(effective_name, "low")
-            # 自门控豁免：工作流工具且图内已有审批节点 → 不再二次确认
             if requires_confirmation(_danger, SCENARIO_AGENT) and effective_name not in self._self_gating:
                 import json as _json
 
@@ -653,6 +697,27 @@ class HermesToolEngine:
             # args_schema=None 的工具（workflow/dynamic）也做轻量类型强转：
             # 纯数字字符串 → int，浮点字符串 → float，"true"/"false" → bool
             call_args = _coerce_primitive_args(call_args)
+
+        _decision = authorize_tool_call(
+            self.db,
+            tool_name=effective_name,
+            arguments=tc.arguments if isinstance(tc.arguments, dict) else {},
+            danger_level=_danger,
+            required_permission=self._required_permissions.get(effective_name),
+            user=self.user,
+            approved_ticket_id=self.approved_ticket_id,
+            self_gating=effective_name in self._self_gating,
+        )
+        if not _decision.allow:
+            duration_ms = int((time.time() - start_time) * 1000)
+            self._log_tool("warning", f"工具 {effective_name} 被网关拒绝: {_decision.reason}")
+            return ToolResult(
+                tool_call_id=tc.id,
+                name=tc.name,
+                content={"error": _decision.reason},
+                is_error=True,
+                duration_ms=duration_ms,
+            )
 
         # 工具执行超时保护：防止死循环或卡住的网络请求阻塞整个 ReAct 循环
         tool_timeout = float(getattr(self, "tool_timeout_sec", 30.0))

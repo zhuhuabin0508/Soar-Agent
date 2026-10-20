@@ -1261,22 +1261,38 @@ export default function AgentWorkspace() {
               <div className="mb-6">
                 <div className="mb-1 flex items-center justify-between">
                   <div>
-                    <div className="text-xs font-medium">工具</div>
-                    <div className="text-[11px] text-muted-foreground">HTTP / 代码 / 框架工具，供模型按需调用</div>
+                    <div className="text-xs font-medium">工具白名单</div>
+                    <div className="text-[11px] text-muted-foreground">勾选后这个智能体才能调用。角色没有对应权限时，对话里仍会拿掉。</div>
                   </div>
-                  {canEdit && (
-                    <button type="button" onClick={() => setPicker('tool')} className="inline-flex items-center gap-1 text-xs text-primary">
-                      <Plus className="h-3.5 w-3.5" /> 添加
-                    </button>
-                  )}
                 </div>
-                {form.enabled_tools.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">暂无工具</p>
+                {toolOptions.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">暂无可选工具</p>
                 ) : (
-                  <ChipList
-                    items={selected(toolOptions, form.enabled_tools)}
-                    onRemove={(v) => setField('enabled_tools')(form.enabled_tools.filter((x) => x !== v))}
-                  />
+                  <div className="mt-2 max-h-64 overflow-auto rounded-md border border-border">
+                    {toolOptions.map((opt) => {
+                      const checked = form.enabled_tools.includes(opt.value)
+                      return (
+                        <label key={opt.value} className="flex cursor-pointer items-start gap-2 border-b border-border/50 px-2 py-1.5 text-xs last:border-0 hover:bg-secondary/40">
+                          <input
+                            type="checkbox"
+                            className="mt-0.5"
+                            checked={checked}
+                            disabled={!canEdit}
+                            onChange={() => {
+                              const next = checked
+                                ? form.enabled_tools.filter((x) => x !== opt.value)
+                                : [...form.enabled_tools, opt.value]
+                              setField('enabled_tools')(next)
+                            }}
+                          />
+                          <span>
+                            <span className="font-medium">{opt.label}</span>
+                            {opt.description ? <span className="mt-0.5 block text-[11px] text-muted-foreground">{opt.description}</span> : null}
+                          </span>
+                        </label>
+                      )
+                    })}
+                  </div>
                 )}
               </div>
               <div className="mb-6">
@@ -1301,26 +1317,34 @@ export default function AgentWorkspace() {
                 )}
               </div>
               <div className="mb-6">
-                <div className="mb-1 flex items-center justify-between">
-                  <div>
-                    <div className="text-xs font-medium">设备</div>
-                    <div className="text-[11px] text-muted-foreground">
-                      勾选后该设备启用的动作会投影为工具（device_设备ID_动作ID），并装配 list_devices / device_action
-                    </div>
-                  </div>
-                  {canEdit && (
-                    <button type="button" onClick={() => setPicker('device')} className="inline-flex items-center gap-1 text-xs text-primary">
-                      <Plus className="h-3.5 w-3.5" /> 添加
-                    </button>
-                  )}
+                <div className="mb-1">
+                  <div className="text-xs font-medium">设备白名单</div>
+                  <div className="text-[11px] text-muted-foreground">勾选后才会挂上该设备的查询和写动作。没有「设备对接 / 编辑」的角色看不到写动作。</div>
                 </div>
-                {form.enabled_devices.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">暂无设备</p>
+                {deviceOptions.length === 0 ? (
+                  <p className="mt-2 text-xs text-muted-foreground">暂无可选设备</p>
                 ) : (
-                  <ChipList
-                    items={selected(deviceOptions, form.enabled_devices)}
-                    onRemove={(v) => setField('enabled_devices')(form.enabled_devices.filter((x) => x !== v))}
-                  />
+                  <div className="mt-2 max-h-48 overflow-auto rounded-md border border-border">
+                    {deviceOptions.map((opt) => {
+                      const checked = form.enabled_devices.includes(opt.value)
+                      return (
+                        <label key={opt.value} className="flex cursor-pointer items-center gap-2 border-b border-border/50 px-2 py-1.5 text-xs last:border-0 hover:bg-secondary/40">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={!canEdit}
+                            onChange={() => {
+                              const next = checked
+                                ? form.enabled_devices.filter((x) => x !== opt.value)
+                                : [...form.enabled_devices, opt.value]
+                              setField('enabled_devices')(next)
+                            }}
+                          />
+                          <span className="font-medium">{opt.label}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
                 )}
               </div>
               <div className="mb-6">
