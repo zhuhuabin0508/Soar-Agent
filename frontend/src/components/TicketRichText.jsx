@@ -44,7 +44,50 @@ function escapeHtml(s) {
 }
 
 // 编辑态内嵌图片类名（Tailwind 扫描源码字符串生成对应 CSS）
-const EDIT_IMG_CLS = 'inline-block max-h-24 max-w-full cursor-zoom-in rounded-md border border-border align-middle'
+const EDIT_IMG_CLS = 'my-1 block max-h-60 w-fit max-w-full cursor-zoom-in rounded-md border border-border object-contain'
+
+function canonicalAttachUrl(raw) {
+  if (!raw) return ''
+  let path = String(raw).trim()
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    try { path = new URL(path).pathname } catch { return '' }
+  }
+  const q = path.indexOf('?')
+  if (q >= 0) path = path.slice(0, q)
+  const hash = path.indexOf('#')
+  if (hash >= 0) path = path.slice(0, hash)
+  return path.startsWith(ATTACH_URL_PREFIX) ? path : ''
+}
+
+function editorImgHtml(url, alt) {
+  const clean = canonicalAttachUrl(url)
+  if (!clean) return ''
+  const name = alt || '图片'
+  return `<img src="${escapeHtml(attachmentUrl(clean))}" data-url="${escapeHtml(clean)}" alt="${escapeHtml(name)}" class="${EDIT_IMG_CLS}" contenteditable="false">`
+}
+
+function insertEditorImage(root, url, alt) {
+  const html = editorImgHtml(url, alt)
+  if (!html || !root) return
+  const holder = document.createElement('div')
+  holder.innerHTML = html
+  const img = holder.firstChild
+  if (!img) return
+  const sel = window.getSelection()
+  const range = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null
+  const inRoot = range && root.contains(range.commonAncestorContainer)
+  root.focus()
+  if (inRoot) {
+    range.deleteContents()
+    range.insertNode(img)
+    range.setStartAfter(img)
+    range.collapse(true)
+    sel.removeAllRanges()
+    sel.addRange(range)
+    return
+  }
+  root.appendChild(img)
+}
 
 // markdown → 安全 HTML：文本段转义 + 换行转 <br>；图片引用仅放行本系统附件路径
 function mdToHtml(v) {
@@ -54,11 +97,9 @@ function mdToHtml(v) {
   const pushText = (t) => { html += escapeHtml(t).split('\n').join('<br>') }
   for (const m of s.matchAll(IMG_MD_RE)) {
     if (m.index > last) pushText(s.slice(last, m.index))
-    if (m[2].startsWith(ATTACH_URL_PREFIX)) {
-      html += `<img src="${escapeHtml(m[2])}" alt="${escapeHtml(m[1] || '图片')}" class="${EDIT_IMG_CLS}">`
-    } else {
-      pushText(m[0])
-    }
+    const imgHtml = editorImgHtml(m[2], m[1] || '图片')
+    if (imgHtml) html += imgHtml
+    else pushText(m[0])
     last = m.index + m[0].length
   }
   if (last < s.length) pushText(s.slice(last))
@@ -71,8 +112,8 @@ function nodeToMd(node) {
   const tag = node.nodeName
   if (tag === 'BR') return '\n'
   if (tag === 'IMG') {
-    const src = node.getAttribute('src') || ''
-    if (!src.startsWith(ATTACH_URL_PREFIX)) return ''
+    const src = canonicalAttachUrl(node.getAttribute('data-url') || node.getAttribute('src') || '')
+    if (!src) return ''
     return `![${node.getAttribute('alt') || '图片'}](${src})`
   }
   let out = ''
@@ -189,9 +230,11 @@ export function RichEditable({ value, onChange, placeholder, className, minHeigh
       const stamp = new Date().toISOString().slice(0, 19).split('-').join('').split(':').join('').split('T').join('')
       const file = new File([imgFile], `截图-${stamp}.${ext}`, { type: imgFile.type })
       const res = await ticketApi.uploadAttachment(file)
-      // 在光标处插入图片本体（所见即所得），数据层由 exportMd 导出为 markdown 引用
-      document.execCommand('insertHTML', false,
-        `<img src="${escapeHtml(res.url)}" alt="${escapeHtml(res.name || '截图')}" class="${EDIT_IMG_CLS}">`)
+      if (!canonicalAttachUrl(res.url)) {
+        toast.error('图片已上传，但返回地址无法预览')
+        return
+      }
+      insertEditorImage(ref.current, res.url, res.name || '截图')
       exportMd()
       toast.success('截图已插入')
     } catch (err) {
@@ -205,7 +248,9 @@ export function RichEditable({ value, onChange, placeholder, className, minHeigh
     const t = e.target
     if (t?.tagName === 'IMG') {
       e.preventDefault()
-      setLightbox({ src: attachmentUrl(t.getAttribute('src') || ''), name: t.getAttribute('alt') || '图片' })
+      const clean = canonicalAttachUrl(t.getAttribute('data-url') || t.getAttribute('src') || '')
+      if (!clean) return
+      setLightbox({ src: attachmentUrl(clean), name: t.getAttribute('alt') || '图片' })
     }
   }
 
