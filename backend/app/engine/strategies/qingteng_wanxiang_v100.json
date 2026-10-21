@@ -68,7 +68,7 @@
         },
         "defaults": [],
         "validations": [
-          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-fA-F]{40}$", "severity": "warning"},
           {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
         ]
       },
@@ -120,7 +120,7 @@
         },
         "defaults": [],
         "validations": [
-          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-fA-F]{40}$", "severity": "warning"},
           {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
         ]
       },
@@ -172,7 +172,7 @@
         },
         "defaults": [],
         "validations": [
-          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-fA-F]{40}$", "severity": "warning"},
           {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
         ]
       },
@@ -223,7 +223,7 @@
         },
         "defaults": [],
         "validations": [
-          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-fA-F]{40}$", "severity": "warning"},
           {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
         ]
       },
@@ -274,7 +274,7 @@
         },
         "defaults": [],
         "validations": [
-          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-fA-F]{40}$", "severity": "warning"},
           {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
         ]
       },
@@ -328,7 +328,7 @@
         },
         "defaults": [],
         "validations": [
-          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-fA-F]{40}$", "severity": "warning"},
           {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
         ]
       },
@@ -381,7 +381,7 @@
         },
         "defaults": [],
         "validations": [
-          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-fA-F]{40}$", "severity": "warning"},
           {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
         ]
       },
@@ -433,7 +433,7 @@
         },
         "defaults": [],
         "validations": [
-          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-fA-F]{40}$", "severity": "warning"},
           {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
         ]
       },
@@ -485,7 +485,7 @@
         },
         "defaults": [],
         "validations": [
-          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-fA-F]{40}$", "severity": "warning"},
           {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
         ]
       },
@@ -535,7 +535,7 @@
         },
         "defaults": [],
         "validations": [
-          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-fA-F]{40}$", "severity": "warning"},
           {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
         ]
       },
@@ -587,7 +587,7 @@
         },
         "defaults": [],
         "validations": [
-          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-fA-F]{40}$", "severity": "warning"},
           {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
         ]
       },
@@ -640,7 +640,7 @@
         },
         "defaults": [],
         "validations": [
-          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-fA-F]{40}$", "severity": "warning"},
           {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
         ]
       },
@@ -692,7 +692,7 @@
         },
         "defaults": [],
         "validations": [
-          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-fA-F]{40}$", "severity": "warning"},
           {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
         ]
       },
@@ -743,7 +743,7 @@
         },
         "defaults": [],
         "validations": [
-          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-f]{40}$", "severity": "warning"},
+          {"field": "uuid", "rule": "regex", "pattern": "^[0-9a-fA-F]{40}$", "severity": "warning"},
           {"field": "risk_level", "rule": "range", "min": 0, "max": 4, "severity": "warning"}
         ]
       },

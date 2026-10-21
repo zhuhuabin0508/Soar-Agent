@@ -15,10 +15,14 @@ import { AlertTriangle } from 'lucide-react'
  * 渲染返回值，保持 ``useUnsavedChanges(dirty)`` 调用即可。这样编辑页面
  * 的现有代码不需要任何改动。
  *
+ * 3. **Ctrl+S / Cmd+S**：dirty 时拦截浏览器默认保存对话框，转而调用
+ *    可选的 onSave 回调（由页面提供保存动作）；未传 onSave 时仅拦截。
+ *
  * Args:
  *     dirty: 当前表单是否有未保存修改（布尔值）。
+ *     options.onSave: Ctrl+S 时的保存回调（可选）。
  */
-export function useUnsavedChanges(dirty) {
+export function useUnsavedChanges(dirty, { onSave } = {}) {
   // dirtyRef 始终持有最新的 dirty 值，供 blocker 回调读取。
   // 关键：保存时调用返回的 bypass() 会同步把 dirtyRef.current 置为 false，
   // 这样即便 setDirty(false) 的状态更新还未生效，navigate 也不会被拦截。
@@ -26,6 +30,23 @@ export function useUnsavedChanges(dirty) {
   useEffect(() => {
     dirtyRef.current = dirty
   }, [dirty])
+
+  // Ctrl+S：dirty 时触发保存回调。回调经 ref 转发，避免依赖变化导致监听重建。
+  const onSaveRef = useRef(onSave)
+  useEffect(() => {
+    onSaveRef.current = onSave
+  }, [onSave])
+
+  useEffect(() => {
+    const onKeydown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S') && dirtyRef.current) {
+        e.preventDefault()
+        onSaveRef.current?.()
+      }
+    }
+    window.addEventListener('keydown', onKeydown)
+    return () => window.removeEventListener('keydown', onKeydown)
+  }, [])
 
   // 1. beforeunload：关闭/刷新浏览器（浏览器原生提示，文案不可自定义）
   const handler = useCallback((e) => {

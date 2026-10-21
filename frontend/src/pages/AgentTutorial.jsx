@@ -208,7 +208,7 @@ function AgentTutorial() {
 │  系统提示词 (System Prompt)       │ ← 定义角色和行为规范
 │  + 技能注入 (Skills)              │ ← 注入 SOP 流程指令
 ├──────────────────────────────────┤
-│  推理引擎 (Hermes / LangGraph)    │ ← ReAct 循环：思考→行动→观察
+│  推理引擎 (Hermes)                │ ← ReAct 循环：思考→行动→观察
 │    ↓         ↓        ↓          │
 │  调用工具  检索知识库  委派子代理  │
 ├──────────────────────────────────┤
@@ -266,14 +266,13 @@ function AgentTutorial() {
           </Section>
 
           {/* ===== 4. 推理引擎 ===== */}
-          <Section id="engine" icon="⚙️" title="推理引擎" subtitle="Hermes vs LangGraph，如何选择？">
+          <Section id="engine" icon="⚙️" title="推理引擎" subtitle="Hermes，平台的推理核心">
             <p className="text-sm text-muted-foreground">
-              推理引擎决定了智能体的核心运行机制。在编辑器的<strong>推理引擎</strong>下拉框中选择。
+              推理引擎决定了智能体的核心运行机制。平台统一采用 Hermes 引擎，无需手动选择。
             </p>
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-3">
               <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
                 <div className="mb-2 flex items-center gap-2">
-                  <span className="rounded bg-primary/20 px-2 py-0.5 text-xs font-semibold text-primary">推荐</span>
                   <h4 className="text-sm font-semibold text-foreground">Hermes 引擎</h4>
                 </div>
                 <ul className="space-y-1.5 text-xs text-muted-foreground">
@@ -286,24 +285,9 @@ function AgentTutorial() {
                   <li className="flex items-center gap-1.5"><Check className="h-3.5 w-3.5 shrink-0 text-success" /> 执行记录自动创建（监控可见）</li>
                 </ul>
               </div>
-              <div className="rounded-lg border border-border bg-card/40 p-4">
-                <div className="mb-2 flex items-center gap-2">
-                  <span className="rounded bg-secondary px-2 py-0.5 text-xs font-semibold text-muted-foreground">兼容</span>
-                  <h4 className="text-sm font-semibold text-foreground">LangGraph 引擎</h4>
-                </div>
-                <ul className="space-y-1.5 text-xs text-muted-foreground">
-                  <li className="flex items-center gap-1.5"><Check className="h-3.5 w-3.5 shrink-0 text-success" /> 基础对话能力</li>
-                  <li className="flex items-center gap-1.5"><Check className="h-3.5 w-3.5 shrink-0 text-success" /> 工具调用（基础 ReAct）</li>
-                  <li className="flex items-center gap-1.5"><X className="h-3.5 w-3.5 shrink-0 text-destructive" /> 不支持子代理委派</li>
-                  <li className="flex items-center gap-1.5"><X className="h-3.5 w-3.5 shrink-0 text-destructive" /> 不支持框架级工具</li>
-                  <li className="flex items-center gap-1.5"><X className="h-3.5 w-3.5 shrink-0 text-destructive" /> 不支持技能注入</li>
-                  <li className="flex items-center gap-1.5"><X className="h-3.5 w-3.5 shrink-0 text-destructive" /> 不支持中间件层</li>
-                </ul>
-              </div>
             </div>
             <Tip type="tip">
-              <strong>绝大多数场景建议选择 Hermes 引擎</strong>，它提供完整的工具链和监控能力。
-              LangGraph 仅在需要与旧版 LangChain 生态兼容时使用。
+              <strong>Hermes 是平台唯一的推理引擎</strong>，提供完整的工具链和监控能力。
             </Tip>
           </Section>
 

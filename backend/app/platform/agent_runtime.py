@@ -136,14 +136,14 @@ async def invoke_agent_for_workflow(
 
 
 def resolve_engine(agent: Agent) -> str:
+    # 平台唯一推理引擎为 Hermes；engine 列仅作兼容，异常值统一按 Hermes 路由
     raw = (getattr(agent, "engine", None) or "hermes").lower()
-    if raw in ("langgraph", "legacy"):
+    if raw != "hermes":
         logger.warning(
-            "agent_id=%s engine=%s deprecated, routing to hermes",
+            "agent_id=%s engine=%s 非受支持引擎，已路由到 hermes",
             agent.id,
             raw,
         )
-        return "hermes"
     return "hermes"
 
 

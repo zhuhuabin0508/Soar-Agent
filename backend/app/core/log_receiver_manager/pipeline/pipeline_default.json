@@ -1,0 +1,17 @@
+{
+  "preprocessors": ["json", "qingteng_syslog", "plain_message"],
+  "parser": {},
+  "filter": {
+    "enabled": false,
+    "match": "all",
+    "rules": []
+  },
+  "enricher": {
+    "enrichers": ["asset_lib"]
+  },
+  "translator": {
+    "maps": {}
+  },
+  "alert_rule": {},
+  "normalizer": {}
+}

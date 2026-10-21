@@ -1,0 +1,72 @@
+# ======================================================================
+# 日志类型识别特征匹配表（Classifier & Router）
+#
+# 用途：数据湖 / 日志审计设备推送「混合日志」时，接收链路在未手动指定
+# 解析策略的情况下按本表自动识别日志的设备类型并路由到对应解析策略。
+# 不改变手动指定的优先级链：条目 strategy_id → 接收器 strategy_id →
+# 设备绑定 parser_strategy_id → 本表自动识别。
+#
+# 路由流程：
+#   1. 元数据直路由：日志顶层携带 source_type / device_vendor 等元数据
+#      且命中某设备类型的别名 → 直接路由到该设备类型；
+#   2. 特征匹配：无元数据时按 specificity（特异度）从高到低评估各
+#      设备类型的 match 特征条件，命中的进入候选列表（保持特异度顺序）；
+#   3. 候选回退：按候选顺序取该设备类型的启用策略（版本降序）逐个
+#      尝试解析，校验器（validators / severity=error）不过则回退下一候选；
+#   4. unknown 兜底：全部候选失败 → 进入 unknown 兜底队列
+#      （parse_error_queue，error_type=unknown_log_type，可重试/人工处理）。
+#
+# 新增设备类型：在 device_types 中追加一个条目即可（并为其创建解析策略），
+# 无需改任何代码。本文件按 mtime 热加载，修改后自动生效（无需重启）。
+# ======================================================================
+
+# 元数据直路由检查字段（按顺序检查日志顶层，值命中别名即直路由；
+# 每个设备类型名本身也是所有字段的隐式别名）
+metadata_fields:
+  - source_type
+  - device_vendor
+  - device_type
+  - vendor
+  - __source        # 预处理器来源标记（如青藤 syslog 预处理器的 qingteng_syslog）
+
+device_types:
+  # ------------------------------------------------------------------
+  # 青藤万相主机安全（Syslog 预处理器输出的结构化日志）
+  # ------------------------------------------------------------------
+  - device_type: qingteng_wanxiang
+    # 特异度：越高越优先评估；特征越独特的设备应给越高的值
+    specificity: 100
+    # 元数据别名（大小写不敏感；命中任一字段的任一别名即直路由）
+    metadata:
+      source_type: [qingteng, 青藤, 青藤万相, qingteng wanxiang]
+      device_vendor: [qingteng, 青藤, 青藤万相]
+      __source: [qingteng_syslog]
+    # 特征匹配条件（无元数据时评估；条件结构同策略规则 match）
+    #   type: all（全部满足）/ any（任一满足）
+    #   op: eq / not_eq / in / not_in / contains / regex / exists / not_exists / gt / gte / lt / lte
+    match:
+      type: all
+      conditions:
+        - { field: __source, op: eq, value: qingteng_syslog }
+        - { field: datatype, op: exists }
+    # 路由级校验器（可选；解析成功后必须全部通过，否则回退下一候选）
+    # 结构同策略 validations：regex / ip_list_valid / range / positive_int
+    # 示例：要求必须提取出 40 位事件 uuid
+    #   validators:
+    #     - { field: uuid, rule: regex, pattern: "^[0-9a-f]{40}$" }
+    validators: []
+
+  # ------------------------------------------------------------------
+  # 深信服 XDR 安全告警（REST/推送 JSON，type=security_alert 外层标记）
+  # ------------------------------------------------------------------
+  - device_type: sangfor_xdr
+    specificity: 90
+    metadata:
+      source_type: [sangfor, 深信服, sangfor xdr]
+      device_vendor: [sangfor, 深信服]
+    match:
+      type: all
+      conditions:
+        - { field: type, op: eq, value: security_alert }
+        - { field: data, op: exists }
+    validators: []

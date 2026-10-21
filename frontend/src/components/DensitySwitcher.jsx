@@ -43,12 +43,12 @@ export default function DensitySwitcher({ className = '' }) {
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        title={`数据密度: ${cur.label}`}
+        title={`数据密度：${cur.label}（行高 ${cur.desc.replace('行高 ', '')}）`}
         aria-label="切换数据密度"
         className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
       >
         <CurIcon className="h-3.5 w-3.5" />
-        <span>{cur.label}</span>
+        <span>行高 {cur.desc.replace('行高 ', '')}</span>
         <ChevronDown className="h-3 w-3" />
       </button>
       {open && (

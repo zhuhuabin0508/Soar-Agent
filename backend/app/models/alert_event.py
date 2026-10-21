@@ -25,6 +25,10 @@ class AlertEvent(Base):
     # ===== 来源设备 =====
     strategy_id = Column(Integer, nullable=True, index=True, comment="使用的解析策略 ID")
     device_type = Column(String(64), default="", comment="设备类型，如 sangfor_xdr")
+    rule_id = Column(String(64), default="", comment="命中的解析规则 ID（多规则策略内标识）")
+    log_type = Column(String(64), default="", comment="命中规则的日志类型")
+    alert_rule_id = Column(Integer, nullable=True, index=True, comment="命中的告警规则 ID")
+    alert_rule_name = Column(String(255), default="", comment="命中的告警规则名称")
     devices = Column(Text, default="[]", comment="设备详情数组 JSON")
     agent_id = Column(String(128), default="", comment="Agent ID")
 
@@ -34,6 +38,9 @@ class AlertEvent(Base):
     region_id = Column(String(128), default="", comment="区域 ID")
     relate_asset_type = Column(Integer, default=0, comment="0 主机 / 1 容器")
     relate_asset_type_name = Column(String(16), default="", comment="资产类型中文：主机/容器")
+    relate_asset_id = Column(Integer, nullable=True, comment="关联本地资产库资产 ID（IP 匹配命中）")
+    relate_asset_name = Column(String(255), default="", comment="关联本地资产名称")
+    relate_asset_ip = Column(String(64), default="", comment="关联资产命中所用的 IP")
     group_id = Column(String(128), default="", comment="分组 ID")
     subject_type = Column(String(64), default="", comment="主体类型")
     user_name = Column(String(255), default="", comment="用户名")
@@ -96,12 +103,19 @@ class AlertEvent(Base):
     # ===== 处置 =====
     deal_status = Column(Integer, default=-1, comment="处置状态 int")
     deal_status_name = Column(String(64), default="", comment="处置状态中文")
+    assignee_id = Column(Integer, nullable=True, index=True, comment="指派处理人 ID")
+    assignee_name = Column(String(128), default="", comment="指派处理人姓名")
+    handled_at = Column(DateTime, nullable=True, comment="最近处置时间")
 
     # ===== 举证与扩展 =====
     proof_type = Column(String(64), default="", comment="举证类型")
     proof_description = Column(Text, default="", comment="举证描述")
     base_content = Column(Text, default="", comment="基础内容")
     extensions = Column(Text, default="{}", comment="策略特有扩展字段 JSON")
+
+    # ===== 告警聚合（XDR 风格：同键同窗合并，不产生新告警记录）=====
+    aggregation_count = Column(Integer, default=1, comment="聚合计数（同键同窗内合并的告警条数，1=未聚合）")
+    aggregation_key = Column(String(255), default="", index=True, comment="聚合键值串（规则聚合键字段按序拼接）")
 
     # ===== 系统字段 =====
     raw_data = Column(Text, default="", comment="原始 JSON 全文")

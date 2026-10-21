@@ -660,7 +660,7 @@ function CardView({ rows, loading, selectable, selectedKeys, onSelectChange, can
             <div className="mt-2 flex items-center justify-between border-t border-border pt-2 text-[10px] text-muted-foreground/60">
               <span>优先级 {r.priority ?? 0}</span>
               <span>{renderRef(r)}</span>
-              <span>{relTime(r.updated_at)}</span>
+              <span title={fmtTime(r.updated_at)}>{relTime(r.updated_at)}</span>
             </div>
             {/* 操作 */}
             <div className="mt-2 flex items-center justify-between">

@@ -288,7 +288,7 @@ HERMES_FRAMEWORK_TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "name": {"type": "string", "description": "智能体名称，唯一"},
                 "description": {"type": "string", "description": "智能体描述"},
-                "engine": {"type": "string", "description": "执行引擎：hermes（推荐）| langgraph"},
+                "engine": {"type": "string", "description": "执行引擎：hermes（唯一引擎，其他值忽略）"},
                 "system_prompt": {"type": "string", "description": "系统提示词"},
                 "enabled_tools": {"type": "array", "items": {"type": "string"}, "description": "启用的工具名列表"},
                 "enabled_skills": {"type": "array", "items": {"type": "integer"}, "description": "启用的技能 id 列表"},

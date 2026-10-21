@@ -164,7 +164,7 @@ class AgentBase(BaseModel):
     tone_style: str = Field("professional", description="语气风格")
     variables: dict | None = Field(None, description="自定义变量")
     tool_configs: dict | None = Field(None, description="工具配置（key=工具名, value={timeout, retry, require_confirm}）")
-    engine: str = Field("hermes", description="执行引擎：hermes（默认）；langgraph 写入时由 runtime 转 Hermes")
+    engine: str = Field("hermes", description="执行引擎：hermes（唯一引擎，传其他值将被忽略）")
     output_mode: str | None = Field(None, description="chat / soc_decision / ban_risk_analyze，不传则创建为 chat、更新保持原值")
     publish_status: str | None = Field(None, description="draft / published，创建默认草稿，更新未传则保持原值")
 
@@ -319,7 +319,7 @@ def _dsl_to_agent_base(dsl: dict[str, Any]) -> AgentBase:
         tone_style=dsl.get("tone_style") or "professional",
         variables=variables,
         tool_configs=dsl.get("tool_configs") or {},
-        engine=dsl.get("engine") or "hermes",
+        engine="hermes",
         output_mode=dsl.get("output_mode") or "chat",
     )
 
@@ -510,7 +510,7 @@ def create_agent(
         tone_style=body.tone_style,
         variables=body.variables or {},
         tool_configs=body.tool_configs or {},
-        engine=body.engine or "hermes",
+        engine="hermes",
         output_mode=_normalize_output_mode(body.output_mode, default="chat"),
         publish_status=_incoming_publish_status(body, default="draft"),
         created_by=current_user.id,
@@ -556,9 +556,7 @@ def update_agent(
     agent.tone_style = body.tone_style
     agent.variables = body.variables or {}
     agent.tool_configs = body.tool_configs or {}
-    # engine：前端 body 未传 engine 时保留原值（避免误覆盖为 langgraph）
-    if body.engine:
-        agent.engine = body.engine
+    # engine 固定为 hermes，不接受修改
     if body.output_mode:
         agent.output_mode = _normalize_output_mode(body.output_mode, default=agent.output_mode or "chat")
     incoming = _incoming_publish_status(body, default="")

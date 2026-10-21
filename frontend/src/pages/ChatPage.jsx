@@ -5,7 +5,7 @@
  * 右侧（flex-1）：对话功能区（欢迎态 / 消息气泡 / 流式打字机 / 自适应输入）
  *
  * 会话历史使用 localStorage 持久化（按 agentId 隔离），切换智能体不串对话。
- * 流式输出复用 AgentEditor 的 SSE 解析逻辑，支持 Hermes + LangGraph 双引擎。
+ * 流式输出复用 AgentEditor 的 SSE 解析逻辑（Hermes 引擎）。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -444,21 +444,14 @@ export default function ChatPage() {
     // 2. 发起 SSE 流式请求
     const controller = new AbortController()
     abortControllerRef.current = controller
-    const isHermes = (agent.engine || 'hermes') === 'hermes'
-
     try {
-      const resp = isHermes
-        ? await agentsApi.chatStream(
-            selectedAgentId,
-            messageText,
-            controller.signal,
-            sessionIds[selectedAgentId] || 'default',
-            overridePayload,
-          )
-        : await agentsApi.testStream(selectedAgentId, messageText, controller.signal, {
-            ...overridePayload,
-            channel: 'conversation',
-          })
+      const resp = await agentsApi.chatStream(
+        selectedAgentId,
+        messageText,
+        controller.signal,
+        sessionIds[selectedAgentId] || 'default',
+        overridePayload,
+      )
 
       if (!resp.ok) {
         const errText = await resp.text().catch(() => '')
@@ -509,7 +502,6 @@ export default function ChatPage() {
           try {
             const data = JSON.parse(line.slice(6))
 
-            if (isHermes) {
               // ===== Hermes 引擎事件 =====
               switch (data.type) {
                 case 'thinking':
@@ -685,148 +677,6 @@ export default function ChatPage() {
                 default:
                   break
               }
-            } else {
-              // ===== LangGraph 引擎事件 =====
-              // 有工具/知识库的智能体走流式 Agent 决策：
-              // start(mode=agent) → log → status → tool_start → tool_end → token... → done(result)
-              // 无工具的纯对话走流式：start(mode=chat) → token... → done(reply)
-              if (data.type === 'start') {
-                // 会话开始，无需额外处理（消息已是 streaming 状态）
-              } else if (data.type === 'token') {
-                fullText += data.content
-                pendingContent += data.content || ''
-                scheduleFlush()
-              } else if (data.type === 'tool_start') {
-                // 工具调用开始：加入工具调用列表
-                flushPending()
-                updateMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === aiMsg.id
-                      ? {
-                          ...m,
-                          toolCalls: [
-                            ...(m.toolCalls || []),
-                            {
-                              name: data.tool_name || '',
-                              call_id: data.tool_name || '',
-                              status: 'running',
-                              message: data.message || '',
-                            },
-                          ],
-                        }
-                      : m
-                  )
-                )
-              } else if (data.type === 'tool_end') {
-                // 工具调用结束：更新对应工具状态
-                flushPending()
-                updateMessages((prev) =>
-                  prev.map((m) => {
-                    if (m.id !== aiMsg.id) return m
-                    const tcs = [...(m.toolCalls || [])]
-                    const idx = tcs.findIndex(
-                      (tc) => tc.call_id === (data.tool_name || '') && tc.status === 'running'
-                    )
-                    if (idx >= 0) {
-                      tcs[idx] = {
-                        ...tcs[idx],
-                        status: 'done',
-                        result: data.result,
-                        message: data.message || tcs[idx].message,
-                      }
-                    }
-                    return { ...m, toolCalls: tcs }
-                  })
-                )
-              } else if (data.type === 'file') {
-                // 工具生成的输出文件：附加到 AI 消息，气泡内提供下载卡片
-                flushPending()
-                updateMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === aiMsg.id
-                      ? {
-                          ...m,
-                          files: [
-                            ...(m.files || []).filter((x) => x.file_id !== data.file_id),
-                            {
-                              file_id: data.file_id,
-                              file_name: data.file_name || '',
-                              rows: data.rows ?? null,
-                              columns: data.columns ?? null,
-                            },
-                          ],
-                        }
-                      : m
-                  )
-                )
-              } else if (data.type === 'status') {
-                // agent 决策模式的状态更新：显示进度，避免长时间空白
-                flushPending()
-                updateMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === aiMsg.id
-                      ? { ...m, content: fullText || data.message || '处理中…' }
-                      : m
-                  )
-                )
-              } else if (data.type === 'log') {
-                // 日志：暂存，不覆盖主回复内容
-              } else if (data.type === 'message') {
-                // 推理过程消息：可选展示中间步骤
-              } else if (data.type === 'done') {
-                // 提取最终回复（兼容纯对话 + agent 决策两种模式）
-                flushPending()
-                let reply = ''
-                if (data.reply !== undefined) {
-                  // 纯对话流式模式：done 携带 reply 字段
-                  reply = data.reply
-                } else if (data.result) {
-                  const r = data.result
-                  if (typeof r.response === 'string' && r.response) {
-                    // 真实 LangGraph + 自定义 system_prompt：返回 LLM 原始文本
-                    reply = r.response
-                  } else if (Array.isArray(r.messages) && r.messages.length > 0) {
-                    // agent 决策模式：取最后一条 AI 消息
-                    // 注意 LangChain 的 role 是 "ai" 而非 "assistant"
-                    const lastAi = [...r.messages]
-                      .reverse()
-                      .find((m) =>
-                        m.role === 'ai' ||
-                        m.role === 'assistant' ||
-                        m.role === 'AIMessage'
-                      )
-                    if (lastAi && lastAi.content) {
-                      reply = lastAi.content
-                    }
-                  }
-                  // 仅决策模式（无自然语言回复）：格式化可读文本
-                  if (!reply && r.decision) {
-                    reply = `决策：${r.decision}`
-                    if (r.reason) reply += `\n原因：${r.reason}`
-                    if (r.target_ip) reply += `\n目标 IP：${r.target_ip}`
-                  }
-                }
-                updateMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === aiMsg.id
-                      ? { ...m, content: m.content || reply || fullText || '(无回复)', status: 'done' }
-                      : m
-                  )
-                )
-              } else if (data.type === 'error') {
-                updateMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === aiMsg.id
-                      ? {
-                          ...m,
-                          status: 'error',
-                          content: m.content || `[错误] ${data.message || ''}`,
-                        }
-                      : m
-                  )
-                )
-              }
-            }
           } catch {
             // JSON 解析错误忽略
           }

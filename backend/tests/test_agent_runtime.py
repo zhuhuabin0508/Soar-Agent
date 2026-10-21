@@ -25,8 +25,8 @@ class TestResolveEngine:
     def test_hermes_unchanged(self):
         assert resolve_engine(_FakeAgent(1, "hermes")) == "hermes"
 
-    def test_langgraph_maps_to_hermes(self):
-        assert resolve_engine(_FakeAgent(2, "langgraph")) == "hermes"
+    def test_unknown_engine_maps_to_hermes(self):
+        assert resolve_engine(_FakeAgent(2, "unknown-engine")) == "hermes"
 
     def test_legacy_maps_to_hermes(self):
         assert resolve_engine(_FakeAgent(3, "legacy")) == "hermes"

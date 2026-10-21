@@ -18,6 +18,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.audit import get_client_ip
+from app.core.log_receiver_manager.pipeline.enricher_stage import invalidate_asset_index
 from app.core.timezone import beijing_now
 from app.database import get_db
 from app.dependencies import get_current_user, require_role
@@ -2121,6 +2122,7 @@ def create_asset(
         )
         logger.info("手动新增资产(模板): id=%s, type=%s, identifier=%s",
                     record.id, body.type_code, record.identifier)
+        invalidate_asset_index()
         d = to_dict(record)
         d["tags"] = _asset_tags_to_list(record)
         return d
@@ -2172,6 +2174,7 @@ def create_asset(
         f"手动新增: {record.identifier}", user.id, user.username, ip_addr,
     )
     logger.info("手动新增资产: id=%s, identifier=%s", record.id, record.identifier)
+    invalidate_asset_index()
     d = to_dict(record)
     d["tags"] = _asset_tags_to_list(record)
     return d
@@ -2269,6 +2272,7 @@ def update_asset(
         db.commit()
         db.refresh(record)
         logger.info("更新资产(模板): id=%s", asset_id)
+        invalidate_asset_index()
         d = to_dict(record)
         d["tags"] = _asset_tags_to_list(record)
         return d
@@ -2306,6 +2310,7 @@ def update_asset(
     db.commit()
     db.refresh(record)
     logger.info("更新资产: id=%s", asset_id)
+    invalidate_asset_index()
     d = to_dict(record)
     d["tags"] = _asset_tags_to_list(record)
     return d
@@ -2333,6 +2338,7 @@ def delete_asset(
     db.delete(record)
     db.commit()
     logger.info("删除资产: id=%s, identifier=%s", asset_id, identifier)
+    invalidate_asset_index()
     return {"ok": True, "deleted": asset_id}
 
 
@@ -2365,5 +2371,6 @@ def batch_delete_assets(
     db.commit()
     deleted = len(records)
     logger.info("批量删除资产: ids=%s, deleted=%d", ids, deleted)
+    invalidate_asset_index()
     return {"ok": True, "deleted": deleted}
 

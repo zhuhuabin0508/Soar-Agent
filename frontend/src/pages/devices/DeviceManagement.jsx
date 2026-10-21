@@ -1,5 +1,6 @@
 // 设备对接主页面（从 DeviceManagement.jsx 拆分，重新汇总子组件）
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Shield, Plus, RefreshCw, Download, Upload, Wifi, WifiOff, Files, Columns, CheckSquare,
 } from 'lucide-react'
@@ -31,11 +32,11 @@ import {
 } from './ActionModal'
 import { CallLogsTab } from './CallLogsTab'
 import { ActionTable, DeviceCard, DeviceRow } from './DeviceList'
-import { LogReceiversTab } from './LogReceivers'
 import { DeviceFormModal } from './DeviceModal'
 
 function DeviceManagement() {
-  const [activeTab, setActiveTab] = useState('devices') // devices | logs | receivers
+  const navigate = useNavigate()
+  const [activeTab, setActiveTab] = useState('devices') // devices | logs
   const [devices, setDevices] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -645,10 +646,7 @@ function DeviceManagement() {
             </button>
             <button
               type="button"
-              onClick={() => {
-                setDevEditing(null)
-                setDevFormOpen(true)
-              }}
+              onClick={() => navigate('/device-onboard')}
               className="btn-primary btn-sm"
             >
               <Plus className="mr-1 h-3.5 w-3.5" /> 新建设备
@@ -681,27 +679,12 @@ function DeviceManagement() {
         >
           调用日志
         </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('receivers')}
-          className={`-mb-px border-b-2 px-4 py-3 text-sm transition ${
-            activeTab === 'receivers'
-              ? 'border-primary text-foreground'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          日志接收
-        </button>
       </div>
 
       <div className="flex-1 overflow-hidden">
         {activeTab === 'logs' ? (
           <div className="h-full overflow-y-auto p-6">
             <CallLogsTab />
-          </div>
-        ) : activeTab === 'receivers' ? (
-          <div className="h-full overflow-y-auto p-6">
-            <LogReceiversTab devices={devices} />
           </div>
         ) : (
           <div className="flex h-full flex-col overflow-hidden">
@@ -933,7 +916,7 @@ function DeviceManagement() {
                           <th className="w-20 px-4 py-3 text-right font-medium">动作数</th>
                           <th className="w-20 px-4 py-3 text-right font-medium">今日调用</th>
                           <th className="w-32 px-4 py-3 text-left font-medium">最后心跳</th>
-                          <th className="w-44 px-4 py-3 text-left font-medium">操作</th>
+                          <th className="w-56 px-4 py-3 text-left font-medium">操作</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -980,12 +963,12 @@ function DeviceManagement() {
                               {fmtRelative(dev.last_heartbeat)}
                             </td>
                             <td className="px-4 py-3">
-                              <div className="flex flex-wrap gap-1">
+                              <div className="flex items-center gap-1 whitespace-nowrap">
                                 <button
                                   type="button"
                                   onClick={() => handleTestDevice(dev)}
                                   disabled={testingDeviceId === dev.id}
-                                  className="btn-secondary btn-sm"
+                                  className="btn-secondary btn-sm shrink-0"
                                 >
                                   {testingDeviceId === dev.id ? '测试中' : '测试'}
                                 </button>
@@ -995,14 +978,14 @@ function DeviceManagement() {
                                     setDevEditing(dev)
                                     setDevFormOpen(true)
                                   }}
-                                  className="btn-secondary btn-sm"
+                                  className="btn-secondary btn-sm shrink-0"
                                 >
                                   编辑
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => handleDeviceDelete(dev)}
-                                  className="btn-danger btn-sm"
+                                  className="btn-danger btn-sm shrink-0"
                                 >
                                   删除
                                 </button>

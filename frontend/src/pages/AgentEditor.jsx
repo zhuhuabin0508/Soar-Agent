@@ -366,9 +366,8 @@ function AgentEditor() {
   // ===== 调试预览状态 =====
   const [testInput, setTestInput] = useState('')
   const [testing, setTesting] = useState(false)
-  // testResult 结构因 engine 而异：
-  //   langgraph: { mode:'agent', streaming, decision, target_ip, reason, duration, messages, logs }
-  //   hermes:    { mode:'hermes', streaming, reply, toolCalls:[], delegateGroups:[], logs, statusMsgs:[] }
+  // testResult 结构：
+  //   hermes: { mode:'hermes', streaming, reply, toolCalls:[], delegateGroups:[], logs, statusMsgs:[] }
   //   delegateGroups 项: { subagent_id, task_index, status:'running'|'completed'|'failed', goal, events:[], expanded }
   const [testResult, setTestResult] = useState(null)
   const [testError, setTestError] = useState('')
@@ -757,7 +756,7 @@ function AgentEditor() {
   }
 
   // ===== 调试运行（流式） =====
-  // 按 engine 分支：hermes 走 /chat（支持 delegate 嵌套事件），langgraph 走 /test/stream
+  // 统一走 Hermes /chat（支持 delegate 嵌套事件）
   const handleTest = async () => {
     let agentId = id
     if (!agentId) {
@@ -785,11 +784,8 @@ function AgentEditor() {
     setTestStartTime(Date.now())
     setActiveTab('output')
 
-    const isHermes = form.engine === 'hermes'
     try {
-      const resp = isHermes
-        ? await agentsApi.chatStream(agentId, testInput || '你好', undefined, undefined, { channel: 'test' })
-        : await agentsApi.testStream(agentId, testInput || '你好', undefined, { channel: 'test' })
+      const resp = await agentsApi.chatStream(agentId, testInput || '你好', undefined, undefined, { channel: 'test' })
       if (!resp.ok) {
         const errText = await resp.text()
         throw new Error(errText || `HTTP ${resp.status}`)
@@ -799,7 +795,6 @@ function AgentEditor() {
       const decoder = new TextDecoder()
       let buffer = ''
 
-      if (isHermes) {
         // ===== Hermes 引擎：解析 start/token/tool_start/tool_end/delegate/log/done/error =====
         let fullText = ''
         let toolCalls = []
@@ -976,65 +971,6 @@ function AgentEditor() {
             }
           }
         }
-      } else {
-        // ===== LangGraph 引擎：原有逻辑 =====
-        let fullText = ''
-        let logs = []
-        let messages = []
-
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          buffer += decoder.decode(value, { stream: true })
-
-          // 按 SSE 格式解析（data: {...}\n\n）
-          const lines = buffer.split('\n')
-          buffer = lines.pop() || '' // 保留最后不完整的行
-
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue
-            try {
-              const data = JSON.parse(line.slice(6))
-              if (data.type === 'start') {
-                setTestResult({ mode: data.mode, streaming: true, reply: '', messages: [], logs: [] })
-              } else if (data.type === 'token') {
-                fullText += data.content
-                scheduleStreamUpdate(fullText)
-              } else if (data.type === 'status') {
-                logs.push({ level: 'info', message: data.message })
-                setTestResult((prev) => prev ? { ...prev, logs: [...logs] } : prev)
-              } else if (data.type === 'log') {
-                logs.push(data.log)
-                setTestResult((prev) => prev ? { ...prev, logs: [...logs] } : prev)
-              } else if (data.type === 'message') {
-                messages.push(data.message)
-                setTestResult((prev) => prev ? { ...prev, messages: [...messages] } : prev)
-              } else if (data.type === 'done') {
-                if (data.usage) setTokenUsage(data.usage)
-                if (data.reply !== undefined) {
-                  setTestResult((prev) => prev ? { ...prev, reply: data.reply, streaming: false, tokenUsage: data.usage || null } : { reply: data.reply, streaming: false, tokenUsage: data.usage || null })
-                } else if (data.result) {
-                  const r = data.result
-                  setTestResult({
-                    streaming: false,
-                    decision: r.decision,
-                    target_ip: r.target_ip,
-                    reason: r.reason,
-                    duration: r.duration,
-                    messages: r.messages || [],
-                    logs: r.logs || [],
-                    tokenUsage: data.usage || null,
-                  })
-                }
-              } else if (data.type === 'error') {
-                setTestError(data.message || '测试失败')
-              }
-            } catch {
-              // 忽略 JSON 解析错误
-            }
-          }
-        }
-      }
     } catch (err) {
       setTestError(err.message || '测试失败')
     } finally {
@@ -1388,14 +1324,6 @@ function AgentEditor() {
             {/* 模块三：模型与参数设置 */}
             {wizardShows('模型与参数设置') && (
             <Card title="模型与参数设置" icon={<Settings className="h-4 w-4" />} defaultOpen={false} status={sectionStatus.model} open={sectionOpen('模型与参数设置')} onToggle={toggleCard('模型与参数设置')}>
-              <SelectInput
-                label="推理引擎"
-                value={form.engine || 'hermes'}
-                onChange={setField('engine')}
-                options={[
-                  { value: 'hermes', label: 'Hermes 引擎（工具调用 / 委派 / 技能，推荐）' },
-                ]}
-              />
               <SelectInput
                 label="大语言模型 LLM"
                 value={form.model_config_id}

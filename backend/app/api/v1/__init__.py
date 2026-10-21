@@ -8,6 +8,8 @@ from fastapi import APIRouter
 from app.api.v1 import (
     agents,
     agent_files,
+    alert_rule_groups,
+    alert_rules,
     alerts,
     approvals,
     asset_templates,
@@ -38,6 +40,10 @@ from app.api.v1 import (
     skills,
     system_config,
     system_monitor,
+    ticket_groups,
+    ticket_flows,
+    ticket_sla,
+    tickets,
     tools,
     tools_manage,
     users,
@@ -114,9 +120,20 @@ api_router.include_router(duty.router)
 api_router.include_router(ingest.router)
 # 标准告警列表（分页筛选/详情/统计/导出）
 api_router.include_router(alerts.router)
+# 告警规则（告警规则引擎：解析成功的日志匹配规则后才产生告警）
+api_router.include_router(alert_rules.router)
+# 告警规则分组（XDR 列表页左侧分组树面板）
+api_router.include_router(alert_rule_groups.router)
 # 解析入库监控（概览/策略统计/趋势/服务日志/健康/错误队列重试）
 api_router.include_router(monitor.router)
 # 告警自动封禁工作流（实例管理/触发规则/熔断/审批/封禁工作台/统计）
 api_router.include_router(ban_workflow.router)
 # 内置 mock 服务（IP 风险研判智能体 + 封禁工具，/internal 前缀免鉴权）
 api_router.include_router(internal_mock.router)
+# 工单中心（发起/流转/取消 + 附件）
+api_router.include_router(tickets.router)
+api_router.include_router(tickets.download_router)
+# 工单配置（处理分组 / 流程模板 / SLA 目标）
+api_router.include_router(ticket_groups.router)
+api_router.include_router(ticket_flows.router)
+api_router.include_router(ticket_sla.router)

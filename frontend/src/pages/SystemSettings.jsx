@@ -695,6 +695,14 @@ function SystemSettings() {
                 </div>
               </SettingsSection>
 
+              {/* 解析入库：模板成功率告警 */}
+              <SettingsSection title="解析入库" hint="解析模板成功率告警阈值">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <NumberWithSuffix label="成功率告警阈值" value={configs['parse.success_rate_threshold'] || ''} onChange={setField('parse.success_rate_threshold')} min={1} max={100} suffix="%"
+                    hint="模板解析成功率持续 24 小时低于该值时，生成告警并通过通知中心提醒" />
+                </div>
+              </SettingsSection>
+
               {/* 安全配置（CORS / Webhook） + 测试连接 */}
               <SettingsSection title="连接与限流" hint="CORS 白名单、Webhook 限流，可即时测试">
                 {/* CORS 白名单 - Tag 输入 */}

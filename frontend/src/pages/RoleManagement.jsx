@@ -19,11 +19,13 @@ const LOCAL_MODULE_FALLBACK = {
   asset_discovery: ['view', 'edit', 'delete'],
   bigscreen: ['view'],
   bigscreen2: ['view'],
+  ticket_monitor: ['view'],
 }
 const LOCAL_MODULE_LABELS = {
   asset_discovery: '资产发现',
   bigscreen: '盾立方W',
   bigscreen2: '盾立方指挥大屏',
+  ticket_monitor: '工单监控大屏',
 }
 
 function mergeModuleDef(modData) {
@@ -75,6 +77,11 @@ const MODULE_GROUPS = [
     key: 'operations',
     label: '运营管理',
     modules: ['duty_member', 'duty_schedule', 'duty_leave', 'duty_log', 'duty_dashboard'],
+  },
+  {
+    key: 'ticket',
+    label: '工单',
+    modules: ['ticket', 'ticket_monitor', 'ticket_config'],
   },
   {
     key: 'config',

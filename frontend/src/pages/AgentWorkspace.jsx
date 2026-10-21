@@ -495,10 +495,7 @@ function AgentPreviewPane({ agentId, engine, ensureSaved }) {
     setPreviewMsgs((m) => [...m, { role: 'user', content: text }, snapshotAssistant()])
     setPreviewInput('')
     try {
-      const isHermes = (engine || 'hermes') === 'hermes'
-      const resp = isHermes
-        ? await agentsApi.chatStream(id, text, controller.signal, sessionRef.current, { channel: 'test' })
-        : await agentsApi.testStream(id, text, controller.signal, { channel: 'test' })
+      const resp = await agentsApi.chatStream(id, text, controller.signal, sessionRef.current, { channel: 'test' })
       if (!resp.ok) throw new Error((await resp.text()) || `HTTP ${resp.status}`)
       await readSse(resp, {
         onToken: (c) => {
@@ -1306,7 +1303,7 @@ export default function AgentWorkspace() {
                         开始构建
                       </button>
                     </div>
-                    <p className="mt-2 text-[11px] text-muted-foreground">运行时仍是 LangGraph / Hermes，不会使用外部沙箱。</p>
+                    <p className="mt-2 text-[11px] text-muted-foreground">运行时为 Hermes 引擎，不会使用外部沙箱。</p>
                   </div>
                 </div>
               ) : (

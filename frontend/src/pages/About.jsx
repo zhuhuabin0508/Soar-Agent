@@ -115,11 +115,11 @@ export default function About() {
             </div>
             <div className="rounded-md border border-border bg-secondary/40 px-3 py-2">
               <span className="text-muted-foreground">AI 框架：</span>
-              <span className="font-medium text-foreground">LangGraph + LangChain</span>
+              <span className="font-medium text-foreground">LangChain + 自研 Hermes 引擎</span>
             </div>
             <div className="rounded-md border border-border bg-secondary/40 px-3 py-2">
               <span className="text-muted-foreground">引擎：</span>
-              <span className="font-medium text-foreground">Hermes ReAct + LangGraph Agent</span>
+              <span className="font-medium text-foreground">Hermes ReAct 引擎</span>
             </div>
           </div>
         </div>

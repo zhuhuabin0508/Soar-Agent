@@ -43,6 +43,13 @@ def extract_fields(data: dict, extract: dict, context: dict) -> tuple[dict, list
     mappings = (extract or {}).get("fields")
     if mappings is None:
         mappings = (extract or {}).get("field_mappings") or []
+    # 规则级独立数据源：extract.source（点分路径，从 context 解析子对象）。
+    # 用于同一策略内混用「外层包装 + 扁平」两种日志格式（如 XDR 数据开放规范：
+    # 安全告警/事件带 {type, data:{...}} 包装，DNS/端点/网络日志为扁平 JSON）。
+    # 未指定 source 或解析结果非对象时保持原 data（向后兼容）。
+    src, _ = _resolve_source_data(data, extract, context)
+    if isinstance(src, dict):
+        data = src
     return apply_mappings(data, mappings, context)
 
 

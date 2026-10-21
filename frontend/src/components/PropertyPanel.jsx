@@ -1052,7 +1052,7 @@ function renderForm(node, update, toolOptions, toolsList, llmOptions, agentOptio
           <Section title="输出变量" hint="智能体执行后输出以下变量，可供下游节点通过 ${本节点ID.变量名} 引用。">
             <OutputVarList vars={[
               'response : string（智能体的最终回复文本）',
-              'decision : string（LangGraph 决策模式时的决策结果，如 block_ip/ignore）',
+              'decision : string（SOC 决策模式输出的决策结果，如 block_ip/ignore）',
               'messages : array（推理过程消息列表）',
             ]} />
           </Section>

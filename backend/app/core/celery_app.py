@@ -57,6 +57,11 @@ from celery.schedules import crontab  # noqa: E402
 
 celery_app.conf.beat_schedule = {
     # 资产扫描任务已改为手动触发（通过 /assets/scan 接口），不再每小时定时执行
+    # 工单节点停留超时扫描：检查进行中工单是否超过当前节点超时阈值并推送提醒
+    "scan-ticket-timeouts": {
+        "task": "scan_ticket_timeouts",
+        "schedule": crontab(minute="*/5"),
+    },
 }
 
 # 自动发现 app 包下的 tasks 模块（即 app.tasks）

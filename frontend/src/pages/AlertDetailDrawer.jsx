@@ -6,10 +6,14 @@
 // - 扩展字段：extensions JSON 格式化（按策略不同内容不同）
 // - 原始数据：raw_data 格式化高亮（可复制/下载）
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { createPortal } from 'react-dom'
-import { X, Copy, Download, FileJson, Info, ArrowLeftRight, Server, FileText, Braces, FileCode } from 'lucide-react'
+import { X, Copy, Download, FileJson, Info, ArrowLeftRight, Server, FileText, Braces, FileCode, ShieldCheck } from 'lucide-react'
 import { toast } from '../store/toastStore'
 import { alertApi } from '../api/alert'
+import { inputBaseCls } from '../components/property/FormControls'
+import { hasPermission } from '../utils/permissions'
+import usersApi from '../api/users'
 import useLockBackgroundScroll from '../hooks/useLockBackgroundScroll'
 
 // Tab 定义
@@ -20,7 +24,27 @@ const TABS = [
   { key: 'proof', label: '举证信息', icon: FileText },
   { key: 'ext', label: '扩展字段', icon: Braces },
   { key: 'raw', label: '原始数据', icon: FileCode },
+  { key: 'handle', label: '处置记录', icon: ShieldCheck },
 ]
+
+// 状态机流转规则
+const TRANSITIONS = {
+  0: [0, 10, 70, 20, 30, 40, 50, 60, 80],
+  10: [10, 70, 0, 20, 30, 40, 50, 60, 80],
+  70: [70, 0, 10, 20, 30, 40, 50, 60, 80],
+  20: [20, 70],
+  30: [30, 70, 0], 40: [40, 70, 0], 50: [50, 70, 0], 60: [60, 70, 0], 80: [80, 70, 0],
+}
+const DEAL_STATUS_OPTS = [
+  { v: 0, label: '未处置' }, { v: 10, label: '生成事件' }, { v: 20, label: '已关闭' },
+  { v: 30, label: '已加白' }, { v: 40, label: '已驳回' }, { v: 50, label: '已忽略' },
+  { v: 60, label: '已遏制' }, { v: 70, label: '处置中' }, { v: 80, label: '误报' },
+]
+const STATUS_LABELS = Object.fromEntries(DEAL_STATUS_OPTS.map((o) => [o.v, o.label]))
+const ACTION_LABELS = {
+  status_change: '状态变更', assign: '指派', comment: '备注',
+  reopen: '重新打开', close: '关闭',
+}
 
 const fmtTime = (t) => (t ? String(t).replace('T', ' ').slice(0, 19) : '--')
 
@@ -62,10 +86,16 @@ function CodeBlock({ text, max = 520 }) {
   )
 }
 
-export default function AlertDetailDrawer({ open, alertId, onClose }) {
+export default function AlertDetailDrawer({ open, alertId, onClose, onHandled }) {
+  const navigate = useNavigate()
   const [detail, setDetail] = useState(null)
   const [loading, setLoading] = useState(false)
   const [tab, setTab] = useState('basic')
+  const [handleLogs, setHandleLogs] = useState([])
+  const [users, setUsers] = useState([])
+  const [handleForm, setHandleForm] = useState({ to_status: 70, assignee_id: '', comment: '' })
+  const [submitting, setSubmitting] = useState(false)
+  const canHandle = hasPermission('alert', 'handle')
 
   useEffect(() => {
     if (!open || !alertId) return
@@ -76,7 +106,39 @@ export default function AlertDetailDrawer({ open, alertId, onClose }) {
       .then(setDetail)
       .catch((e) => toast.error(e.message || '详情加载失败'))
       .finally(() => setLoading(false))
+    if (canHandle) {
+      alertApi.handleLogs(alertId).then(setHandleLogs).catch(() => {})
+      usersApi.list().then((items) => setUsers((items || []).filter((u) => u.is_active !== false))).catch(() => {})
+    }
   }, [open, alertId])
+
+  // 当切换到处置 Tab 时刷新日志
+  useEffect(() => {
+    if (tab === 'handle' && alertId && canHandle) {
+      alertApi.handleLogs(alertId).then(setHandleLogs).catch(() => {})
+    }
+  }, [tab, alertId])
+
+  // 根据当前状态计算可选目标状态
+  const currentStatus = detail?.deal_status ?? 0
+  const allowedTargets = TRANSITIONS[currentStatus] || []
+
+  const submitHandle = () => {
+    setSubmitting(true)
+    alertApi.handle(alertId, {
+      to_status: handleForm.to_status,
+      assignee_id: handleForm.assignee_id ? Number(handleForm.assignee_id) : null,
+      comment: handleForm.comment,
+    }).then(() => {
+      toast.success('处置操作成功')
+      setHandleForm({ to_status: 70, assignee_id: '', comment: '' })
+      // 刷新详情+日志
+      alertApi.detail(alertId).then(setDetail).catch(() => {})
+      alertApi.handleLogs(alertId).then(setHandleLogs).catch(() => {})
+      onHandled?.()
+    }).catch((e) => toast.error(e.message || '处置失败'))
+    .finally(() => setSubmitting(false))
+  }
 
   // ESC 关闭
   useEffect(() => {
@@ -161,7 +223,25 @@ export default function AlertDetailDrawer({ open, alertId, onClose }) {
                   <KV label="威胁定性" value={[detail.threat_class, detail.threat_type, detail.threat_sub_type].filter(Boolean).join(' / ') || '--'} />
                   <KV label="处置状态" value={detail.deal_status_name} />
                   <KV label="解析状态" value={detail.parse_status} />
-                  <KV label="设备类型" value={detail.device_type} />
+                  {/* 设备类型未识别时显示灰字 + 去配置链接（引导完成设备接入绑定） */}
+                  <div>
+                    <div className="text-[11px] text-muted-foreground">设备类型</div>
+                    {detail.device_type ? (
+                      <div className="mt-0.5 truncate text-sm text-foreground" title={detail.device_type}>{detail.device_type}</div>
+                    ) : (
+                      <div className="mt-0.5 flex items-center gap-1.5">
+                        <span className="text-sm text-muted-foreground/70">未识别</span>
+                        <button
+                          type="button"
+                          className="text-xs text-primary transition hover:underline"
+                          title="打开设备接入指引，完成设备接入与解析模板配置"
+                          onClick={() => navigate('/device-onboard')}
+                        >
+                          去配置
+                        </button>
+                      </div>
+                    )}
+                  </div>
                   <KV label="租户 / 客户" value={[detail.tenant, detail.customer].filter(Boolean).join(' / ') || '--'} />
                   <KV label="首次发生" value={fmtTime(detail.first_timestamp)} mono />
                   <KV label="最近发生" value={fmtTime(detail.last_timestamp)} mono />
@@ -218,6 +298,23 @@ export default function AlertDetailDrawer({ open, alertId, onClose }) {
               {tab === 'asset' && (
                 <div className="grid grid-cols-2 gap-x-8 gap-y-5">
                   <KV label="资产类型" value={detail.relate_asset_type_name || (isContainer ? '容器' : '主机')} />
+                  {detail.relate_asset_id ? (
+                    <div>
+                      <div className="text-[11px] text-muted-foreground">关联资产（资产库匹配）</div>
+                      <button
+                        className="mt-0.5 flex max-w-full items-baseline gap-1 text-left text-sm text-primary underline-offset-2 hover:underline"
+                        title={`点击查看资产：${detail.relate_asset_ip || detail.relate_asset_name}`}
+                        onClick={() => navigate(`/assets/list?keyword=${encodeURIComponent(detail.relate_asset_ip || detail.relate_asset_name || '')}`)}
+                      >
+                        <span className="truncate">{detail.relate_asset_name || `资产 #${detail.relate_asset_id}`}</span>
+                        {detail.relate_asset_ip && (
+                          <span className="shrink-0 font-mono text-[12px] text-muted-foreground">（{detail.relate_asset_ip}）</span>
+                        )}
+                      </button>
+                    </div>
+                  ) : (
+                    <KV label="关联资产（资产库匹配）" value="--" />
+                  )}
                   <KV label="主机 IP" value={fmtIpList(detail.host_ip)} mono />
                   <KV label="资产 ID" value={detail.asset_id} mono />
                   <KV label="区域 ID" value={detail.region_id} mono />
@@ -285,6 +382,127 @@ export default function AlertDetailDrawer({ open, alertId, onClose }) {
                 ) : (
                   <div className="py-16 text-center text-sm text-muted-foreground">原始数据为空</div>
                 )
+              )}
+
+              {tab === 'handle' && (
+                <div className="space-y-6">
+                  {/* 当前状态摘要 */}
+                  <div className="grid grid-cols-3 gap-4 rounded-lg border border-border bg-muted/30 p-4">
+                    <div>
+                      <div className="text-[11px] text-muted-foreground">当前处置状态</div>
+                      <div className="mt-1 text-sm font-medium text-foreground">
+                        {STATUS_LABELS[detail.deal_status] || detail.deal_status_name || '--'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] text-muted-foreground">指派处理人</div>
+                      <div className="mt-1 text-sm text-foreground">{detail.assignee_name || '未指派'}</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] text-muted-foreground">最近处置时间</div>
+                      <div className="mt-1 font-mono text-[13px] text-foreground">{fmtTime(detail.handled_at)}</div>
+                    </div>
+                  </div>
+
+                  {/* 处置表单 */}
+                  {canHandle ? (
+                    <div className="rounded-lg border border-border p-4">
+                      <div className="mb-3 text-sm font-medium text-foreground">处置操作</div>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="mb-1 block text-xs text-muted-foreground">目标状态</label>
+                          <select
+                            className={`${inputBaseCls} h-[34px] w-full`}
+                            value={handleForm.to_status}
+                            onChange={(e) => setHandleForm((f) => ({ ...f, to_status: Number(e.target.value) }))}
+                          >
+                            {DEAL_STATUS_OPTS
+                              .filter((o) => allowedTargets.includes(o.v))
+                              .map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
+                          </select>
+                          {allowedTargets.length === 0 && (
+                            <span className="text-[11px] text-muted-foreground">当前状态无可用流转</span>
+                          )}
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs text-muted-foreground">指派处理人（可选）</label>
+                          <select
+                            className={`${inputBaseCls} h-[34px] w-full`}
+                            value={handleForm.assignee_id}
+                            onChange={(e) => setHandleForm((f) => ({ ...f, assignee_id: e.target.value }))}
+                          >
+                            <option value="">不指派</option>
+                            {users.map((u) => <option key={u.id} value={u.id}>{u.display_name || u.username}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs text-muted-foreground">处置备注</label>
+                          <textarea
+                            className={`${inputBaseCls} min-h-[60px] w-full resize-none`}
+                            placeholder="输入处置备注..."
+                            value={handleForm.comment}
+                            onChange={(e) => setHandleForm((f) => ({ ...f, comment: e.target.value }))}
+                          />
+                        </div>
+                        <div className="flex justify-end">
+                          <button
+                            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={submitting || allowedTargets.length === 0}
+                            onClick={submitHandle}
+                          >
+                            {submitting ? '提交中...' : '提交处置'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-border bg-muted/30 p-4 text-center text-sm text-muted-foreground">
+                      无处置权限
+                    </div>
+                  )}
+
+                  {/* 处置时间线 */}
+                  <div>
+                    <div className="mb-3 text-sm font-medium text-foreground">处置时间线</div>
+                    {handleLogs.length === 0 ? (
+                      <div className="py-8 text-center text-sm text-muted-foreground">暂无处置记录</div>
+                    ) : (
+                      <div className="space-y-3">
+                        {handleLogs.map((log) => (
+                          <div key={log.id} className="flex gap-3 rounded-lg border border-border bg-muted/20 p-3">
+                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                              <ShieldCheck className="h-3.5 w-3.5" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium text-foreground">
+                                  {ACTION_LABELS[log.action] || log.action}
+                                </span>
+                                {log.from_status_name && log.to_status_name && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {log.from_status_name} → {log.to_status_name}
+                                  </span>
+                                )}
+                              </div>
+                              {log.to_assignee && (
+                                <div className="mt-0.5 text-xs text-muted-foreground">
+                                  指派: {log.to_assignee}
+                                  {log.from_assignee && log.from_assignee !== log.to_assignee && `（原: ${log.from_assignee}）`}
+                                </div>
+                              )}
+                              {log.comment && (
+                                <div className="mt-1 text-sm text-foreground">{log.comment}</div>
+                              )}
+                              <div className="mt-1 text-[11px] text-muted-foreground">
+                                {log.operator_name} · {fmtTime(log.created_at)}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
             </>
           )}

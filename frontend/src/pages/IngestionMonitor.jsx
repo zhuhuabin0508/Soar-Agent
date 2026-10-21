@@ -1,4 +1,4 @@
-// 解析入库监控页：概览卡片 + 策略维度统计 + 4 张趋势图 + 错误队列 + 服务日志 + 服务健康
+// 解析入库监控页：概览卡片 + 模板维度统计 + 4 张趋势图 + 错误队列 + 服务日志 + 服务健康
 // Tab 结构：概览 / 错误队列 / 服务日志 / 服务健康
 // 图表统一使用 chartTheme（暗色主题浅色文字、柱状图圆角、悬停明细）
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
@@ -81,7 +81,7 @@ function VolumeChart({ data, window: win, strategies, strategyId, onStrategyChan
       actions={(
         <div className="flex items-center gap-2">
           <select className={`${inputBaseCls} h-8 w-[170px] text-xs`} value={strategyId} onChange={(e) => onStrategyChange(Number(e.target.value))}>
-            <option value={0}>全部策略</option>
+            <option value={0}>全部模板</option>
             {strategies.filter((s) => s.strategy_id != null).map((s) => (
               <option key={s.strategy_id} value={s.strategy_id}>{s.strategy_name}</option>
             ))}
@@ -191,6 +191,7 @@ function ErrorQueueTab() {
   const [list, setList] = useState({ total: 0, items: [] })
   const [loading, setLoading] = useState(false)
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
   const [errorType, setErrorType] = useState('')
   const [keyword, setKeyword] = useState('')
   const [selected, setSelected] = useState([])
@@ -200,11 +201,11 @@ function ErrorQueueTab() {
 
   const load = useCallback(() => {
     setLoading(true)
-    monitorApi.errors({ error_type: errorType, keyword, page, page_size: 20 })
+    monitorApi.errors({ error_type: errorType, keyword, page, page_size: pageSize })
       .then((res) => setList({ total: res.total || 0, items: res.items || [] }))
       .catch((e) => toast.error(e.message || '错误队列加载失败'))
       .finally(() => setLoading(false))
-  }, [errorType, keyword, page])
+  }, [errorType, keyword, page, pageSize])
 
   useEffect(() => { load() }, [load])
 
@@ -267,7 +268,7 @@ function ErrorQueueTab() {
   const columns = [
     { key: 'id', header: '错误ID', width: '80px', render: (r) => <span className="tabular-nums">#{r.id}</span> },
     { key: 'uuid', header: 'UUID', width: '180px', render: (r) => <span className="truncate font-mono text-xs text-muted-foreground" title={r.uuid}>{r.uuid || '--'}</span> },
-    { key: 'strategy_name', header: '策略', width: '170px', render: (r) => <span className="truncate" title={r.strategy_name}>{r.strategy_name || '--'}</span> },
+    { key: 'strategy_name', header: '模板', width: '170px', render: (r) => <span className="truncate" title={r.strategy_name}>{r.strategy_name || '--'}</span> },
     { key: 'created_at', header: '失败时间', width: '150px', render: (r) => <span className="font-mono text-xs text-muted-foreground">{fmtTime(r.created_at)}</span> },
     { key: 'error_type_label', header: '错误类型', width: '110px', render: (r) => <Badge variant="danger">{r.error_type_label}</Badge> },
     { key: 'error_msg', header: '失败原因', width: '200px', render: (r) => <span className="block max-w-[200px] truncate text-xs text-muted-foreground" title={r.error_msg}>{r.error_msg || '--'}</span> },
@@ -307,7 +308,8 @@ function ErrorQueueTab() {
           <select className={`${inputBaseCls} h-[34px] w-[170px]`} value={errorType} onChange={(e) => { setErrorType(e.target.value); setPage(1) }}>
             <option value="">全部错误类型</option>
             <option value="json_parse_failed">JSON解析失败</option>
-            <option value="no_strategy_matched">无匹配策略</option>
+            <option value="no_strategy_matched">无匹配模板</option>
+            <option value="unknown_log_type">未知日志类型</option>
             <option value="field_validation_failed">字段校验失败</option>
             <option value="db_write_failed">数据库写入失败</option>
           </select>
@@ -340,7 +342,8 @@ function ErrorQueueTab() {
           emptyIcon={Inbox}
         />
         <div className="px-4">
-          <Pagination page={page} pageSize={20} total={list.total} onPageChange={setPage} pageSizeOptions={[20]} />
+          <Pagination page={page} pageSize={pageSize} total={list.total} onPageChange={setPage}
+            onPageSizeChange={(s) => { setPageSize(s); setPage(1) }} pageSizeOptions={[10, 20, 50, 100]} />
         </div>
       </Card>
 
@@ -487,7 +490,7 @@ function HealthTab() {
       ok: (health?.backlog ?? 0) === 0,
       rows: [
         ['错误队列待处理', `${health?.backlog ?? 0} 条`],
-        ['今日无匹配策略', `${overview?.no_match_today ?? 0} 条`],
+        ['今日无匹配模板', `${overview?.no_match_today ?? 0} 条`],
       ],
     },
   ]
@@ -579,7 +582,7 @@ function WorkflowStatsRow({ navigate }) {
             className="flex items-center gap-3 rounded-lg border border-border bg-muted/20 px-4 py-3 text-left transition hover:border-primary/40"
             onClick={() => navigate('/ban-workflow/instances')}
           >
-            <Icon className={`h-4.5 w-4.5 shrink-0 ${tone || 'text-primary'}`} size={18} />
+            <Icon className={`h-[18px] w-[18px] shrink-0 ${tone || 'text-primary'}`} />
             <div className="min-w-0">
               <div className="truncate text-xs text-muted-foreground">{label}</div>
               <div className={`mt-0.5 text-lg font-semibold tabular-nums ${tone || 'text-foreground'}`}>{value}</div>
@@ -643,9 +646,9 @@ export default function IngestionMonitor() {
     { icon: Timer, label: '平均解析耗时', value: today?.avg_parse_ms == null ? '--' : today.avg_parse_ms, suffix: 'ms', delta: pctDelta(today?.avg_parse_ms, yesterday?.avg_parse_ms), trend },
   ]
 
-  // 策略维度统计表（点击行跳转告警列表按设备类型过滤）
+  // 模板维度统计表（点击行跳转告警列表按设备类型过滤）
   const strategyColumns = [
-    { key: 'strategy_name', header: '策略名称', width: '260px', render: (r) => <span className="max-w-[240px] truncate font-medium" title={r.strategy_name}>{r.strategy_name}</span> },
+    { key: 'strategy_name', header: '模板名称', width: '260px', render: (r) => <span className="max-w-[240px] truncate font-medium" title={r.strategy_name}>{r.strategy_name}</span> },
     { key: 'device_type', header: '设备类型', width: '130px', render: (r) => <span className="text-muted-foreground">{r.device_type || '--'}</span> },
     { key: 'today_total', header: '今日解析量', width: '110px', numeric: true, render: (r) => <span className="tabular-nums">{r.today_total ?? 0}</span> },
     { key: 'success', header: '成功', width: '80px', numeric: true, render: (r) => <span className="tabular-nums text-success">{r.success ?? 0}</span> },
@@ -676,7 +679,7 @@ export default function IngestionMonitor() {
     <PageContainer>
       <PageHeader
         title="解析入库监控"
-        description="按策略/设备维度统计解析入库：趋势、错误队列、服务日志与健康状态"
+        description="按模板/设备维度统计解析入库：趋势、错误队列、服务日志与健康状态"
         actions={<Button size="sm" variant="ghost" onClick={loadOverview}><RefreshCw className="h-3.5 w-3.5" /> 刷新</Button>}
       />
 
@@ -700,8 +703,8 @@ export default function IngestionMonitor() {
             {cards.map((c) => <OverviewCard key={c.label} {...c} />)}
           </div>
 
-          {/* 策略维度统计表 */}
-          <Card title="策略维度统计" description="点击行查看该策略的告警明细（跳转告警列表）" className="p-0" bodyClassName="p-0">
+          {/* 模板维度统计表 */}
+          <Card title="模板维度统计" description="点击行查看该模板的告警明细（跳转告警列表）" className="p-0" bodyClassName="p-0">
             <DataTable
               columns={strategyColumns}
               data={strategyStats}
@@ -710,8 +713,8 @@ export default function IngestionMonitor() {
                 if (r.device_type) navigate(`/alerts?device_type=${encodeURIComponent(r.device_type)}`)
                 else if (r.strategy_id == null) navigate('/alerts')
               }}
-              emptyText="暂无策略统计"
-              emptyDescription="接入设备产生解析量后此处显示按策略聚合的统计"
+              emptyText="暂无模板统计"
+              emptyDescription="接入设备产生解析量后此处显示按模板聚合的统计"
               emptyIcon={Inbox}
             />
           </Card>

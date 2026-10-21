@@ -7,7 +7,7 @@ import {
   Settings, HeartPulse, DatabaseBackup, LogOut, ChevronLeft, ChevronRight,
   ChevronsRight, UserRound, PieChart, Boxes, Info, Bug, MessageSquareWarning, Inbox, PackageCheck,
   CalendarClock, CalendarRange, CalendarX, History, Monitor, FileJson, BellRing, Activity,
-  ShieldBan, Filter, Library,
+  ShieldBan, Filter, Library, Radio, ListTree, GitGraph, ClipboardCheck, TimerReset,
 } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import { hasPermission } from '../utils/permissions'
@@ -61,7 +61,7 @@ const NAV_GROUPS = [
           { to: '/assets', icon: PieChart, label: '资产总览', end: true, perm: ['asset_overview', 'view'] },
           { to: '/assets/list', icon: ListIcon, label: '资产清单', end: true, perm: ['asset_list', 'view'] },
           { to: '/assets/templates', icon: Boxes, label: '类型模板', end: true, perm: ['asset_templates', 'view'] },
-          { to: '/assets/discovery', icon: ListIcon, label: '资产发现', end: true },
+          { to: '/assets/discovery', icon: ListIcon, label: '资产发现', end: true, perm: ['asset_discovery', 'view'] },
         ],
       },
       { to: '/deliverables', icon: PackageCheck, label: '材料管理', perm: ['deliverable', 'view'] },
@@ -82,6 +82,18 @@ const NAV_GROUPS = [
           { to: '/duty/logs', icon: History, label: '调班记录', end: true, perm: ['duty_log', 'view'] },
         ],
       },
+      { to: '/tickets', icon: ClipboardCheck, label: '工单中心', perm: ['ticket', 'view'] },
+      {
+        to: '/ticket-config/groups',
+        icon: Settings,
+        label: '工单配置',
+        perm: ['ticket_config', 'view'],
+        children: [
+          { to: '/ticket-config/groups', icon: Users, label: '处理分组', end: true, perm: ['ticket_config', 'view'] },
+          { to: '/ticket-config/flows', icon: GitGraph, label: '流程模板', end: true, perm: ['ticket_config', 'view'] },
+          { to: '/ticket-config/sla', icon: TimerReset, label: 'SLA 目标', end: true, perm: ['ticket_config', 'view'] },
+        ],
+      },
     ],
   },
   {
@@ -95,9 +107,13 @@ const NAV_GROUPS = [
         perm: ['device', 'view'],
         children: [
           { to: '/devices', icon: Shield, label: '设备列表', end: true, perm: ['device', 'view'] },
-          { to: '/strategies', icon: FileJson, label: '解析策略', end: true, perm: ['strategy', 'view'] },
+          { to: '/receivers', icon: Radio, label: '接收器', end: true, perm: ['device', 'view'] },
+          { to: '/source-entries', icon: ListTree, label: '数据源条目', end: true, perm: ['device', 'view'] },
+          { to: '/strategies', icon: FileJson, label: '解析模板', end: true, perm: ['strategy', 'view'] },
           { to: '/alerts', icon: BellRing, label: '告警列表', end: true, perm: ['alert', 'view'] },
+          { to: '/alert-rules', icon: Filter, label: '告警规则', end: true, perm: ['alert', 'view'] },
           { to: '/ingest-monitor', icon: Activity, label: '入库监控', end: true, perm: ['monitor', 'view'] },
+          { to: '/lineage', icon: GitGraph, label: '数据血缘', end: true, perm: ['device', 'view'] },
         ],
       },
     ],
@@ -116,6 +132,7 @@ const NAV_GROUPS = [
       { to: '/roles', icon: ShieldCheck, label: '角色管理', perm: ['role', 'view'] },
       { to: '/system-settings', icon: Settings, label: '系统设置', perm: ['system_config', 'view'] },
       { to: '/system-monitor', icon: HeartPulse, label: '系统监控', perm: ['system_monitor', 'view'] },
+      { to: '/audit-logs', icon: ScrollText, label: '审计日志', perm: ['audit_log', 'view'] },
       { to: '/backup', icon: DatabaseBackup, label: '备份恢复', perm: ['system_config', 'view'] },
       { to: '/feedbacks/admin', icon: Bug, label: '反馈管理', perm: ['feedback', 'view'] },
       { to: '/about', icon: Info, label: '关于', perm: ['system_config', 'view'] },
@@ -147,6 +164,7 @@ const BREADCRUMB_MAP = {
   '/knowledge-base': ['工作室', '知识库'],
   '/llm-configs': ['连接配置', '模型设置'],
   '/devices': ['连接配置', '设备对接', '设备列表'],
+  '/device-onboard': ['连接配置', '设备对接', '设备接入指引'],
   '/executions': ['运行监控', '日志中心'],
   '/logs': ['运行监控', '日志中心'],
   '/assets': ['资源管理', '资产管理', '资产总览'],
@@ -159,11 +177,25 @@ const BREADCRUMB_MAP = {
   '/duty/schedule': ['运营管理', '值班管理', '值班表'],
   '/duty/leaves': ['运营管理', '值班管理', '请假管理'],
   '/duty/logs': ['运营管理', '值班管理', '调班记录'],
-  '/strategies': ['连接配置', '设备对接', '解析策略'],
-  '/strategies/new': ['连接配置', '设备对接', '解析策略', '新建'],
-  '/strategies/:id/edit': ['连接配置', '设备对接', '解析策略', '编辑'],
+  '/tickets': ['运营管理', '工单中心'],
+  '/tickets/:id': ['运营管理', '工单中心', '详情'],
+  '/ticket-config/groups': ['运营管理', '工单配置', '处理分组'],
+  '/ticket-config/sla': ['运营管理', '工单配置', 'SLA 目标'],
+  '/ticket-config/flows': ['运营管理', '工单配置', '流程模板'],
+  '/ticket-config/flows/new': ['运营管理', '工单配置', '流程模板', '新建'],
+  '/ticket-config/flows/:id/edit': ['运营管理', '工单配置', '流程模板', '编辑'],
+  '/receivers': ['连接配置', '设备对接', '接收器'],
+  '/source-entries': ['连接配置', '设备对接', '数据源条目'],
+  '/source-entries/:id': ['连接配置', '设备对接', '数据源条目', '详情'],
+  '/strategies': ['连接配置', '设备对接', '解析模板'],
+  '/strategies/new': ['连接配置', '设备对接', '解析模板', '新建'],
+  '/strategies/:id/edit': ['连接配置', '设备对接', '解析模板', '编辑'],
   '/alerts': ['连接配置', '设备对接', '告警列表'],
+  '/alert-rules': ['连接配置', '设备对接', '告警规则'],
+  '/alert-rules/new': ['连接配置', '设备对接', '告警规则', '新建'],
+  '/alert-rules/:id/edit': ['连接配置', '设备对接', '告警规则', '编辑'],
   '/ingest-monitor': ['连接配置', '设备对接', '入库监控'],
+  '/lineage': ['连接配置', '设备对接', '数据血缘'],
   '/ban-workflow/rules': ['运营中心', '触发规则'],
   '/notifications': ['运行监控', '通知中心'],
   '/agent-tutorial': ['智能体', '使用教程'],
@@ -171,6 +203,7 @@ const BREADCRUMB_MAP = {
   '/roles': ['系统管理', '角色管理'],
   '/system-settings': ['系统管理', '系统设置'],
   '/system-monitor': ['系统管理', '系统监控'],
+  '/audit-logs': ['系统管理', '审计日志'],
   '/backup': ['系统管理', '备份恢复'],
   '/feedbacks/admin': ['系统管理', '反馈管理'],
   '/about': ['系统管理', '关于'],
@@ -322,6 +355,7 @@ function getBreadcrumbs(pathname) {
   if (pathname.startsWith('/tools/new')) return ['工作室', '新建工具']
   if (pathname.startsWith('/agents/new') || pathname.startsWith('/agents/quick')) return ['工作室', '新建智能体']
   if (pathname.startsWith('/agents/') && pathname.endsWith('/advanced')) return ['工作室', '高级编辑']
+  if (pathname.startsWith('/source-entries/')) return ['连接配置', '设备对接', '数据源条目', '详情']
   return []
 }
 
@@ -376,7 +410,7 @@ function AppShell() {
     for (const group of NAV_GROUPS) {
       for (const item of group.items) {
         if (item.children && (path === item.to || path.startsWith(item.to + '/') ||
-            item.children.some((c) => path === c.to))) {
+            item.children.some((c) => path === c.to || path.startsWith(c.to + '/')))) {
           defaults.add(item.to)
         }
       }
@@ -409,6 +443,32 @@ function AppShell() {
       return next
     })
   }
+
+  // 路由变化时自动展开命中项的父菜单
+  // （如从列表点进详情 /source-entries/12，或直接刷新详情页，「设备接入」组保持展开，
+  //   确保侧边栏能看到当前高亮的功能项）
+  useEffect(() => {
+    const path = location.pathname
+    const hits = []
+    for (const group of NAV_GROUPS) {
+      for (const item of group.items) {
+        if (item.children && (path === item.to || path.startsWith(item.to + '/') ||
+            item.children.some((c) => path === c.to || path.startsWith(c.to + '/')))) {
+          hits.push(item.to)
+        }
+      }
+    }
+    if (hits.length) {
+      setExpandedParents((prev) => {
+        const next = new Set(prev)
+        let changed = false
+        for (const h of hits) {
+          if (!next.has(h)) { next.add(h); changed = true }
+        }
+        return changed ? next : prev
+      })
+    }
+  }, [location.pathname])
 
   // 挂载时刷新当前用户信息，确保 display_name 等字段为最新
   useEffect(() => {
@@ -513,12 +573,20 @@ function AppShell() {
         {/* 导航菜单（分组渲染，支持子项展开/收起） */}
         <nav className="flex flex-1 flex-col gap-2 overflow-y-auto p-2">
           {visibleGroups.map((group, gi) => {
+            // 子项激活判断：精确命中优先；无精确命中时前缀匹配（详情页归属父功能，
+            // 如 /source-entries/12 高亮「数据源条目」；/assets/list 不会误亮「资产总览」）
+            const childSelfActive = (children, c) => {
+              if (!c) return false
+              if (location.pathname === c.to) return true
+              const hasExact = (children || []).some((x) => location.pathname === x.to)
+              return !hasExact && location.pathname.startsWith(c.to + '/')
+            }
             // 分组内是否有激活项（用于分组标题轻微高亮，帮助定位）
             const groupHasActive = group.items.some((it) =>
               location.pathname === it.to ||
               location.pathname.startsWith(it.to + '/') ||
               (it.matchPrefix || []).some((p) => location.pathname === p || location.pathname.startsWith(p + '/')) ||
-              (it.children || []).some((c) => location.pathname === c.to)
+              (it.children || []).some((c) => childSelfActive(it.children, c))
             )
             return (
               <div key={gi} className="flex flex-col gap-1">
@@ -534,9 +602,9 @@ function AppShell() {
                 {group.items.map((item, itemIdx) => {
                   const hasChildren = item.children && item.children.length > 0
                   const isExpanded = expandedParents.has(item.to)
-                  // 父项高亮：自身激活或任一子项激活
+                  // 父项高亮：自身激活或任一子项激活（含详情页前缀归属）
                   const childActive = (item.children || []).some(
-                    (c) => location.pathname === c.to
+                    (c) => childSelfActive(item.children, c)
                   )
                   const prefixActive = (item.matchPrefix || []).some(
                     (p) => location.pathname === p || location.pathname.startsWith(p + '/')
@@ -595,19 +663,18 @@ function AppShell() {
                         <div className="flex flex-col gap-0.5 pl-6">
                           {item.children.map((child) => {
                             const ChildIcon = child.icon
+                            const selfActive = childSelfActive(item.children, child)
                             return (
                               <NavLink
                                 key={child.to}
                                 to={child.to}
                                 end={child.end}
                                 title={child.label}
-                                className={({ isActive }) =>
-                                  `flex items-center rounded-md px-3 py-1.5 text-[13px] transition-colors ${
-                                    isActive
-                                      ? 'bg-primary/10 text-primary ring-1 ring-primary/30'
-                                      : 'text-muted-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground'
-                                  }`
-                                }
+                                className={`flex items-center rounded-md px-3 py-1.5 text-[13px] transition-colors ${
+                                  selfActive
+                                    ? 'bg-primary/10 text-primary ring-1 ring-primary/30'
+                                    : 'text-muted-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground'
+                                }`}
                               >
                                 {ChildIcon && <ChildIcon className="mr-2 h-3.5 w-3.5" />}
                                 <span className="font-normal">{child.label}</span>

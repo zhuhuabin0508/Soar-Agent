@@ -5,6 +5,8 @@ import {
 } from 'lucide-react'
 import { assetsApi } from '../api/assets'
 import { Modal } from '../components/Dialog'
+import { confirm } from '../components/ConfirmDialog'
+import { toast } from '../store/toastStore'
 import { inputCls, labelCls } from '../components/property/FormControls'
 import {
   PageContainer, Card, Badge, LoadingState, ErrorState, EmptyState, StatusBadge,
@@ -315,7 +317,13 @@ function TagManager() {
     } catch (e) { setErr(e.message || '创建失败') }
   }
   const handleDelete = async (t) => {
-    if (!confirm(`确认删除标签「${t.name}」？关联资产的标签会自动解除。`)) return
+    const ok = await confirm({
+      title: '删除标签',
+      message: `确定删除标签「${t.name}」？关联资产的标签会自动解除，此操作不可恢复。`,
+      variant: 'danger',
+      confirmText: '删除',
+    })
+    if (!ok) return
     await assetsApi.deleteTag(t.id)
     load()
   }
@@ -403,8 +411,14 @@ export default function AssetTemplates() {
   useEffect(() => { load() }, [load])
 
   const handleDelete = async (t) => {
-    if (t.is_preset) { alert('预设模板不可删除'); return }
-    if (!confirm(`确认删除模板「${t.name}」？已关联的资产数据保留（type_code 仍存）。`)) return
+    if (t.is_preset) { toast.warning('预设模板不可删除'); return }
+    const ok = await confirm({
+      title: '删除类型模板',
+      message: `确定删除模板「${t.name}」？已关联的资产数据保留（type_code 仍存），此操作不可恢复。`,
+      variant: 'danger',
+      confirmText: '删除',
+    })
+    if (!ok) return
     await assetsApi.deleteTemplate(t.code)
     load()
   }

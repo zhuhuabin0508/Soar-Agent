@@ -236,6 +236,13 @@ async def lifespan(app: FastAPI):
         start_system_alert_scheduler()
     except Exception as exc:  # noqa: BLE001
         logger.warning("系统资源告警调度器启动失败（忽略）: %s", exc)
+    # 启动解析模板成功率告警调度器（每 10 分钟检查，持续 24h 低于阈值生成告警+通知）
+    try:
+        from app.core.parse_rate_alert_scheduler import start_parse_rate_alert_scheduler
+
+        start_parse_rate_alert_scheduler()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("解析模板成功率告警调度器启动失败（忽略）: %s", exc)
     # 启动封禁工作流：事件触发 worker（告警入库 → 规则匹配 → 实例执行）
     try:
         from app.workflow.trigger import start_trigger_worker

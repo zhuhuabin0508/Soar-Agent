@@ -103,6 +103,9 @@ _RESOURCE_MAP = {
     "approvals": "approval",
     "dashboard": "dashboard",
     "auth": "auth",
+    # 日志采集相关：接收器 / 解析模板（ingest 前缀下主要是 strategies 写操作）
+    "log-receivers": "log_receiver",
+    "ingest": "strategy",
 }
 
 
@@ -133,11 +136,14 @@ def _is_high_frequency_path(path: str) -> bool:
     # 登录 / 登出端点由 auth.py 处理器内部记录（含用户名+IP），避免重复审计
     if lower.endswith("/auth/login") or lower.endswith("/auth/logout"):
         return True
-    # 末段为查询/已读/导出类动作的路径
+    # 日志上报通道（设备推送数据，高频且非管理操作，不属于增删改审计范围）
+    if lower.endswith("/ingest/alert"):
+        return True
+    # 末段为查询/已读/导出/测试类动作的路径
     last = lower.rstrip("/").rsplit("/", 1)[-1]
     if last in (
         "audit-logs", "health", "performance", "unread-count",
-        "read-all", "read", "export", "list", "segments",
+        "read-all", "read", "export", "list", "segments", "test",
     ):
         return True
     return False

@@ -18,21 +18,26 @@ from app.database import Base
 
 
 class LogReceiver(Base):
-    """设备日志接收渠道配置。
+    """日志接收器配置。
 
-    一条属于某设备的日志接入配置，protocol 决定如何监听/消费：
+    一条日志接入配置，protocol 决定如何监听/消费：
     - syslog：本 SOAR 开启 UDP/TCP 端口监听；
     - kafka ：本 SOAR 作为 consumer 从 topic 拉取。
+
+    设备归属（device_id）分层：
+    - 监听型（syslog/snmp_trap/netflow/pcap）：可空，日志到达后按来源 IP
+      自动生成条目，由条目按 devices.ip_address 归属设备；
+    - 拉取型（kafka/jdbc/rest_api/file_tail）：必填（无来源 IP 可供条目归属）。
     """
 
     __tablename__ = "log_receivers"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    device_id = Column(Integer, nullable=False, index=True, comment="所属设备 ID")
+    device_id = Column(Integer, nullable=True, index=True, comment="默认归属设备 ID（监听型可空，走来源条目归属）")
     device_name = Column(String(255), nullable=False, default="", comment="设备名称冗余")
-    name = Column(String(128), nullable=False, default="", comment="接收渠道名称，如 syslog-514")
-    # 接收协议：syslog / kafka / webhook
-    protocol = Column(String(32), nullable=False, default="syslog", comment="接收协议")
+    name = Column(String(128), nullable=False, default="", comment="接收器名称，如 syslog-514")
+    # 源类型（= 接收协议）：syslog / kafka / jdbc / snmp_trap / netflow / rest_api / pcap / file_tail
+    protocol = Column(String(32), nullable=False, default="syslog", comment="源类型(接收协议)")
     enabled = Column(Integer, nullable=False, default=1, comment="是否启用: 1启用 0停用")
 
     # syslog 配置
@@ -45,6 +50,11 @@ class LogReceiver(Base):
     kafka_topic = Column(String(255), nullable=False, default="", comment="kafka topic（支持多个逗号分隔）")
     kafka_group = Column(String(255), nullable=False, default="soar-ingest", comment="kafka 消费组")
     kafka_security = Column(String(255), nullable=False, default="", comment="kafka 安全协议配置 JSON")
+
+    # 适配器实例配置 JSON：新源类型（jdbc/snmp_trap/netflow/rest_api/pcap/file_tail）
+    # 的全部参数 + 可选 pipeline 覆盖段 + 轮询水位（拉取类适配器节流回写）。
+    # syslog/kafka 兼容走上方类型化列，本列留空即可。
+    adapter_config = Column(Text, nullable=False, default="{}", comment="适配器配置 JSON（含流水线覆盖、轮询水位）")
 
     # 接收内容格式
     format = Column(String(16), nullable=False, default="json", comment="内容格式: json/raw")
@@ -97,6 +107,12 @@ class DeviceReceiveLog(Base):
     parse_status = Column(String(16), nullable=False, default="received", comment="received/success/partial/fail")
     parse_error = Column(Text, nullable=True, comment="解析错误信息")
     alert_id = Column(Integer, nullable=True, comment="解析入库的告警 ID")
+    # 解析命中信息（供数据源条目详情「解析结果」面板展示命中的模板/规则与解析后内容）
+    strategy_id = Column(Integer, nullable=True, comment="命中的解析策略 ID")
+    strategy_name = Column(String(255), nullable=False, default="", comment="命中的解析策略名称冗余")
+    rule_id = Column(String(128), nullable=False, default="", comment="命中的规则标识")
+    log_type = Column(String(128), nullable=False, default="", comment="命中的日志类型")
+    parsed_fields = Column(Text, nullable=True, comment="解析后的标准模型字段（JSON 序列化）")
     received_at = Column(DateTime, server_default=func.now(), index=True, comment="接收时间")
 
     def __repr__(self):

@@ -39,8 +39,6 @@ export default function ChatToolbar({
   if (!agent) return null
 
   const name = agent.name || `智能体 ${agent.id}`
-  const isHermes = (agent.engine || 'hermes') === 'hermes'
-  const engineLabel = isHermes ? 'Hermes' : 'LangGraph'
 
   // 当前 override 配置
   const ov = overrides || {}
@@ -90,12 +88,8 @@ export default function ChatToolbar({
         <div className="flex items-center gap-2">
           <span className="truncate text-base font-semibold text-foreground">{name}</span>
           {/* 引擎药丸标签 */}
-          <span className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
-            isHermes
-              ? 'bg-indigo-500/15 text-indigo-400'
-              : 'bg-emerald-500/15 text-emerald-400'
-          }`}>
-            {engineLabel}
+          <span className="inline-flex shrink-0 items-center rounded-full bg-indigo-500/15 px-2 py-0.5 text-[10px] font-medium text-indigo-400">
+            Hermes
           </span>
           {/* 模型覆盖指示点 */}
           {modelOverridden && (

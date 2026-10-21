@@ -213,7 +213,7 @@ export function ActionTable({
             <th className="w-16 px-3 py-2 text-right font-medium">平均响应</th>
             <th className="w-16 px-3 py-2 text-center font-medium">风险</th>
             <th className="w-16 px-3 py-2 text-center font-medium">启用</th>
-            <th className="w-44 px-3 py-2 text-left font-medium">操作</th>
+            <th className="w-56 px-3 py-2 text-left font-medium">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -278,11 +278,11 @@ export function ActionTable({
                   />
                 </td>
                 <td className="px-3 py-2">
-                  <div className="flex flex-wrap gap-1">
+                  <div className="flex items-center gap-1 whitespace-nowrap">
                     <button
                       type="button"
                       onClick={() => onTest(a)}
-                      className="btn-secondary btn-sm"
+                      className="btn-secondary btn-sm shrink-0"
                       title="测试动作"
                     >
                       <TestTube className="h-3 w-3" />
@@ -290,7 +290,7 @@ export function ActionTable({
                     <button
                       type="button"
                       onClick={() => onHistory(a)}
-                      className="btn-secondary btn-sm"
+                      className="btn-secondary btn-sm shrink-0"
                       title="执行历史"
                     >
                       <History className="h-3 w-3" />
@@ -298,14 +298,14 @@ export function ActionTable({
                     <button
                       type="button"
                       onClick={() => onEdit(a)}
-                      className="btn-secondary btn-sm"
+                      className="btn-secondary btn-sm shrink-0"
                     >
                       编辑
                     </button>
                     <button
                       type="button"
                       onClick={() => onDelete(a)}
-                      className="btn-danger btn-sm"
+                      className="btn-danger btn-sm shrink-0"
                     >
                       删除
                     </button>

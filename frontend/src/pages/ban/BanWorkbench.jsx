@@ -62,7 +62,7 @@ export default function BanWorkbench({ embedded = false }) {
   const [status, setStatus] = useState('')
   const [ip, setIp] = useState('')
   const [page, setPage] = useState(1)
-  const pageSize = 20
+  const [pageSize, setPageSize] = useState(20)
   const [list, setList] = useState({ total: 0, items: [] })
   const [loading, setLoading] = useState(false)
   const [detail, setDetail] = useState(null)
@@ -253,7 +253,8 @@ export default function BanWorkbench({ embedded = false }) {
           emptyIcon={Inbox}
         />
         <div className="px-4">
-          <Pagination page={page} pageSize={pageSize} total={list.total} onPageChange={setPage} pageSizeOptions={[20]} />
+          <Pagination page={page} pageSize={pageSize} total={list.total} onPageChange={setPage}
+            onPageSizeChange={(s) => { setPageSize(s); setPage(1) }} pageSizeOptions={[10, 20, 50, 100]} />
         </div>
       </Card>
 

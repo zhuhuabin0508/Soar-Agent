@@ -1908,7 +1908,7 @@ function KnowledgeBase() {
                           </div>
                           <div className="mt-0.5 truncate text-[11px] text-muted-foreground/70">
                             {kb.doc_count ?? 0} 篇文档
-                            {kb.updated_at ? ` · ${relTime(kb.updated_at)}` : ''}
+                            <span title={kb.updated_at ? fmtTime(kb.updated_at) : ''}>{kb.updated_at ? ` · ${relTime(kb.updated_at)}` : ''}</span>
                           </div>
                           {/* 精简配置标签：只显示检索模式 */}
                           <div className="mt-1 flex flex-wrap gap-1">
@@ -2207,7 +2207,7 @@ function KnowledgeBase() {
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground/70">
                                   <span>{fmtTime(doc.created_at)}</span>
                                   {doc.updated_at && doc.updated_at !== doc.created_at && (
-                                    <span>· 更新 {relTime(doc.updated_at)}</span>
+                                    <span title={fmtTime(doc.updated_at)}>· 更新 {relTime(doc.updated_at)}</span>
                                   )}
                                   <span className="text-muted-foreground/40">|</span>
                                   <span className="text-primary">{doc.segment_count ?? 0} 段</span>

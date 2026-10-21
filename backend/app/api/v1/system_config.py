@@ -93,6 +93,11 @@ DEFAULT_CONFIGS: dict[str, dict[str, str]] = {
     "bigscreen.username": {"value": "", "description": "盾立方指挥大屏 免登账号"},
     "bigscreen.password": {"value": "", "description": "盾立方指挥大屏 免登密码（明文，后端加密后换票）"},
     "bigscreen.usergroupid": {"value": "0", "description": "盾立方指挥大屏 登录方式：0账号登录 1市认证登录"},
+    # 解析入库：模板成功率告警阈值（持续 24 小时低于该值生成告警+通知中心提醒）
+    "parse.success_rate_threshold": {
+        "value": "80",
+        "description": "解析模板成功率告警阈值（百分比，持续 24 小时低于该值生成告警）",
+    },
 }
 
 

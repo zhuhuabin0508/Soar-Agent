@@ -1,4 +1,4 @@
-﻿# Agent 宪法（不可协商）
+# Agent 宪法（不可协商）
 
 本文件是项目第一层约束。任何任务、任何 Agent、任何场景都不得突破。细则与「为什么」见 `ARCHITECTURE.md`。风格见 `STYLE.md`。AI 生成 Skill/Tool/Agent 或工具代码时见 `AI_CODING_RULES.md`。
 
@@ -10,7 +10,7 @@
 
 - 后端：Python **3.11**（与 `backend/Dockerfile` 的 `python:3.11-slim` 一致）+ FastAPI + SQLAlchemy + PostgreSQL。禁止第二套 Web 框架。
 - 前端：React + Vite。禁止为同一产品再开一套前端框架。
-- 用户可见运行时：**仅 Hermes**。禁止第三条对话引擎。LangGraph 只用于工作流 DAG。
+- 用户可见运行时：**仅 Hermes**。禁止第二条对话引擎/智能体框架（LangGraph 已彻底移除）；工作流 DAG 由自研执行器承担。
 - 禁止把 Dify / Coze 嵌进本仓库当运行时。
 - 异步：Celery + Redis。长扫描可进队列。禁止为工具执行另引一套任务框架。
 

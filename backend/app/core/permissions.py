@@ -38,7 +38,7 @@ PERMISSION_MODULES: dict[str, list[str]] = {
     "llm_config": ["view", "edit", "delete"],
     "device": ["view", "edit"],
     "strategy": ["view", "edit", "delete"],
-    "alert": ["view", "export"],
+    "alert": ["view", "export", "handle"],
     "monitor": ["view", "edit"],
     # 运行监控
     "execution": ["view", "export"],
@@ -58,6 +58,10 @@ PERMISSION_MODULES: dict[str, list[str]] = {
     "duty_leave": ["view", "edit", "delete"],
     "duty_log": ["view", "edit", "delete"],
     "duty_dashboard": ["view"],
+    # 工单（工单中心 + 工单监控大屏 + 工单配置：分组/流程模板）
+    "ticket": ["view", "edit", "delete"],
+    "ticket_monitor": ["view"],
+    "ticket_config": ["view", "edit"],
 }
 
 # 模块中文标签（前端展示用）
@@ -104,6 +108,10 @@ MODULE_LABELS: dict[str, str] = {
     "duty_leave": "请假管理",
     "duty_log": "调班记录",
     "duty_dashboard": "值班大屏",
+    # 工单
+    "ticket": "工单中心",
+    "ticket_monitor": "工单监控大屏",
+    "ticket_config": "工单配置",
 }
 
 # 动作中文标签
@@ -114,6 +122,7 @@ ACTION_LABELS: dict[str, str] = {
     "execute": "执行",
     "approve": "审批",
     "export": "导出",
+    "handle": "处置",
 }
 
 # 权限模块迁移映射（旧模块 → 新模块子项）
@@ -182,6 +191,8 @@ def migrate_permissions(perms: dict[str, list[str]] | None) -> dict[str, list[st
     _inherit_module_actions(result, "asset_discovery", "govcloud", "asset", "asset_list")
     _inherit_module_actions(result, "bigscreen", "dashboard")
     _inherit_module_actions(result, "bigscreen2", "dashboard")
+    # 已有工单中心查看权限的角色自动补工单监控大屏（未显式配置时）
+    _inherit_module_actions(result, "ticket_monitor", "ticket")
 
     return result
 
@@ -224,9 +235,14 @@ DEFAULT_ROLES: list[dict[str, Any]] = [
             "duty_dashboard": ["view"],
             "execution": ["view", "export"],
             "notification": ["view"],
+            "alert": ["view", "handle"],
+            "monitor": ["view"],
             "feedback": ["view"],
             "system_monitor": ["view"],
             "audit_log": ["view"],
+            "ticket": ["view", "edit"],
+            "ticket_monitor": ["view"],
+            "ticket_config": ["view", "edit"],
         },
     },
     {

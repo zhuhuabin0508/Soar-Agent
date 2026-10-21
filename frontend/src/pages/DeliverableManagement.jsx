@@ -2072,7 +2072,7 @@ export default function DeliverableManagement() {
                   setPageSize(s)
                   setPage(1)
                 }}
-                pageSizeOptions={[10, 20, 50]}
+                pageSizeOptions={[10, 20, 50, 100]}
               />
             </div>
           )}

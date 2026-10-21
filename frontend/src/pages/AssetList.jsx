@@ -752,10 +752,11 @@ export default function AssetList() {
   // 概览统计（用于 Tab 数量徽章）
   const [overview, setOverview] = useState(null)
 
-  // 筛选
+  // 筛选（keyword 支持 URL ?keyword= 初始化，供告警列表「关联资产」跳转）
   // keywordInput：输入框的即时值；keyword：实际参与查询的值（防抖后同步）
-  const [keywordInput, setKeywordInput] = useState('')
-  const [keyword, setKeyword] = useState('')
+  const urlKeyword = searchParams.get('keyword') || ''
+  const [keywordInput, setKeywordInput] = useState(urlKeyword)
+  const [keyword, setKeyword] = useState(urlKeyword)
   const [fStatus, setFStatus] = useState('')
   const [fCrit, setFCrit] = useState('')
   const [fDept, setFDept] = useState('')
@@ -851,6 +852,12 @@ export default function AssetList() {
   useEffect(() => {
     setActiveTypeCode(urlTypeCode)
   }, [urlTypeCode])
+
+  // URL ?keyword= 变化时同步搜索框（同路由内二次跳转场景）
+  useEffect(() => {
+    setKeywordInput(urlKeyword)
+    setKeyword(urlKeyword)
+  }, [urlKeyword])
   const switchType = (code) => {
     setPage(1); setSelected(new Set()); setSelectAllMode(false)
     const next = new URLSearchParams(searchParams)
@@ -1330,7 +1337,7 @@ export default function AssetList() {
             total={total}
             onPageChange={setPage}
             onPageSizeChange={(s) => { setPageSize(s); setPage(1) }}
-            pageSizeOptions={[20, 50, 100, 200]}
+            pageSizeOptions={[10, 20, 50, 100, 200]}
           />
         )}
       </Card>

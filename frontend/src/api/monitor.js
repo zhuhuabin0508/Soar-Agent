@@ -14,7 +14,7 @@ export const monitorApi = {
   // 概览卡片（6 张：今日接收/成功/失败/部分/成功率/平均耗时 + 昨日对比 + 24h 趋势）
   overview: () => request('/monitor/overview'),
 
-  // 策略维度统计表（含"无匹配策略"汇总行）
+  // 模板维度统计表（含"无匹配模板"汇总行）
   strategyStats: () => request('/monitor/strategy-stats'),
 
   // 入库量 / 成功率趋势（window: 24h | 7d；strategy_id 0=全部）

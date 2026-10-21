@@ -19,6 +19,7 @@ import KnowledgeBase from './pages/KnowledgeBase'
 import SkillList from './pages/SkillList'
 import LLMConfig from './pages/LLMConfig'
 import DeviceManagement from './pages/devices/DeviceManagement'
+import DeviceOnboard from './pages/devices/DeviceOnboard'
 import AgentMonitor from './pages/AgentMonitor'
 import ApprovalCenter from './pages/ApprovalCenter'
 import ExecutionDetail from './pages/ExecutionDetail'
@@ -31,6 +32,7 @@ import UserManagement from './pages/UserManagement'
 import RoleManagement from './pages/RoleManagement'
 import SystemSettings from './pages/SystemSettings'
 import SystemMonitor from './pages/SystemMonitor'
+import AuditLogs from './pages/audit/AuditLogs'
 import NotificationCenter from './pages/NotificationCenter'
 import BackupManagement from './pages/BackupManagement'
 import Assets from './pages/Assets'
@@ -50,9 +52,22 @@ import DutyLeave from './pages/DutyLeave'
 import DutyAdjustmentLogs from './pages/DutyAdjustmentLogs'
 import StrategyList from './pages/StrategyList'
 import StrategyEdit from './pages/StrategyEdit'
+import ReceiverList from './pages/logcollect/ReceiverList'
+import SourceEntryList from './pages/logcollect/SourceEntryList'
+import SourceEntryDetail from './pages/logcollect/SourceEntryDetail'
 import AlertList from './pages/AlertList'
+import AlertRules from './pages/AlertRules'
+import AlertRuleEditPage from './pages/AlertRuleEditPage'
 import IngestionMonitor from './pages/IngestionMonitor'
+import LineageView from './pages/LineageView'
 import BanTriggerRules from './pages/ban/BanTriggerRules'
+import TicketCenter from './pages/TicketCenter'
+import TicketDetail from './pages/TicketDetail'
+import TicketGroupManage from './pages/TicketGroupManage'
+import TicketFlowList from './pages/TicketFlowList'
+import TicketSlaConfig from './pages/TicketSlaConfig'
+import TicketFlowEdit from './pages/TicketFlowEdit'
+import TicketMonitorScreen from './pages/TicketMonitorScreen'
 
 // 路由守卫：未登录跳转 /login
 // 作为布局路由使用：通过则渲染 <Outlet />（子路由），否则跳转登录页。
@@ -80,6 +95,8 @@ const router = createBrowserRouter([
     element: <ProtectedRoute />,
     errorElement: <RouteErrorFallback />,
     children: [
+      // 工单监控大屏：独立全屏路由（不嵌 AppShell 侧边栏，供投屏使用）
+      { path: '/ticket-monitor', element: <TicketMonitorScreen /> },
       {
         element: <AppShell />,
         errorElement: <RouteErrorFallback />,
@@ -105,6 +122,7 @@ const router = createBrowserRouter([
           { path: '/skills', element: <SkillList /> },
           { path: '/llm-configs', element: <LLMConfig /> },
           { path: '/devices', element: <DeviceManagement /> },
+          { path: '/device-onboard', element: <DeviceOnboard /> },
           { path: '/approvals', element: <ApprovalCenter /> },
           { path: '/executions', element: <LogCenter /> },
           { path: '/executions/:id', element: <ExecutionDetail /> },
@@ -123,6 +141,7 @@ const router = createBrowserRouter([
           { path: '/roles', element: <RoleManagement /> },
           { path: '/system-settings', element: <SystemSettings /> },
           { path: '/system-monitor', element: <SystemMonitor /> },
+          { path: '/audit-logs', element: <AuditLogs /> },
           { path: '/notifications', element: <NotificationCenter /> },
           { path: '/backup', element: <BackupManagement /> },
           { path: '/about', element: <About /> },
@@ -138,13 +157,28 @@ const router = createBrowserRouter([
           { path: '/duty/schedule', element: <DutySchedule /> },
           { path: '/duty/leaves', element: <DutyLeave /> },
           { path: '/duty/logs', element: <DutyAdjustmentLogs /> },
-          // 连接配置 - 设备对接（设备列表 / 解析策略 / 告警列表 / 入库监控）
+          // 运营管理 - 工单（工单中心 / 处理分组 / 流程模板）
+          { path: '/tickets', element: <TicketCenter /> },
+          { path: '/tickets/:id', element: <TicketDetail /> },
+          { path: '/ticket-config/groups', element: <TicketGroupManage /> },
+          { path: '/ticket-config/sla', element: <TicketSlaConfig /> },
+          { path: '/ticket-config/flows', element: <TicketFlowList /> },
+          { path: '/ticket-config/flows/new', element: <TicketFlowEdit /> },
+          { path: '/ticket-config/flows/:id/edit', element: <TicketFlowEdit /> },
+          // 连接配置 - 设备对接（设备列表 / 接收器 / 数据源条目 / 解析模板 / 告警列表 / 入库监控）
+          { path: '/receivers', element: <ReceiverList /> },
+          { path: '/source-entries', element: <SourceEntryList /> },
+          { path: '/source-entries/:id', element: <SourceEntryDetail /> },
           { path: '/strategies', element: <StrategyList /> },
           { path: '/strategies/new', element: <StrategyEdit /> },
           { path: '/strategies/:id/edit', element: <StrategyEdit /> },
-          // 告警接入 - 告警列表与解析入库监控
+          // 告警接入 - 告警列表 / 告警规则 / 解析入库监控
           { path: '/alerts', element: <AlertList /> },
+          { path: '/alert-rules', element: <AlertRules /> },
+          { path: '/alert-rules/new', element: <AlertRuleEditPage /> },
+          { path: '/alert-rules/:id/edit', element: <AlertRuleEditPage /> },
           { path: '/ingest-monitor', element: <IngestionMonitor /> },
+          { path: '/lineage', element: <LineageView /> },
           // 告警自动封禁工作流：触发规则独立页面；审批/封禁/历史已合并进工作台 Tab
           { path: '/ban-workflow/instances', element: <Navigate to="/approvals?tab=all" replace /> },
           { path: '/ban-workflow/approvals', element: <Navigate to="/approvals" replace /> },

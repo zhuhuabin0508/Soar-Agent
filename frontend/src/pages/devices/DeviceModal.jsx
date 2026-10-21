@@ -42,6 +42,7 @@ export function DeviceFormModal({ open, initial, onClose, onSubmit, saving, onTe
       name: '',
       type: 'firewall',
       vendor: '',
+      version: '',
       ip_address: '',
       api_url: '',
       api_key: '',
@@ -172,6 +173,15 @@ export function DeviceFormModal({ open, initial, onClose, onSubmit, saving, onTe
                 value={form.vendor}
                 onChange={(e) => set('vendor')(e.target.value)}
                 placeholder="如：深信服 / 绿盟 / paloalto"
+              />
+            </label>
+            <label>
+              <div className="mb-1 text-xs font-medium text-muted-foreground">版本</div>
+              <input
+                className={inputCls}
+                value={form.version || ''}
+                onChange={(e) => set('version')(e.target.value)}
+                placeholder="如：V6.1R3 / 3.5.2"
               />
             </label>
             <label>

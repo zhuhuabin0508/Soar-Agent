@@ -424,6 +424,7 @@ ERROR_TYPE_LABELS = {
     "no_strategy_matched": "无匹配策略",
     "field_validation_failed": "字段校验失败",
     "db_write_failed": "数据库写入失败",
+    "unknown_log_type": "未知日志类型",
 }
 
 

@@ -21,7 +21,7 @@ class ParseErrorQueue(Base):
         String(64),
         default="",
         index=True,
-        comment="json_parse_failed/no_strategy_matched/db_write_failed/field_validation_failed",
+        comment="json_parse_failed/no_strategy_matched/db_write_failed/field_validation_failed/unknown_log_type",
     )
     error_msg = Column(Text, default="", comment="错误详情")
     retry_count = Column(Integer, default=0, comment="重试次数")

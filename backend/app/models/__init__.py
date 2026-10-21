@@ -6,6 +6,10 @@
 from app.models.agent import Agent
 from app.models.agent_file import AgentFile
 from app.models.alert_event import AlertEvent
+from app.models.alert_handle_log import AlertHandleLog
+from app.models.alert_rule import AlertRule
+from app.models.alert_rule_group import AlertRuleGroup
+from app.models.alert_rule_hit import AlertRuleHit
 from app.models.asset import Asset, AssetTypeTemplate, AssetCustomField, AssetChange, AssetTag
 from app.models.audit_log import AuditLog
 from app.models.backup_record import BackupRecord
@@ -37,13 +41,21 @@ from app.models.log_receiver import (
     DeviceReceiveMetric,
     LogReceiver,
 )
+from app.models.log_source_entry import LogSourceEntry
+from app.models.ticket import (
+    TicketGroup,
+    TicketGroupMember,
+    TicketFlow,
+    Ticket,
+    TicketNodeRecord,
+)
 from app.models.knowledge_base import KnowledgeBase, KnowledgeDocument, KnowledgeSegment
 from app.models.llm_config import LLMConfig
 from app.models.model_call_log import ModelCallLog
 from app.models.notification import Notification
 from app.models.notification_rule import NotificationRule
 from app.models.parse_error import ParseErrorQueue
-from app.models.parse_strategy import ParseStrategy
+from app.models.parse_strategy import ParseStrategy, ParseStrategyVersion
 from app.models.resource_share import ResourceShare
 from app.models.role import Role
 from app.models.skill import Skill
@@ -105,12 +117,23 @@ __all__ = [
     "ServiceCategory",
     "Deliverable",
     "AlertEvent",
+    "AlertHandleLog",
+    "AlertRule",
+    "AlertRuleGroup",
+    "AlertRuleHit",
     "ParseStrategy",
+    "ParseStrategyVersion",
     "ParseErrorQueue",
     "IngestionMetric",
     "LogReceiver",
+    "LogSourceEntry",
     "DeviceReceiveLog",
     "DeviceReceiveMetric",
+    "TicketGroup",
+    "TicketGroupMember",
+    "TicketFlow",
+    "Ticket",
+    "TicketNodeRecord",
     "WorkflowTriggerRule",
     "WorkflowInstance",
     "WorkflowNodeLog",

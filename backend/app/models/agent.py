@@ -60,7 +60,7 @@ class Agent(Base):
     tool_configs = Column(JSON, nullable=True, default=dict)
 
     # ===== 引擎选择 =====
-    # 执行引擎：hermes（默认）；langgraph 仅兼容字段，runtime 统一走 Hermes
+    # 执行引擎：固定 hermes（写入时强制，runtime 统一走 Hermes）
     engine = Column(String(16), nullable=False, default="hermes")
     output_mode = Column(String(32), nullable=False, default="chat")
     publish_status = Column(String(16), nullable=False, default="published")

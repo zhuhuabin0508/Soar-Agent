@@ -9,6 +9,8 @@ pydantic-settings==2.5.2
 celery==5.4.0
 redis==5.1.1
 python-dotenv==1.0.1
+# 日志类型识别特征匹配表（classifier_features.yaml 热加载）
+PyYAML==6.0.3
 langchain==0.3.4
 langchain-anthropic==0.2.3
 langchain-openai==0.2.0
@@ -37,3 +39,15 @@ captcha==0.6.0
 Pillow==11.0.0
 # Docker SDK：供系统监控页面获取各服务容器日志（挂载 docker.sock 访问）
 docker==7.1.0
+# ===== 日志采集多源输入适配器（NGSOC 式架构）可选依赖 =====
+# 未安装时对应适配器渠道标记 start_failed 并给出安装提示，不影响其他功能
+# SNMP Trap 接收（snmp_trap 适配器）
+pysnmp==7.1.15
+# 端口镜像抓包（pcap 适配器；容器需 cap_add NET_RAW，Windows 开发机需 Npcap）
+scapy==2.6.1
+# 文件跟踪可选加速（file_tail 默认手写轮询 tail，无此依赖也可运行）
+watchdog==6.0.0
+# 可选：Grok 模式预处理插件（策略正则增强）
+pygrok==0.11.0
+# 可选：JDBC 适配器拉取 MySQL 数据源
+PyMySQL==1.1.1

@@ -234,34 +234,11 @@ export const agents = {
   remove: (id) => request(`/agents/${id}`, { method: 'DELETE' }),
   test: (id, input) =>
     request(`/agents/${id}/test`, { method: 'POST', body: { input } }),
-  // 流式测试（LangGraph 引擎）：返回 fetch Response，调用方用 ReadableStream 消费 SSE
-  // signal 可选：传入 AbortSignal 以支持中途取消流式
-  // options 可选：会话级参数覆盖（Playground 调试用），结构同后端 ChatOverride：
-  //   { model_config_id, system_prompt, temperature, top_p, max_tokens,
-  //     frequency_penalty, presence_penalty, seed }
-  // 仅启用的字段写入 body.override，实现"按需启用"模式（避免覆盖模型默认值）
-  testStream: async (id, input, signal, options = {}) => {
-    const token = localStorage.getItem('soar_token')
-    const { channel, ...override } = options || {}
-    const body = { input }
-    if (override && Object.keys(override).length > 0) body.override = override
-    if (channel) body.channel = channel
-    const resp = await fetch(`${BASE_URL}/agents/${id}/test/stream`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify(body),
-      ...(signal ? { signal } : {}),
-    })
-    return resp
-  },
-  // 流式对话（Hermes 引擎）：返回 fetch Response，SSE 事件契约见后端 chat_agent 端点
+  // 流式对话：返回 fetch Response，SSE 事件契约见后端 chat_agent 端点
   // 事件类型：start | status | token | tool_start | tool_end | skill_interrupt | delegate | log | done | error
   // signal 可选：传入 AbortSignal 以支持中途取消流式
-  // sessionId 可选：会话 ID，Hermes 引擎按 (agentId, sessionId) 持久化多轮对话上下文
-  // options 可选：会话级参数覆盖（同 testStream）
+  // sessionId 可选：会话 ID，按 (agentId, sessionId) 持久化多轮对话上下文
+  // options 可选：会话级参数覆盖（Playground 调试用）
   chatStream: async (id, input, signal, sessionId, options = {}) => {
     const token = localStorage.getItem('soar_token')
     const { channel, ...override } = options || {}
@@ -611,6 +588,28 @@ export const devices = {
       const q = new URLSearchParams()
       Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') q.set(k, v) })
       return request(`/log-receivers/receive-logs?${q.toString()}`)
+    },
+    // ---- 来源条目（监听型渠道按来源 IP 自动发现）----
+    entries: (receiverId, params = {}) => {
+      const q = new URLSearchParams()
+      Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') q.set(k, v) })
+      return request(`/log-receivers/${receiverId}/entries?${q.toString()}`)
+    },
+    // 全局数据源条目（跨接收器，含三态状态与今日统计）
+    entriesGlobal: (params = {}) => {
+      const q = new URLSearchParams()
+      Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') q.set(k, v) })
+      return request(`/log-receivers/entries?${q.toString()}`)
+    },
+    entryDetail: (entryId) => request(`/log-receivers/entries/${entryId}`),
+    entryUpdate: (entryId, body) => request(`/log-receivers/entries/${entryId}`, { method: 'PUT', body }),
+    entryRemove: (entryId) => request(`/log-receivers/entries/${entryId}`, { method: 'DELETE' }),
+    entryBatchRemove: (receiverId, ids) => request(`/log-receivers/${receiverId}/entries/batch-delete`, { method: 'POST', body: { ids } }),
+    // 条目失败样本下钻（原因四分类统计 + 按原因筛选 + 分页）
+    entryFailureSamples: (entryId, params = {}) => {
+      const q = new URLSearchParams()
+      Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') q.set(k, v) })
+      return request(`/log-receivers/entries/${entryId}/failure-samples${q.toString() ? `?${q.toString()}` : ''}`)
     },
   },
 }

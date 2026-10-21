@@ -359,6 +359,7 @@ def run_lightweight_migrations(engine) -> None:
     """运行所有轻量迁移（启动时调用）。
 
     当前覆盖：
+    - alert_events 表新增 rule_id / log_type 列（解析引擎输出的规则元数据）。
     - workflows 表新增 webhook_secret / enabled 列。
     - users 表新增 role_id / failed_login_count / locked_until 列。
     - executions 表新增 agent_id 列（智能体执行记录关联）。
@@ -382,6 +383,105 @@ def run_lightweight_migrations(engine) -> None:
         if not locked:
             logger.info("轻量迁移：另一实例正在执行，跳过")
             return
+        # alert_events 表新增 rule_id / log_type 列
+        # （parser_engine 命中规则后注入 fields；此前模型缺列导致 AlertEvent(**fields) 入库崩溃）
+        ensure_columns(
+            engine,
+            "alert_events",
+            {
+                "rule_id": "VARCHAR(64)",
+                "log_type": "VARCHAR(64)",
+            },
+        )
+        # alert_events 表新增 alert_rule_id / alert_rule_name 列
+        # （告警规则引擎命中后写入；alert_rules/alert_rule_hits 表由
+        #  Base.metadata.create_all 建表）
+        ensure_columns(
+            engine,
+            "alert_events",
+            {
+                "alert_rule_id": "INTEGER",
+                "alert_rule_name": "VARCHAR(255) NOT NULL DEFAULT ''",
+            },
+        )
+        # alert_events 表新增关联本地资产列
+        # （AssetLibEnricher 按 host→src→dst IP 匹配 assets 资产库命中后写入）
+        ensure_columns(
+            engine,
+            "alert_events",
+            {
+                "relate_asset_id": "INTEGER",
+                "relate_asset_name": "VARCHAR(255) NOT NULL DEFAULT ''",
+                "relate_asset_ip": "VARCHAR(64) NOT NULL DEFAULT ''",
+            },
+        )
+        # alert_rules 表新增 created_by / updated_by 列（规则操作人，列表展示）
+        ensure_columns(
+            engine,
+            "alert_rules",
+            {
+                "created_by": "VARCHAR(128) NOT NULL DEFAULT ''",
+                "updated_by": "VARCHAR(128) NOT NULL DEFAULT ''",
+            },
+        )
+        # alert_rules 表新增 XDR 风格扩展列（分组/统计配置/字段配置/告警聚合/草稿）
+        ensure_columns(
+            engine,
+            "alert_rules",
+            {
+                "rule_group": "VARCHAR(64) NOT NULL DEFAULT '其他'",
+                "stats_config": "TEXT",
+                "field_mapping": "TEXT",
+                "alert_aggregation": "TEXT",
+                "draft": "INTEGER NOT NULL DEFAULT 0",
+                "last_test_passed_at": "TIMESTAMP WITHOUT TIME ZONE",
+            },
+        )
+        # alert_events 表新增告警聚合列（同键同窗合并：聚合计数 + 聚合键值串）
+        ensure_columns(
+            engine,
+            "alert_events",
+            {
+                "aggregation_count": "INTEGER NOT NULL DEFAULT 1",
+                "aggregation_key": "VARCHAR(255) NOT NULL DEFAULT ''",
+            },
+        )
+        # alert_rule_groups 表种子预置分组（表由 create_all 建立后补种子，幂等）
+        try:
+            from sqlalchemy import text as sa_text
+
+            with engine.connect() as conn:
+                count = conn.execute(
+                    sa_text("SELECT COUNT(*) FROM alert_rule_groups")
+                ).scalar()
+                if not count:
+                    for idx, name in enumerate(
+                        ["暴力破解", "异常登录", "Web攻击", "恶意软件", "数据泄露", "内部违规", "其他"]
+                    ):
+                        conn.execute(
+                            sa_text(
+                                "INSERT INTO alert_rule_groups (name, sort_order, created_at) "
+                                "VALUES (:name, :sort_order, NOW())"
+                            ),
+                            {"name": name, "sort_order": (idx + 1) * 10},
+                        )
+                    conn.commit()
+                    logger.info("轻量迁移: 已种子预置告警规则分组")
+        except Exception:  # noqa: BLE001
+            logger.exception("轻量迁移: 告警规则分组种子失败（不阻塞启动）")
+        # device_receive_logs 表新增解析命中信息列
+        # （数据源条目详情「解析结果」面板：命中的模板/规则 + 解析后字段内容）
+        ensure_columns(
+            engine,
+            "device_receive_logs",
+            {
+                "strategy_id": "INTEGER",
+                "strategy_name": "VARCHAR(255) NOT NULL DEFAULT ''",
+                "rule_id": "VARCHAR(128) NOT NULL DEFAULT ''",
+                "log_type": "VARCHAR(128) NOT NULL DEFAULT ''",
+                "parsed_fields": "TEXT",
+            },
+        )
         ensure_columns(
             engine,
             "workflows",
@@ -545,7 +645,7 @@ def run_lightweight_migrations(engine) -> None:
                 "enabled_workflows": "JSON",
                 # 启用的资产类型 code 列表（关联 AssetTypeTemplate.code）
                 "enabled_asset_types": "JSON",
-                # 执行引擎：hermes（默认）；历史库可能仍为 langgraph 字符串
+                # 执行引擎：固定 hermes
                 "engine": "VARCHAR(16) NOT NULL DEFAULT 'hermes'",
                 "publish_status": "VARCHAR(16) NOT NULL DEFAULT 'published'",
                 "output_mode": "VARCHAR(32)",
@@ -668,6 +768,24 @@ def run_lightweight_migrations(engine) -> None:
             "log_receivers",
             {"strategy_id": "INTEGER"},
         )
+        # log_receivers 表新增适配器配置 JSON 列（NGSOC 式多源采集：新源类型参数 +
+        # 流水线覆盖段 + 轮询水位，加适配器零 DDL）
+        ensure_columns(
+            engine,
+            "log_receivers",
+            {"adapter_config": "TEXT NOT NULL DEFAULT '{}'"},
+        )
+        # log_receivers 表放开 device_id 非空约束：监听型接收器不强制绑定设备，
+        # 归属走来源条目（按来源 IP 匹配 devices.ip_address）；拉取型仍由 API 层校验必填
+        insp_lr = inspect(engine)
+        if insp_lr.has_table("log_receivers"):
+            lr_cols = {c["name"]: c for c in insp_lr.get_columns("log_receivers")}
+            if lr_cols.get("device_id") and not lr_cols["device_id"].get("nullable", True):
+                with engine.begin() as conn:
+                    conn.execute(text(
+                        'ALTER TABLE "log_receivers" ALTER COLUMN "device_id" DROP NOT NULL'
+                    ))
+                logger.info("轻量迁移: log_receivers.device_id 已放开 NOT NULL（监听型接收器可按条目归属）")
         # assets 表（资产管理智能体）：首次由 create_all 建表，此处为老库补列
         ensure_columns(
             engine,
@@ -748,6 +866,42 @@ def run_lightweight_migrations(engine) -> None:
                     logger.info("轻量迁移: network_segment 模板 allow_aggregate 已设为 True (一次性)")
         except Exception as exc:  # noqa: BLE001
             logger.warning("network_segment allow_aggregate 迁移失败: %s", exc)
+        # 一次性迁移：解析模板 uuid 校验正则补大写 hex
+        # （^[0-9a-f]{40}$ → ^[0-9a-fA-F]{40}$，避免大写 hex 的合法 UUID 被判校验失败；
+        #   存量策略 config 为 TEXT，SQL replace 批量修复）
+        try:
+            with engine.begin() as conn:
+                row = conn.execute(
+                    text("SELECT value FROM system_configs WHERE key = 'parse_uuid_regex_migrated'")
+                ).first()
+                if not row:
+                    result = conn.execute(text(
+                        "UPDATE parse_strategies SET config = replace("
+                        "config, '\"^[0-9a-f]{40}$\"', '\"^[0-9a-fA-F]{40}$\"') "
+                        "WHERE config LIKE '%^[0-9a-f]{40}$%'"
+                    ))
+                    conn.execute(text(
+                        "INSERT INTO system_configs (key, value, description) "
+                        "VALUES ('parse_uuid_regex_migrated', '1', "
+                        "'解析模板 uuid 校验正则补大写 hex 一次性迁移标记')"
+                    ))
+                    logger.info(
+                        "轻量迁移: 解析模板 uuid 校验正则已补大写 hex，修复 %d 行 (一次性)",
+                        result.rowcount,
+                    )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("解析模板 uuid 校验正则迁移失败: %s", exc)
+        # parse_strategies 表新增草稿/发布机制列
+        # （draft_config 草稿副本 + published_version_no 线上版本号；
+        #   版本快照表 parse_strategy_versions 由 create_all 创建）
+        ensure_columns(
+            engine,
+            "parse_strategies",
+            {
+                "draft_config": "TEXT",
+                "published_version_no": "INTEGER",
+            },
+        )
         # knowledge_bases 表新增 embedding_config_id 列（关联 embedding 类型 LLMConfig）
         ensure_columns(
             engine,
@@ -789,6 +943,8 @@ def run_lightweight_migrations(engine) -> None:
                 "verify_tls": "BOOLEAN NOT NULL DEFAULT FALSE",
                 "icon": "VARCHAR(32) NOT NULL DEFAULT ''",
                 "ip_address": "VARCHAR(64) NOT NULL DEFAULT ''",
+                # 设备版本（固件/软件版本号，接入指引填写）
+                "version": "VARCHAR(64) NOT NULL DEFAULT ''",
                 # 设备级解析策略绑定（parse_strategies.id）
                 "parser_strategy_id": "INTEGER",
             },
@@ -858,6 +1014,16 @@ def run_lightweight_migrations(engine) -> None:
             "duty_leave_logs",
             {"approve_reason": "TEXT"},
         )
+        # alert_events 表新增处置闭环列（指派人 + 处置时间）
+        ensure_columns(
+            engine,
+            "alert_events",
+            {
+                "assignee_id": "INTEGER",
+                "assignee_name": "VARCHAR(128) NOT NULL DEFAULT ''",
+                "handled_at": "TIMESTAMP WITHOUT TIME ZONE",
+            },
+        )
         # agent_files 表新增归属隔离列：agent_id（归属智能体，NULL=公共）、
         # created_by（上传用户 id，NULL=非用户上传）；旧文件保持 agent_id NULL 即公共
         ensure_columns(
@@ -885,6 +1051,20 @@ def run_lightweight_migrations(engine) -> None:
             engine,
             "govcloud_import_batches",
             {"import_mode": "VARCHAR(16) DEFAULT 'full'"},
+        )
+        # tickets 表新增阶段2 列：节点停留超时提醒（到达时间/提醒进度）+ 归档标记
+        ensure_columns(
+            engine,
+            "tickets",
+            {
+                "arrived_at": "TIMESTAMP WITHOUT TIME ZONE",
+                "first_reminded_at": "TIMESTAMP WITHOUT TIME ZONE",
+                "last_reminded_at": "TIMESTAMP WITHOUT TIME ZONE",
+                "remind_count": "INTEGER NOT NULL DEFAULT 0",
+                "archived": "BOOLEAN NOT NULL DEFAULT FALSE",
+                # 发起时自动研判结果（资产匹配 + 威胁情报，src_ip/dst_ip），随工单流转
+                "enrichment_data": "JSON",
+            },
         )
         try:
             _reset_govcloud_split_schema(engine)

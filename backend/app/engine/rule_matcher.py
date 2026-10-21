@@ -61,7 +61,9 @@ def _build_default_rule(config: dict) -> dict:
         "match": _route_to_match(route),
         "extract": {"type": "fields", "fields": config.get("field_mappings") or []},
         "map": {
-            "field_mappings": config.get("field_mappings") or [],
+            # 旧 field_mappings 已由 extract.fields 提取；此处必须为空，
+            # 否则 apply_rule_map 会用整条 raw 二次映射，把已提取字段覆盖为类型默认值
+            "field_mappings": [],
             "enum_maps": config.get("enum_maps") or {},
             "defaults": [],
             "validations": config.get("validations") or [],
@@ -96,7 +98,9 @@ def _match_rule(raw: dict, match: dict) -> bool:
     """评估规则的 match 条件。
 
     match = {"type": "all"|"any", "conditions": [...]}
-    每条 condition = {"field", "op", "value"}，op ∈ eq/not_eq/in/not_in/regex/contains/gte/lte/gt/lt。
+    每条 condition = {"field", "op", "value"}，
+    op ∈ eq/not_eq/in/not_in/regex/contains/gte/lte/gt/lt/exists/not_exists
+    （exists/not_exists 只看字段是否有值，忽略 value）。
     """
     conditions = match.get("conditions") or []
     if not conditions:
@@ -139,6 +143,10 @@ def _match_condition(raw: dict, cond: dict) -> bool:
             return actual not in (expected or [])
         if op == "contains":
             return str(expected) in str(actual)
+        if op == "exists":
+            return actual is not None
+        if op == "not_exists":
+            return actual is None
         if op == "regex":
             return re.fullmatch(str(expected), str(actual)) is not None
         if op in ("gte", "gt", "lte", "lt"):

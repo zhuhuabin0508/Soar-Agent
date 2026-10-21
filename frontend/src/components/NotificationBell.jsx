@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Bell, Megaphone, AlertTriangle, XCircle, ExternalLink } from 'lucide-react'
 import { notificationsApi } from '../api/notifications'
 import { toast } from '../store/toastStore'
+import { fmtAbs } from '../utils/absTime'
 
 // 类型图标映射
 const TYPE_ICON = {
@@ -286,7 +287,7 @@ function NotificationBell() {
                         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
                       )}
                     </div>
-                    <div className="mt-0.5 text-[11px] text-muted-foreground/70">
+                    <div className="mt-0.5 text-[11px] text-muted-foreground/70" title={fmtAbs(n.created_at)}>
                       {fmtRelative(n.created_at)}
                     </div>
                   </div>

@@ -61,6 +61,7 @@ class DeviceBase(BaseModel):
     name: str = Field(..., description="设备名称")
     type: str = Field("firewall", description="设备类型: firewall/waf/ips/ids/edr/soar/switch/cloud/custom")
     vendor: str = Field("", description="厂商")
+    version: str = Field("", description="设备版本（固件/软件版本号）")
     ip_address: str = Field("", description="设备 IP 地址（管理地址，可选）")
     api_url: str = Field("", description="设备 API 基地址")
     api_key: str = Field("", description="API Key 或 Token")
@@ -229,6 +230,7 @@ def _apply_device_fields(device: Device, body: DeviceBase, *, is_create: bool) -
     device.name = body.name
     device.type = body.type
     device.vendor = body.vendor
+    device.version = body.version
     device.ip_address = body.ip_address
     device.api_url = body.api_url
     device.api_key = encrypt_device_secret(body.api_key)
@@ -367,7 +369,7 @@ def update_device(
     changes: dict = {}
     field_map = {
         "name": body.name, "type": body.type, "vendor": body.vendor,
-        "ip_address": body.ip_address,
+        "version": body.version, "ip_address": body.ip_address,
         "api_url": body.api_url, "api_key": body.api_key, "username": body.username,
         "enabled": body.enabled, "description": body.description,
         "auth_type": body.auth_type, "timeout": body.timeout,

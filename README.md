@@ -21,7 +21,7 @@
 - **FastAPI** + **Uvicorn** — API 服务
 - **SQLAlchemy** + **PostgreSQL** — ORM 与数据存储
 - **Celery** + **Redis** — 异步任务与消息中间件
-- **LangGraph** + **LangChain** — 智能体框架（Hermes 引擎）
+- **LangChain** — LLM 编排基础（自研 Hermes ReAct 引擎）
 - **PyJWT** + **passlib/bcrypt** — 鉴权与密码哈希
 
 ### 前端

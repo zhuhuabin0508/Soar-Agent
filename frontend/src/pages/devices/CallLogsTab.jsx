@@ -100,8 +100,8 @@ export function CallLogsTab() {
   return (
     <div className="flex flex-col gap-4">
       {/* 工具栏 */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card/60 p-4">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-3 whitespace-nowrap rounded-lg border border-border bg-card/60 p-4">
+        <div className="flex shrink-0 items-center gap-2">
           <span className="text-xs text-muted-foreground">时间范围：</span>
           {dayOptions.map((d) => (
             <button

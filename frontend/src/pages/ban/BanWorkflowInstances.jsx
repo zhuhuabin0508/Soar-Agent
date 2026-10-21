@@ -42,7 +42,7 @@ function StatCard({ icon: Icon, label, value, valueClass }) {
   return (
     <div className="card flex items-center gap-3 px-5 py-4">
       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-        <Icon className="h-4.5 w-4.5" size={18} />
+        <Icon className="h-[18px] w-[18px]" />
       </div>
       <div className="min-w-0">
         <div className="truncate text-xs text-muted-foreground">{label}</div>
@@ -148,7 +148,7 @@ export default function BanWorkflowInstances({ embedded = false }) {
   const canEdit = hasPermission('ban_workflow', 'edit')
   const [filters, setFilters] = useState({ status: '', ip: '', rule_id: '', start_time: '', end_time: '', keyword: '' })
   const [page, setPage] = useState(1)
-  const pageSize = 20
+  const [pageSize, setPageSize] = useState(20)
   const [list, setList] = useState({ total: 0, items: [] })
   const [rules, setRules] = useState([])
   const [stats, setStats] = useState(null)
@@ -317,7 +317,8 @@ export default function BanWorkflowInstances({ embedded = false }) {
           emptyIcon={Inbox}
         />
         <div className="px-4">
-          <Pagination page={page} pageSize={pageSize} total={list.total} onPageChange={setPage} pageSizeOptions={[20]} />
+          <Pagination page={page} pageSize={pageSize} total={list.total} onPageChange={setPage}
+            onPageSizeChange={(s) => { setPageSize(s); setPage(1) }} pageSizeOptions={[10, 20, 50, 100]} />
         </div>
       </Card>
     </>

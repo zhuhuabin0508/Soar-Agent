@@ -138,7 +138,6 @@ export function statusMeta(status) {
     case 'failed':
     case 'error':
     case 'rejected':
-    case 'disabled':
     case 'banned':
     case 'offline':
     case 'expired':
@@ -149,13 +148,19 @@ export function statusMeta(status) {
     case 'processing':
     case 'in_progress':
       return { color: 'info', label: labelFromStatus(status) }
-    // 待审批/警告
+    // 待审批/警告/未配置
     case 'waiting_for_approval':
     case 'waiting':
     case 'paused':
     case 'warning':
     case 'draft':
+    case 'unconfigured':
+    case 'pending_config':
       return { color: 'warning', label: labelFromStatus(status) }
+    // 停用=灰（规范：在线/成功=绿、未配置/待配置=橙、离线/失败=红、停用=灰）
+    case 'disabled':
+    case 'inactive':
+      return { color: 'neutral', label: labelFromStatus(status) }
     // 中性(默认)
     default:
       return { color: 'neutral', label: labelFromStatus(status) }
@@ -210,6 +215,39 @@ export function StatusBadge({ color = 'neutral', label, status, className = '' }
       <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotCls}`} />
       <span className="text-muted-foreground">{label}</span>
     </span>
+  )
+}
+
+// ===== Sparkline =====
+// 24h 迷你趋势线（轻量 SVG，零依赖）：面积 + 折线 + 峰值点
+// data: [{ hour: 'YYYY-MM-DDTHH', total: number }, ...]（升序 24 个整点）
+// 悬停显示峰值时间（SVG 原生 title）；颜色跟随 currentColor，由外层文字色控制
+export function Sparkline({ data = [], width = 92, height = 28, className = '' }) {
+  const rows = Array.isArray(data) ? data : []
+  const pts = rows.map((d) => Number(d?.total) || 0)
+  const n = pts.length
+  if (!n) return null
+  const max = Math.max(...pts)
+  const min = Math.min(...pts)
+  const range = max - min || 1
+  const step = n > 1 ? width / (n - 1) : 0
+  const y = (v) => (height - 2 - ((v - min) / range) * (height - 4)).toFixed(1)
+  const path = pts.map((v, i) => `${i === 0 ? 'M' : 'L'}${(i * step).toFixed(1)},${y(v)}`).join(' ')
+  const area = `${path} L${width},${height} L0,${height} Z`
+  // 峰值悬停提示：取首个峰值小时（MM-DD HH:00）
+  const peakIdx = pts.indexOf(max)
+  const peakHour = String(rows[peakIdx]?.hour || '')
+  const peakLabel = peakHour ? `${peakHour.slice(5, 7)}-${peakHour.slice(8, 10)} ${peakHour.slice(11, 13)}:00` : ''
+  const tip = max > 0 && peakLabel ? `近24小时峰值 ${max.toLocaleString()} · 出现于 ${peakLabel}` : '近24小时暂无数据'
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className={`shrink-0 ${className}`} role="img" aria-label={tip}>
+      <title>{tip}</title>
+      <path d={area} fill="currentColor" opacity="0.12" />
+      <path d={path} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      {max > 0 && (
+        <circle cx={(peakIdx * step).toFixed(1)} cy={y(max)} r="2" fill="currentColor" />
+      )}
+    </svg>
   )
 }
 
@@ -509,7 +547,7 @@ export function Pagination({
   total,
   onPageChange,
   onPageSizeChange,
-  pageSizeOptions = [20, 50, 100],
+  pageSizeOptions = [10, 20, 50, 100],
   showPageSize = true,
   showJumper = true,
   showDensity = true,
