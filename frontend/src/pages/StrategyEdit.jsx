@@ -14,7 +14,7 @@ import {
 import { toast } from '../store/toastStore'
 import { Modal, Drawer } from '../components/Dialog'
 import { confirm } from '../components/ConfirmDialog'
-import { Button, PageContainer, Card, Badge, EmptyState } from '../components/ui'
+import { Button, PageContainer, Card, Badge, EmptyState, CompactSelect } from '../components/ui'
 import { inputCls, inputBaseCls, labelCls } from '../components/property/FormControls'
 import { hasPermission } from '../utils/permissions'
 import { useUnsavedChanges } from '../hooks/useUnsavedChanges'
@@ -208,7 +208,7 @@ function ParseResultCard({ r }) {
         ) : (
           <span className="text-xs text-muted-foreground">未命中任何规则</span>
         )}
-        <span className="ml-auto tabular-nums text-[11px] text-muted-foreground/70">{r.parse_ms}ms</span>
+        <span className="ml-auto tabular-nums text-[11px] text-muted-foreground">{r.parse_ms}ms</span>
       </div>
       {r.error_type && (
         <div className="mb-2 flex items-start gap-1.5 rounded-md bg-destructive/5 px-2 py-1.5 text-xs text-destructive">
@@ -219,24 +219,24 @@ function ParseResultCard({ r }) {
 
       {/* 逐规则逐条件评估详情 */}
       {r.rules_detail?.length > 0 && (
-        <details className="mb-2 rounded-md border border-border/70 p-2">
+        <details className="mb-2 rounded-md border border-border p-2">
           <summary className="cursor-pointer select-none text-xs font-semibold text-muted-foreground">
             规则匹配过程（{r.rules_detail.length} 条规则逐条件评估）
           </summary>
           <div className="mt-2 space-y-2">
             {r.rules_detail.map((rd, i) => (
-              <div key={i} className="rounded border border-border/50 p-2">
+              <div key={i} className="rounded border border-border p-2">
                 <div className="mb-1 flex flex-wrap items-center gap-2 text-xs">
                   <code className="rounded bg-muted px-1.5 py-0.5 font-mono">{rd.rule_id}</code>
                   <span className="text-muted-foreground">{rd.log_type || '未命名'}</span>
                   {rd.enabled ? null : <Badge variant="neutral">已停用</Badge>}
-                  <span className="text-muted-foreground/70">combine={rd.combine}</span>
+                  <span className="text-muted-foreground">combine={rd.combine}</span>
                   {rd.hit ? <Badge variant="success">命中</Badge> : <Badge variant="neutral">未命中</Badge>}
                 </div>
                 {rd.conditions?.length > 0 && (
                   <table className="w-full border-collapse text-[11px]">
                     <thead>
-                      <tr className="border-b border-border/60 text-left text-muted-foreground">
+                      <tr className="border-b border-border text-left text-muted-foreground">
                         <th className="px-1.5 py-1 font-semibold">字段</th>
                         <th className="px-1.5 py-1 font-semibold">算子</th>
                         <th className="px-1.5 py-1 font-semibold">期望值</th>
@@ -246,7 +246,7 @@ function ParseResultCard({ r }) {
                     </thead>
                     <tbody>
                       {rd.conditions.map((c, ci) => (
-                        <tr key={ci} className="border-b border-border/30 last:border-0">
+                        <tr key={ci} className="border-b border-border last:border-0">
                           <td className="px-1.5 py-1 font-mono">{c.field || '-'}</td>
                           <td className="px-1.5 py-1 font-mono text-muted-foreground">{c.op}</td>
                           <td className="max-w-[140px] truncate px-1.5 py-1 font-mono" title={_pv(c.expected)}>{_pv(c.expected)}</td>
@@ -275,7 +275,7 @@ function ParseResultCard({ r }) {
             <div className="overflow-x-auto rounded-md border border-border">
               <table className="w-full border-collapse text-xs">
                 <thead>
-                  <tr className="border-b border-border bg-muted/50 text-left text-muted-foreground">
+                  <tr className="border-b border-border bg-muted text-left text-muted-foreground">
                     <th className="px-2 py-1.5 font-semibold">源字段</th>
                     <th className="px-2 py-1.5 font-semibold">目标字段</th>
                     <th className="px-2 py-1.5 font-semibold">类型</th>
@@ -286,7 +286,7 @@ function ParseResultCard({ r }) {
                 </thead>
                 <tbody>
                   {r.mappings.map((m, i) => (
-                    <tr key={i} className="border-b border-border/40 last:border-0">
+                    <tr key={i} className="border-b border-border last:border-0">
                       <td className="px-2 py-1.5 font-mono">{m.source || '-'}</td>
                       <td className="px-2 py-1.5 font-mono">{m.target || '-'}</td>
                       <td className="px-2 py-1.5 font-mono text-muted-foreground">{m.type}</td>
@@ -316,9 +316,9 @@ function ParseResultCard({ r }) {
               ))}
             </div>
           )}
-          <details className="rounded-md border border-border/70 p-2">
+          <details className="rounded-md border border-border p-2">
             <summary className="cursor-pointer select-none text-xs font-semibold text-muted-foreground">标准模型 JSON（入库字段）</summary>
-            <pre className="mt-2 max-h-56 overflow-auto rounded bg-muted/30 p-2 font-mono text-[11px] leading-relaxed break-all whitespace-pre-wrap">
+            <pre className="mt-2 max-h-56 overflow-auto rounded bg-muted p-2 font-mono text-[11px] leading-relaxed break-all whitespace-pre-wrap">
               {JSON.stringify(r.fields, null, 2)}
             </pre>
           </details>
@@ -343,13 +343,13 @@ function FallbackTraceView({ fp }) {
           <span className="font-semibold text-muted-foreground">特征分类：</span>
           <code className="rounded bg-muted px-1.5 py-0.5 font-mono">{fp.classification?.method}</code>
           <span className="text-muted-foreground">{fp.classification?.reason}</span>
-          <span className="text-muted-foreground/70">候选：{fp.classification?.candidates?.join('、') || '无'}</span>
+          <span className="text-muted-foreground">候选：{fp.classification?.candidates?.join('、') || '无'}</span>
         </div>
         {fp.metadata_checks?.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-semibold text-muted-foreground">元数据直路由：</span>
             {fp.metadata_checks.map((m, i) => (
-              <span key={i} className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[11px]">
+              <span key={i} className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">
                 {m.field}={_pv(m.value)} {m.hit ? `→ ${m.hit}` : '（未命中）'}
               </span>
             ))}
@@ -359,9 +359,9 @@ function FallbackTraceView({ fp }) {
           <div className="space-y-1">
             <span className="font-semibold text-muted-foreground">候选模板尝试：</span>
             {fp.attempts.map((a, i) => (
-              <div key={i} className="flex flex-wrap items-center gap-2 rounded border border-border/50 px-2 py-1">
+              <div key={i} className="flex flex-wrap items-center gap-2 rounded border border-border px-2 py-1">
                 <span className="max-w-[180px] truncate">{a.strategy_name || `模板 #${a.strategy_id}`}</span>
-                <span className="text-muted-foreground/70">device_type={a.device_type}</span>
+                <span className="text-muted-foreground">device_type={a.device_type}</span>
                 {a.accepted
                   ? <Badge variant="success">可接手</Badge>
                   : <Badge variant="danger">{a.status} · {a.reason || '被校验门控拒绝'}</Badge>}
@@ -941,7 +941,7 @@ export default function StrategyEdit() {
           )}
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <div className="mr-2 flex items-center gap-1 rounded-lg border border-border bg-muted/40 p-1">
+          <div className="mr-2 flex items-center gap-1 rounded-lg border border-border bg-muted p-1">
             <ModeTab active={mode === 'form'} icon={Table2} label="表单模式" onClick={switchToForm} />
             <ModeTab active={mode === 'json'} icon={Braces} label="JSON 模式" onClick={switchToJson} />
           </div>
@@ -1002,11 +1002,11 @@ export default function StrategyEdit() {
               </div>
               <div>
                 <label className={labelCls}>状态</label>
-                <select className={inputCls} value={config.status || 'enabled'}
+                <CompactSelect size="lg" block value={config.status || 'enabled'}
                   onChange={(e) => setCfg({ status: e.target.value })}>
                   <option value="enabled">启用</option>
                   <option value="disabled">停用</option>
-                </select>
+                </CompactSelect>
               </div>
             </div>
           </Card>
@@ -1071,7 +1071,7 @@ export default function StrategyEdit() {
                         className={`group flex items-center gap-1 rounded-md border px-2 py-1.5 text-xs transition ${
                           activeIdx === i
                             ? 'border-primary bg-primary/10 font-medium text-primary'
-                            : 'border-transparent bg-muted/30 text-muted-foreground hover:bg-accent'
+                            : 'border-transparent bg-muted text-muted-foreground hover:bg-accent'
                         }`}
                       >
                         <button
@@ -1079,14 +1079,14 @@ export default function StrategyEdit() {
                           className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
                           title={r.enabled === false ? `${r.log_type || r.rule_id || `规则 ${i + 1}`}（已停用）` : `规则：${r.rule_id || i + 1}`}
                         >
-                          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${r.enabled === false ? 'bg-muted-foreground/50' : 'bg-success'}`} />
+                          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${r.enabled === false ? 'bg-muted-foreground' : 'bg-success'}`} />
                           <span className="truncate">{r.log_type || r.rule_id || `规则 ${i + 1}`}</span>
-                          {r.enabled === false && <span className="shrink-0 text-[10px] text-muted-foreground/80">停用</span>}
+                          {r.enabled === false && <span className="shrink-0 text-[10px] text-muted-foreground">停用</span>}
                         </button>
                         <button
                           title="删除该规则"
                           onClick={() => removeRule(i)}
-                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground/60 opacity-0 transition hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
                         >
                           <Trash2 className="h-3 w-3" />
                         </button>
@@ -1117,15 +1117,15 @@ export default function StrategyEdit() {
               </div>
 
               {/* 1. 匹配条件（识别） */}
-              <div className="rounded-lg border border-border/70 p-3">
+              <div className="rounded-lg border border-border p-3">
                 <div className="mb-2 flex items-center gap-2">
                   <Crosshair className="h-4 w-4 text-primary" />
                   <span className="text-sm font-semibold text-foreground">匹配条件（识别日志类别）</span>
-                  <select className={`${inputBaseCls} ml-2 w-24 text-xs`} value={(activeRule.match || {}).type || 'all'}
+                  <CompactSelect size="md" className="ml-2 w-24" value={(activeRule.match || {}).type || 'all'}
                     onChange={(e) => setActiveMatch({ type: e.target.value })}>
                     <option value="all">all（全部满足）</option>
                     <option value="any">any（任一满足）</option>
-                  </select>
+                  </CompactSelect>
                 </div>
                 {activeConditions.length === 0 ? (
                   <EmptyState icon={Crosshair} title="无条件（恒命中）" description="添加条件后按原始日志字段识别本次日志类别" />
@@ -1135,10 +1135,10 @@ export default function StrategyEdit() {
                       <div key={ci} className="flex items-center gap-2">
                         <input className={`${inputBaseCls} w-44 font-mono`} value={cond.field || ''} placeholder="字段路径（如 type）"
                           onChange={(e) => updateCondition(ci, { field: e.target.value })} />
-                        <select className={`${inputBaseCls} w-36`} value={cond.op || 'eq'}
+                        <CompactSelect size="md" className="w-36" value={cond.op || 'eq'}
                           onChange={(e) => updateCondition(ci, { op: e.target.value })}>
                           {MATCH_OPS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
+                        </CompactSelect>
                         <input className={`${inputBaseCls} flex-1 font-mono`} value={cond.value ?? ''}
                           placeholder={cond.op === 'in' || cond.op === 'not_in' ? 'JSON 数组，如 ["a","b"]' : '匹配值'}
                           onChange={(e) => updateCondition(ci, { value: e.target.value })} />
@@ -1156,11 +1156,11 @@ export default function StrategyEdit() {
               </div>
 
               {/* 2. 字段提取（extract） */}
-              <div className="rounded-lg border border-border/70 p-3">
+              <div className="rounded-lg border border-border p-3">
                 <div className="mb-2 flex items-center gap-2">
                   <Scissors className="h-4 w-4 text-primary" />
                   <span className="text-sm font-semibold text-foreground">字段提取（extract）</span>
-                  <select className={`${inputBaseCls} ml-2 w-56 text-xs`} value={activeExtractType}
+                  <CompactSelect size="md" className="ml-2 w-56" value={activeExtractType}
                     onChange={(e) => {
                       const t = e.target.value
                       if (t === 'fields') setActiveExtract({ type: 'fields', fields: extractFields.length ? extractFields : [emptyMappingRow()] })
@@ -1168,7 +1168,7 @@ export default function StrategyEdit() {
                       else setActiveExtract({ type: 'template', sep: (activeRule.extract || {}).sep || '\\s+', columns: (activeRule.extract || {}).columns || [], source: (activeRule.extract || {}).source || '', mappings: (activeRule.extract || {}).mappings || [] })
                     }}>
                     {EXTRACT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                  </select>
+                  </CompactSelect>
                 </div>
 
                 {activeExtractType === 'regex' && (() => {
@@ -1220,8 +1220,8 @@ export default function StrategyEdit() {
                                 setDragIdx(null)
                               }}
                               onDragEnd={() => setDragIdx(null)}
-                              className={`border-b border-border/60 ${dragIdx === ri ? 'opacity-40' : ''} ${!mappingSearch ? 'cursor-grab' : ''}`}>
-                              <td className="w-8 select-none px-1 py-1.5 text-center text-muted-foreground/40">
+                              className={`border-b border-border ${dragIdx === ri ? 'opacity-40' : ''} ${!mappingSearch ? 'cursor-grab' : ''}`}>
+                              <td className="w-8 select-none px-1 py-1.5 text-center text-muted-foreground">
                                 {!mappingSearch && <GripVertical className="mx-auto h-4 w-4 cursor-grab" />}
                               </td>
                               <td className="px-2 py-1.5">
@@ -1233,10 +1233,10 @@ export default function StrategyEdit() {
                                   onChange={(e) => updateRegexMapping(ri, { target: e.target.value })} />
                               </td>
                               <td className="px-2 py-1.5">
-                                <select className={`${inputBaseCls} w-48`} value={m.type || 'string'}
+                                <CompactSelect size="md" className="w-48" value={m.type || 'string'}
                                   onChange={(e) => updateRegexMapping(ri, { type: e.target.value })}>
                                   {CONVERT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                                </select>
+                                </CompactSelect>
                               </td>
                               <td className="px-2 py-1.5">
                                 <input className={`${inputBaseCls} w-24`} value={m.default ?? ''} placeholder="默认值"
@@ -1317,8 +1317,8 @@ export default function StrategyEdit() {
                                 setDragIdx(null)
                               }}
                               onDragEnd={() => setDragIdx(null)}
-                              className={`border-b border-border/60 ${dragIdx === ri ? 'opacity-40' : ''} ${!mappingSearch ? 'cursor-grab' : ''}`}>
-                              <td className="w-8 select-none px-1 py-1.5 text-center text-muted-foreground/40">
+                              className={`border-b border-border ${dragIdx === ri ? 'opacity-40' : ''} ${!mappingSearch ? 'cursor-grab' : ''}`}>
+                              <td className="w-8 select-none px-1 py-1.5 text-center text-muted-foreground">
                                 {!mappingSearch && <GripVertical className="mx-auto h-4 w-4 cursor-grab" />}
                               </td>
                               <td className="px-2 py-1.5">
@@ -1330,10 +1330,10 @@ export default function StrategyEdit() {
                                   onChange={(e) => updateTemplateMapping(ri, { target: e.target.value })} />
                               </td>
                               <td className="px-2 py-1.5">
-                                <select className={`${inputBaseCls} w-48`} value={m.type || 'string'}
+                                <CompactSelect size="md" className="w-48" value={m.type || 'string'}
                                   onChange={(e) => updateTemplateMapping(ri, { type: e.target.value })}>
                                   {CONVERT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                                </select>
+                                </CompactSelect>
                               </td>
                               <td className="px-2 py-1.5">
                                 <button className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition hover:bg-accent hover:text-destructive"
@@ -1400,8 +1400,8 @@ export default function StrategyEdit() {
                               setDragIdx(null)
                             }}
                             onDragEnd={() => setDragIdx(null)}
-                            className={`border-b border-border/60 ${dragIdx === fi ? 'opacity-40' : ''} ${!mappingSearch ? 'cursor-grab' : ''}`}>
-                            <td className="w-8 select-none px-1 py-1.5 text-center text-muted-foreground/40">
+                            className={`border-b border-border ${dragIdx === fi ? 'opacity-40' : ''} ${!mappingSearch ? 'cursor-grab' : ''}`}>
+                            <td className="w-8 select-none px-1 py-1.5 text-center text-muted-foreground">
                               {!mappingSearch && <GripVertical className="mx-auto h-4 w-4 cursor-grab" />}
                             </td>
                             <td className="px-2 py-1.5">
@@ -1413,10 +1413,10 @@ export default function StrategyEdit() {
                                 onChange={(e) => updateExtractField(fi, { target: e.target.value })} />
                             </td>
                             <td className="px-2 py-1.5">
-                              <select className={`${inputBaseCls} w-52`} value={m.type || 'string'}
+                              <CompactSelect size="md" className="w-52" value={m.type || 'string'}
                                 onChange={(e) => updateExtractField(fi, { type: e.target.value })}>
                                 {CONVERT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                              </select>
+                              </CompactSelect>
                             </td>
                             <td className="px-2 py-1.5 text-center">
                               <input type="checkbox" className="h-4 w-4 cursor-pointer accent-primary" checked={!!m.required}
@@ -1427,14 +1427,14 @@ export default function StrategyEdit() {
                                 onChange={(e) => updateExtractField(fi, { default: e.target.value })} />
                             </td>
                             <td className="px-2 py-1.5">
-                              <select className={`${inputBaseCls} w-32`} value={m.enum_map || ''}
+                              <CompactSelect size="md" className="w-32" value={m.enum_map || ''}
                                 onChange={(e) => {
                                   const enumMap = e.target.value
                                   updateExtractField(fi, { enum_map: enumMap, enum_target: enumMap && !m.enum_target ? `${m.target || ''}_name` : m.enum_target || '' })
                                 }}>
                                 <option value="">（无）</option>
                                 {ruleEnumNames.map((n) => <option key={n} value={n}>{n}</option>)}
-                              </select>
+                              </CompactSelect>
                             </td>
                             <td className="px-2 py-1.5">
                               <input className={`${inputBaseCls} w-36`} value={m.enum_target || ''} placeholder="枚举翻译写入字段"
@@ -1468,7 +1468,7 @@ export default function StrategyEdit() {
               {/* 3. 映射补充（map）：枚举 / 默认值 / 校验 */}
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 {/* 枚举映射 */}
-                <div className="rounded-lg border border-border/70 p-3">
+                <div className="rounded-lg border border-border p-3">
                   <div className="mb-2 flex items-center gap-2">
                     <Braces className="h-4 w-4 text-primary" />
                     <span className="text-sm font-semibold text-foreground">枚举映射（map.enum_maps）</span>
@@ -1526,7 +1526,7 @@ export default function StrategyEdit() {
                 </div>
 
                 {/* 默认值补充 */}
-                <div className="rounded-lg border border-border/70 p-3">
+                <div className="rounded-lg border border-border p-3">
                   <div className="mb-2 flex items-center gap-2">
                     <Settings2 className="h-4 w-4 text-primary" />
                     <span className="text-sm font-semibold text-foreground">默认值补充（map.defaults）</span>
@@ -1557,7 +1557,7 @@ export default function StrategyEdit() {
               </div>
 
               {/* 校验规则 */}
-              <div className="rounded-lg border border-border/70 p-3">
+              <div className="rounded-lg border border-border p-3">
                 <div className="mb-2 flex items-center gap-2">
                   <AlertTriangle className="h-4 w-4 text-primary" />
                   <span className="text-sm font-semibold text-foreground">校验规则（map.validations）</span>
@@ -1578,16 +1578,16 @@ export default function StrategyEdit() {
                       </thead>
                       <tbody>
                         {ruleValidations.map((v, vi) => (
-                          <tr key={vi} className="border-b border-border/60">
+                          <tr key={vi} className="border-b border-border">
                             <td className="px-2 py-1.5">
                               <input className={`${inputBaseCls} w-44`} value={v.field || ''} list="target-field-options" placeholder="标准字段"
                                 onChange={(e) => updateRuleValidation(vi, { field: e.target.value })} />
                             </td>
                             <td className="px-2 py-1.5">
-                              <select className={`${inputBaseCls} w-44`} value={v.rule || 'regex'}
+                              <CompactSelect size="md" className="w-44" value={v.rule || 'regex'}
                                 onChange={(e) => updateRuleValidation(vi, { rule: e.target.value })}>
                                 {VALIDATION_RULE_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                              </select>
+                              </CompactSelect>
                             </td>
                             <td className="px-2 py-1.5">
                               {v.rule === 'regex' && (
@@ -1608,11 +1608,11 @@ export default function StrategyEdit() {
                               )}
                             </td>
                             <td className="px-2 py-1.5">
-                              <select className={`${inputBaseCls} w-28`} value={v.severity || 'warning'}
+                              <CompactSelect size="md" className="w-28" value={v.severity || 'warning'}
                                 onChange={(e) => updateRuleValidation(vi, { severity: e.target.value })}>
                                 <option value="warning">warning</option>
                                 <option value="error">error</option>
-                              </select>
+                              </CompactSelect>
                             </td>
                             <td className="px-2 py-1.5">
                               <button className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition hover:bg-accent hover:text-destructive"
@@ -1632,7 +1632,7 @@ export default function StrategyEdit() {
               </div>
 
               {/* 扩展字段 */}
-              <div className="rounded-lg border border-border/70 p-3">
+              <div className="rounded-lg border border-border p-3">
                 <div className="mb-2 flex items-center gap-2">
                   <FileJson className="h-4 w-4 text-primary" />
                   <span className="text-sm font-semibold text-foreground">扩展字段归档（该规则）</span>
@@ -1750,7 +1750,7 @@ export default function StrategyEdit() {
                     <div className="overflow-x-auto rounded-lg border border-border">
                       <table className="w-full border-collapse text-xs">
                         <thead>
-                          <tr className="border-b border-border bg-muted/50 text-left text-muted-foreground">
+                          <tr className="border-b border-border bg-muted text-left text-muted-foreground">
                             <th className="px-2 py-1.5 font-semibold">源字段</th>
                             <th className="px-2 py-1.5 font-semibold">目标字段</th>
                             <th className="px-2 py-1.5 font-semibold">类型</th>
@@ -1761,7 +1761,7 @@ export default function StrategyEdit() {
                         </thead>
                         <tbody>
                           {testResult.mappings.map((m, i) => (
-                            <tr key={i} className="border-b border-border/40 last:border-0">
+                            <tr key={i} className="border-b border-border last:border-0">
                               <td className="px-2 py-1.5 font-mono">{m.source || '-'}</td>
                               <td className="px-2 py-1.5 font-mono">{m.target || '-'}</td>
                               <td className="px-2 py-1.5 font-mono text-muted-foreground">{m.type}</td>
@@ -1799,7 +1799,7 @@ export default function StrategyEdit() {
                     </div>
                     <div>
                       <div className="mb-1.5 text-xs font-semibold text-muted-foreground">标准模型 JSON 预览（入库 alert_events 字段）</div>
-                      <pre className="max-h-64 overflow-auto rounded-lg border border-border bg-muted/30 p-3 font-mono text-[11px] leading-relaxed text-foreground">
+                      <pre className="max-h-64 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-[11px] leading-relaxed text-foreground">
                         {JSON.stringify(testResult.fields, null, 2)}
                       </pre>
                     </div>
@@ -1823,8 +1823,9 @@ export default function StrategyEdit() {
                 {/* 模拟上下文：条目 → 接收器 → 自动匹配优先级链 */}
                 <div className="mt-3 space-y-2">
                   <div className="grid grid-cols-2 gap-2">
-                    <select
-                      className={`${inputCls} text-xs`}
+                    <CompactSelect
+                      size="lg"
+                      block
                       value={ctxEntryId}
                       onChange={(e) => { setCtxEntryId(e.target.value); if (e.target.value) setCtxReceiverId('') }}
                     >
@@ -1832,9 +1833,10 @@ export default function StrategyEdit() {
                       {entries.map((e) => (
                         <option key={e.id} value={e.id}>{e.name !== e.source_ip ? `${e.name}（${e.source_ip}）` : e.source_ip}</option>
                       ))}
-                    </select>
-                    <select
-                      className={`${inputCls} text-xs`}
+                    </CompactSelect>
+                    <CompactSelect
+                      size="lg"
+                      block
                       value={ctxReceiverId}
                       disabled={!!ctxEntryId}
                       onChange={(e) => setCtxReceiverId(e.target.value)}
@@ -1844,7 +1846,7 @@ export default function StrategyEdit() {
                       {receivers.map((r) => (
                         <option key={r.id} value={r.id}>{r.name}</option>
                       ))}
-                    </select>
+                    </CompactSelect>
                   </div>
                   <label
                     className="flex items-center gap-2 text-xs text-muted-foreground"
@@ -1884,7 +1886,7 @@ export default function StrategyEdit() {
                         共 {parseResults.summary.total} · 成功 {parseResults.summary.success} · 部分 {parseResults.summary.partial} · 失败 {parseResults.summary.fail}
                       </span>
                       {parseResults.context?.note && (
-                        <span className="min-w-0 flex-1 truncate text-muted-foreground/80" title={parseResults.context.note}>
+                        <span className="min-w-0 flex-1 truncate text-muted-foreground" title={parseResults.context.note}>
                           {parseResults.context.note}
                         </span>
                       )}
@@ -1956,7 +1958,7 @@ export default function StrategyEdit() {
               {isNew ? '（新建模板，全部为新增）' : `（对比当前线上版本 v${meta?.published_version_no ?? '-'}）`}
             </span>
           </div>
-          <div className="max-h-[60vh] overflow-auto rounded-md border border-border bg-muted/30 font-mono text-[12px] leading-relaxed">
+          <div className="max-h-[60vh] overflow-auto rounded-md border border-border bg-muted font-mono text-[12px] leading-relaxed">
             {saveDiffRows.map((r, i) => (
               <div
                 key={i}
@@ -1985,7 +1987,7 @@ export default function StrategyEdit() {
         onClose={() => setOnlineOpen(false)}
         size="lg"
       >
-        <pre className="max-h-[520px] overflow-auto rounded-lg border border-border bg-muted/30 p-3 font-mono text-[11px] leading-relaxed break-all whitespace-pre-wrap">
+        <pre className="max-h-[520px] overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-[11px] leading-relaxed break-all whitespace-pre-wrap">
           {JSON.stringify(onlineConfig, null, 2)}
         </pre>
       </Modal>
@@ -2007,7 +2009,7 @@ export default function StrategyEdit() {
             <div className="overflow-hidden rounded-lg border border-border">
               <table className="w-full border-collapse text-xs">
                 <thead>
-                  <tr className="border-b border-border bg-muted/50 text-left text-muted-foreground">
+                  <tr className="border-b border-border bg-muted text-left text-muted-foreground">
                     <th className="px-2 py-2 font-semibold">版本</th>
                     <th className="px-2 py-2 font-semibold">发布人</th>
                     <th className="px-2 py-2 font-semibold">发布时间</th>
@@ -2017,7 +2019,7 @@ export default function StrategyEdit() {
                 </thead>
                 <tbody>
                   {versions.map((v) => (
-                    <tr key={v.version_no} className="border-b border-border/40 last:border-0">
+                    <tr key={v.version_no} className="border-b border-border last:border-0">
                       <td className="px-2 py-2">
                         <span className="tabular-nums font-semibold">v{v.version_no}</span>
                         {v.is_current && <Badge variant="success" className="ml-1.5">当前</Badge>}
@@ -2027,7 +2029,7 @@ export default function StrategyEdit() {
                       <td className="max-w-[180px] truncate px-2 py-2 text-muted-foreground" title={v.remark}>{v.remark || '-'}</td>
                       <td className="px-2 py-2">
                         {v.is_current ? (
-                          <span className="text-muted-foreground/50">-</span>
+                          <span className="text-muted-foreground">-</span>
                         ) : (
                           <Button
                             size="sm"
@@ -2050,15 +2052,15 @@ export default function StrategyEdit() {
               <div className="mb-3 flex flex-wrap items-center gap-2">
                 <GitCompare className="h-4 w-4 text-primary" />
                 <span className="text-sm font-semibold text-foreground">版本对比</span>
-                <select className={`${inputBaseCls} w-28 text-xs`} value={diffA} onChange={(e) => setDiffA(e.target.value)}>
+                <CompactSelect size="md" className="w-28" value={diffA} onChange={(e) => setDiffA(e.target.value)}>
                   <option value="">版本 A</option>
                   {versions.map((v) => <option key={v.version_no} value={v.version_no}>v{v.version_no}</option>)}
-                </select>
+                </CompactSelect>
                 <span className="text-muted-foreground">→</span>
-                <select className={`${inputBaseCls} w-28 text-xs`} value={diffB} onChange={(e) => setDiffB(e.target.value)}>
+                <CompactSelect size="md" className="w-28" value={diffB} onChange={(e) => setDiffB(e.target.value)}>
                   <option value="">版本 B</option>
                   {versions.map((v) => <option key={v.version_no} value={v.version_no}>v{v.version_no}</option>)}
-                </select>
+                </CompactSelect>
                 <Button size="sm" variant="secondary" loading={diffLoading} onClick={handleDiff}>对比</Button>
               </div>
               {diffRows === null ? (
@@ -2069,7 +2071,7 @@ export default function StrategyEdit() {
                 <div className="max-h-80 overflow-auto rounded-md border border-border">
                   <table className="w-full border-collapse text-xs">
                     <thead>
-                      <tr className="border-b border-border bg-muted/50 text-left text-muted-foreground">
+                      <tr className="border-b border-border bg-muted text-left text-muted-foreground">
                         <th className="px-2 py-1.5 font-semibold">字段路径</th>
                         <th className="px-2 py-1.5 font-semibold">变更</th>
                         <th className="px-2 py-1.5 font-semibold">版本 A 值</th>
@@ -2080,7 +2082,7 @@ export default function StrategyEdit() {
                       {diffRows.map((d, i) => {
                         const meta = DIFF_TYPE_META[d.type]
                         return (
-                          <tr key={i} className="border-b border-border/40 last:border-0">
+                          <tr key={i} className="border-b border-border last:border-0">
                             <td className="max-w-[220px] truncate px-2 py-1.5 font-mono" title={d.path}>{d.path}</td>
                             <td className="px-2 py-1.5">
                               <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${meta.chip}`}>{meta.label}</span>
@@ -2139,9 +2141,9 @@ export default function StrategyEdit() {
                     <Badge variant="danger">{it.reason_label}</Badge>
                     <code className="font-mono text-muted-foreground">{it.error_type}</code>
                     <span className="min-w-0 flex-1 truncate text-muted-foreground" title={it.error_msg}>{it.error_msg}</span>
-                    <span className="shrink-0 tabular-nums text-muted-foreground/70">{fmtTime(it.created_at)}</span>
+                    <span className="shrink-0 tabular-nums text-muted-foreground">{fmtTime(it.created_at)}</span>
                   </div>
-                  <pre className="max-h-16 overflow-hidden rounded bg-muted/30 p-2 font-mono text-[11px] leading-relaxed break-all whitespace-pre-wrap opacity-80">
+                  <pre className="max-h-16 overflow-hidden rounded bg-muted p-2 font-mono text-[11px] leading-relaxed break-all whitespace-pre-wrap opacity-80">
                     {it.raw_data}
                   </pre>
                   <div className="mt-1.5 text-right">

@@ -11,17 +11,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   MessageSquare, Sparkles, Settings, Pin, MapPin, Brain, ScrollText, Paperclip, Check,
   X, Loader2, AlertTriangle, Sheet, FileText, File, Flag, Wrench, Download,
-  ChevronDown, ChevronRight,
+  ChevronDown, ChevronRight, HelpCircle, ArrowUp,
 } from 'lucide-react'
 import { agents as agentsApi, agentFiles as agentFilesApi, llmConfigs as llmConfigsApi } from '../api/client'
 import MarkdownRenderer from '../components/MarkdownRenderer'
-import { inputBaseCls } from '../components/property/FormControls'
+import { EmptyState, Skeleton } from '../components/ui'
 import { toast } from '../store/toastStore'
 import {
   defaultOverride, loadOverrides, saveOverrides, buildOverride,
   countEnabledParams, isSystemPromptModified, isModelOverridden,
 } from '../hooks/useChatOverrides'
 import ChatToolbar from '../components/chat/ChatToolbar'
+import ModelSwitcher from '../components/chat/ModelSwitcher'
 import SystemPromptEditor from '../components/chat/SystemPromptEditor'
 import MessageEditor from '../components/chat/MessageEditor'
 import ThinkingPanel from '../components/chat/ThinkingPanel'
@@ -436,6 +437,7 @@ export default function ChatPage() {
       toolCalls: [],
       delegateGroups: [],
       statusMsgs: [],
+      clarifies: [],
     }
     updateMessages((prev) => [...prev, userMsg, aiMsg])
     setInputText('')
@@ -605,6 +607,30 @@ export default function ChatPage() {
                     )
                   )
                   break
+                case 'clarify':
+                  // 澄清提问：智能体无法确定目标（如多台设备都可查主机信息）时
+                  // 向用户提问，前端渲染选项卡片，用户点击选项进入下一轮
+                  flushPending()
+                  updateMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === aiMsg.id
+                        ? {
+                            ...m,
+                            clarifies: [
+                              ...(m.clarifies || []),
+                              {
+                                question: data.question || '',
+                                choices: Array.isArray(data.choices)
+                                  ? data.choices.filter((c) => c != null && String(c).trim() !== '')
+                                  : [],
+                                answered: null,
+                              },
+                            ],
+                          }
+                        : m
+                    )
+                  )
+                  break
                 case 'delegate': {
                   const info = data.result || {}
                   const sid = info.subagent_id || 'unknown'
@@ -732,6 +758,27 @@ export default function ChatPage() {
   const sendMessage = useCallback(() => {
     return sendText(inputText.trim())
   }, [inputText, sendText])
+
+  // ----- 回答 clarify 澄清选项：标记已选，并以选项文本作为用户消息发送下一轮 -----
+  const answerClarify = useCallback(
+    (msgId, clarifyIndex, choice) => {
+      if (!selectedAgentId || streaming || !choice) return
+      // 标记该澄清项已回答（卡片转为已选态，防止重复点击）
+      updateMessages((prev) =>
+        prev.map((m) => {
+          if (m.id !== msgId) return m
+          const clarifies = [...(m.clarifies || [])]
+          if (clarifies[clarifyIndex]) {
+            clarifies[clarifyIndex] = { ...clarifies[clarifyIndex], answered: choice }
+          }
+          return { ...m, clarifies }
+        })
+      )
+      // 选项文本即用户回答，进入下一轮对话
+      sendText(choice)
+    },
+    [selectedAgentId, streaming, updateMessages, sendText]
+  )
 
   // ----- 重新生成指定 AI 消息（支持任意位置，不再限制为最后一条）-----
   // 流程：定位 AI 消息 → 找其前一条用户消息 → 删除用户消息及之后所有消息 → 重发用户文本
@@ -887,6 +934,7 @@ export default function ChatPage() {
         onDeleteMessage={deleteMessage}
         onEditResend={handleEditResend}
         onToggleDelegate={toggleDelegateGroup}
+        onAnswerClarify={answerClarify}
         uploadedFiles={uploadedFiles}
         selectedFileIds={selectedFileIds}
         uploading={uploading}
@@ -923,15 +971,15 @@ function ChatSidebar({
 }) {
   return (
     <aside
-      className="flex shrink-0 flex-col border-r border-border bg-card/50"
+      className="flex shrink-0 flex-col border-r border-border bg-background"
       style={{ width: `${width}px`, minWidth: `${minWidth}px` }}
     >
       {/* 顶部功能区 */}
-      <div className="shrink-0 border-b border-border p-3">
+      <div className="shrink-0 p-3">
         <button
           type="button"
           onClick={onNewConversation}
-          className="btn-primary btn-sm mb-2 w-full inline-flex items-center justify-center gap-1.5"
+          className="mb-2 w-full inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-border bg-card px-4 py-2 text-sm font-medium text-foreground shadow-sm transition hover:border-primary/40 hover:bg-accent"
         >
           <Sparkles className="h-4 w-4" />
           新建会话
@@ -941,20 +989,28 @@ function ChatSidebar({
           value={searchQuery}
           onChange={(e) => onSearch(e.target.value)}
           placeholder="搜索智能体…"
-          className={`${inputBaseCls} !py-1.5 text-xs`}
+          className="w-full rounded-md border border-transparent bg-muted px-3 py-1.5 text-xs text-foreground outline-none transition placeholder:text-muted-foreground hover:border-border focus:border-primary/40 focus:bg-card focus:ring-1 focus:ring-primary/25"
         />
       </div>
 
       {/* 智能体列表区 */}
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
+        {/* 加载态：骨架流光模拟智能体条目高度 */}
         {loading && (
-          <div className="py-8 text-center text-xs text-muted-foreground/60">加载中…</div>
+          <div className="flex flex-col gap-2 px-1 py-2">
+            <Skeleton className="h-9 w-full" />
+            <Skeleton className="h-9 w-full" />
+            <Skeleton className="h-9 w-4/5" />
+          </div>
         )}
 
+        {/* 空态：统一 EmptyState 风格（图标 + 标题 + 引导文案） */}
         {!loading && filteredAgents.length === 0 && (
-          <div className="py-8 text-center text-xs text-muted-foreground/60">
-            {searchQuery ? '未找到匹配的智能体' : '暂无已发布的智能体'}
-          </div>
+          <EmptyState
+            title={searchQuery ? '未找到匹配的智能体' : '暂无已发布的智能体'}
+            description={searchQuery ? '尝试更换关键词搜索' : '请先在智能体工作室创建并发布'}
+            className="py-8"
+          />
         )}
 
         {/* 已置顶分组 */}
@@ -986,7 +1042,7 @@ function ChatSidebar({
       <div className="shrink-0 border-t border-border p-2">
         <a
           href="/studio"
-          className="flex items-center gap-2 rounded-md px-3 py-2 text-xs text-muted-foreground/70 transition-colors hover:bg-muted hover:text-muted-foreground"
+          className="flex items-center gap-2 whitespace-nowrap rounded-md px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-muted-foreground"
         >
           <Settings className="h-4 w-4" />
           <span>管理智能体</span>
@@ -1011,11 +1067,11 @@ function AgentGroup({
       <button
         type="button"
         onClick={() => setExpanded((e) => !e)}
-        className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 transition hover:text-muted-foreground"
+        className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground transition hover:text-muted-foreground"
       >
         <span className="text-[9px]">{expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}</span>
         <span>{title}</span>
-        <span className="ml-auto rounded bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground/70">
+        <span className="ml-auto whitespace-nowrap rounded bg-secondary px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
           {agents.length}
         </span>
       </button>
@@ -1047,21 +1103,21 @@ function AgentItem({ agent, selected, onSelect, onTogglePin }) {
     <div
       className={`group relative flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 transition-colors ${
         selected
-          ? 'bg-gradient-to-r from-primary/20 to-primary/5 text-primary/80 ring-1 ring-inset ring-primary/30'
-          : 'text-muted-foreground hover:bg-muted'
+          ? 'nav-indicator bg-primary/10 font-medium text-primary ring-1 ring-primary/25'
+          : 'text-foreground hover:bg-muted'
       }`}
       onClick={() => onSelect(agent.id)}
     >
-      {/* 选中指示条 */}
-      {selected && (
-        <span className="absolute left-0 top-1/2 h-6 w-0.5 -translate-y-1/2 rounded-full bg-primary" />
-      )}
-      {/* 头像 */}
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/15 text-sm">
+      {/* 头像：选中态加主色描边，与激活底色呼应 */}
+      <div
+        className={`flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary text-sm transition ${
+          selected ? 'ring-1 ring-primary/25' : ''
+        }`}
+      >
         {avatar ? (
           <img src={avatar} alt={name} className="h-full w-full object-cover" />
         ) : (
-          <span className="font-semibold text-primary">
+          <span className={`font-semibold transition-colors ${selected ? 'text-primary' : 'text-muted-foreground'}`}>
             {name.charAt(0).toUpperCase()}
           </span>
         )}
@@ -1077,7 +1133,7 @@ function AgentItem({ agent, selected, onSelect, onTogglePin }) {
           e.stopPropagation()
           setMenuOpen((o) => !o)
         }}
-        className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground/60 opacity-0 transition hover:bg-secondary hover:text-muted-foreground group-hover:opacity-100"
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition hover:bg-muted hover:text-foreground group-hover:opacity-100"
         title="更多操作"
       >
         ⋯
@@ -1091,7 +1147,7 @@ function AgentItem({ agent, selected, onSelect, onTogglePin }) {
               setMenuOpen(false)
             }}
           />
-          <div className="absolute right-2 top-8 z-50 w-28 overflow-hidden rounded-lg border border-border bg-secondary py-1 shadow-xl">
+          <div className="absolute right-2 top-8 z-50 w-28 overflow-hidden rounded-lg border border-border bg-popover py-1 shadow-xl">
             <button
               type="button"
               onClick={(e) => {
@@ -1099,7 +1155,7 @@ function AgentItem({ agent, selected, onSelect, onTogglePin }) {
                 onTogglePin(agent.id)
                 setMenuOpen(false)
               }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-muted-foreground transition hover:bg-secondary"
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-muted-foreground transition hover:bg-muted"
             >
               {isPinned ? <Pin className="h-4 w-4" /> : <MapPin className="h-4 w-4" />}
               <span>{isPinned ? '取消置顶' : '置顶'}</span>
@@ -1126,6 +1182,7 @@ function ChatMain({
   onDeleteMessage,
   onEditResend,
   onToggleDelegate,
+  onAnswerClarify,
   uploadedFiles,
   selectedFileIds,
   uploading,
@@ -1150,6 +1207,8 @@ function ChatMain({
   const isNearBottomRef = useRef(true)
   // System Prompt 编辑器显隐（本地状态，切换智能体时重置为 false）
   const [showSystemPrompt, setShowSystemPrompt] = useState(false)
+  // 空态（无消息）：输入卡片垂直居中展示；提早日计算供下方 effect 依赖
+  const showWelcome = messages.length === 0
 
   const scrollToBottom = useCallback((instant = false) => {
     const container = scrollContainerRef.current
@@ -1164,6 +1223,7 @@ function ChatMain({
   // 监听滚动位置:更新 isNearBottomRef
   // 阈值 80px:用户在底部附近视为"跟随中",新消息自动滚;
   // 用户主动上滑超过 80px 视为"阅读历史",不强制打断
+  // 依赖 showWelcome:空态与非空态切换时滚动容器重新挂载,需重新绑定监听
   useEffect(() => {
     const container = scrollContainerRef.current
     if (!container) return
@@ -1174,7 +1234,7 @@ function ChatMain({
     }
     container.addEventListener('scroll', handler, { passive: true })
     return () => container.removeEventListener('scroll', handler)
-  }, [])
+  }, [showWelcome])
 
   // 切换智能体时：标记瞬时滚动并主动触发（切换会话时 messages 引用可能不变，
   // 单靠 messages useEffect 不会触发，必须在此主动滚一次）
@@ -1230,28 +1290,51 @@ function ChatMain({
     // 用户不在底部附近且无新消息:不打断阅读,不滚动
   }, [messages, scrollToBottom])
 
-  // 没有选中智能体
+  // 没有选中智能体：EmptyState 风格空态 + 科技网格背景装饰（仅样式）
   if (!agent) {
     return (
-      <div className="flex min-w-[400px] flex-1 items-center justify-center bg-background">
-        <div className="text-center">
-          <MessageSquare className="mx-auto mb-3 h-12 w-12 text-muted-foreground/60" />
-          <div className="text-lg font-medium text-muted-foreground">请选择一个智能体</div>
-          <div className="mt-1 text-sm text-muted-foreground/60">
-            从左侧选择智能体开始对话
-          </div>
-        </div>
+      <div className="flex min-w-[400px] flex-1 items-center justify-center bg-card bg-tech-grid">
+        <EmptyState
+          icon={MessageSquare}
+          title="请选择一个智能体"
+          description="从左侧选择智能体开始对话"
+        />
       </div>
     )
   }
 
-  const showWelcome = messages.length === 0
   const name = agent.name || `智能体 ${agent.id}`
   const suggestedQuestions = agent.suggested_questions || []
 
+  // 输入卡片（空态与非空态共用同一组件与交互，仅展示位置不同）：
+  // 卡片底部右侧集成模型选择下拉（自 ChatToolbar 迁入，数据流不变）
+  const inputEl = (
+    <ChatInput
+      value={inputText}
+      onChange={onInputChange}
+      onSend={onSend}
+      onStop={onStop}
+      streaming={streaming}
+      agentName={name}
+      uploadedFiles={uploadedFiles}
+      selectedFileIds={selectedFileIds}
+      uploading={uploading}
+      onFileUpload={onFileUpload}
+      onFileDelete={onFileDelete}
+      onFileDownload={onFileDownload}
+      onToggleFile={onToggleFile}
+      modelValue={overrides?.model_config_id ?? null}
+      onModelChange={(id) =>
+        updateOverrides((prev) => ({ ...prev, model_config_id: id }))
+      }
+      llmConfigs={llmConfigs}
+      agentDefaultModelId={agent.model_config_id ?? null}
+    />
+  )
+
   return (
-    <div className="flex min-w-[400px] flex-1 flex-col bg-background">
-      {/* 顶部工具栏：智能体信息 + 模型切换 + 参数 + System Prompt + 清空 */}
+    <div className="flex min-w-[400px] flex-1 flex-col bg-card">
+      {/* 顶部工具栏：智能体信息 + 参数 + System Prompt + 清空 */}
       <ChatToolbar
         agent={agent}
         streaming={streaming}
@@ -1274,64 +1357,70 @@ function ChatMain({
         />
       )}
 
-      {/* 对话内容区 */}
-      <div
-        ref={scrollContainerRef}
-        className="min-h-0 flex-1 overflow-y-auto"
-      >
-        {showWelcome ? (
-          // 欢迎态
-          <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/15 text-3xl">
+      {showWelcome ? (
+        // 空态：品牌标题 + 垂直居中的输入卡片 + 快捷操作 chips（仅样式）
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto bg-tech-grid px-6 py-8">
+          <div className="mb-6 flex flex-col items-center text-center">
+            <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary text-2xl ring-1 ring-primary/25">
               {agent.avatar ? (
                 <img src={agent.avatar} alt={name} className="h-full w-full rounded-2xl object-cover" />
               ) : (
-                <span className="font-bold text-primary">
+                <span className="font-bold text-foreground">
                   {name.charAt(0).toUpperCase()}
                 </span>
               )}
             </div>
-            <h2 className="mb-2 text-2xl font-bold text-foreground">{name}</h2>
-            <p className="max-w-md text-sm leading-relaxed text-muted-foreground/70">
+            <h2 className="text-gradient-primary mb-2 text-[22px] font-bold tracking-tight">{name}</h2>
+            <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
               {agent.description ||
                 `你可以向我提问相关问题，我会结合工具与上下文为你解答。`}
             </p>
           </div>
-        ) : (
-          // 消息列表
-          <div className="mx-auto flex max-w-4xl flex-col gap-4 px-6 py-6">
-            {messages.map((msg) => (
-              <MessageBubble
-                key={msg.id}
-                msg={msg}
-                onRegenerate={onRegenerate}
-                onDelete={() => onDeleteMessage(msg.id)}
-                onEdit={(newText) => onEditResend(msg.id, newText)}
-                onToggleDelegate={(sid) => onToggleDelegate(msg.id, sid)}
-                isLast={msg.id === messages[messages.length - 1]?.id}
-              />
-            ))}
-            <div ref={messagesEndRef} />
+          <div className="w-full max-w-3xl">{inputEl}</div>
+          {suggestedQuestions.length > 0 && (
+            <div className="mt-4 flex max-w-3xl flex-wrap justify-center gap-2">
+              {suggestedQuestions.slice(0, 6).map((q, i) => (
+                <span
+                  key={i}
+                  className="cursor-default truncate rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground transition hover:bg-muted"
+                  title={q}
+                >
+                  {q}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
+          {/* 对话内容区（限宽居中，与输入卡片同宽） */}
+          <div
+            ref={scrollContainerRef}
+            className="min-h-0 flex-1 overflow-y-auto scroll-smooth"
+          >
+            <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-8">
+              {messages.map((msg) => (
+                <MessageBubble
+                  key={msg.id}
+                  msg={msg}
+                  onRegenerate={onRegenerate}
+                  onDelete={() => onDeleteMessage(msg.id)}
+                  onEdit={(newText) => onEditResend(msg.id, newText)}
+                  onToggleDelegate={(sid) => onToggleDelegate(msg.id, sid)}
+                  onAnswerClarify={(clarifyIndex, choice) =>
+                    onAnswerClarify(msg.id, clarifyIndex, choice)
+                  }
+                  isLast={msg.id === messages[messages.length - 1]?.id}
+                />
+              ))}
+              <div ref={messagesEndRef} />
+            </div>
           </div>
-        )}
-      </div>
 
-      {/* 底部输入区 */}
-      <ChatInput
-        value={inputText}
-        onChange={onInputChange}
-        onSend={onSend}
-        onStop={onStop}
-        streaming={streaming}
-        agentName={name}
-        uploadedFiles={uploadedFiles}
-        selectedFileIds={selectedFileIds}
-        uploading={uploading}
-        onFileUpload={onFileUpload}
-        onFileDelete={onFileDelete}
-        onFileDownload={onFileDownload}
-        onToggleFile={onToggleFile}
-      />
+          {/* 底部输入区 */}
+          {inputEl}
+        </>
+      )}
     </div>
   )
 }
@@ -1339,7 +1428,7 @@ function ChatMain({
 // ============================================================================
 // 消息气泡
 // ============================================================================
-function MessageBubble({ msg, onRegenerate, onDelete, onEdit, onToggleDelegate, isLast }) {
+function MessageBubble({ msg, onRegenerate, onDelete, onEdit, onToggleDelegate, onAnswerClarify, isLast }) {
   const isUser = msg.role === 'user'
   const [copied, setCopied] = useState(false)
   const [processOpen, setProcessOpen] = useState(false)
@@ -1355,20 +1444,12 @@ function MessageBubble({ msg, onRegenerate, onDelete, onEdit, onToggleDelegate, 
 
   return (
     <div className={`group flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div className={`flex max-w-[85%] gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
-        {/* 头像 */}
-        <div
-          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
-            isUser
-              ? 'bg-primary/20 text-primary'
-              : 'bg-secondary text-muted-foreground'
-          }`}
-        >
-          {isUser ? '我' : 'AI'}
-        </div>
-
-        {/* 消息体 */}
-        <div className={`min-w-0 ${isUser ? 'items-end' : 'items-start'}`}>
+      {/* 消息体（用户消息：右侧主色浅底气泡；AI 消息：左侧卡片式气泡，层次分明） */}
+      <div
+        className={`flex min-w-0 flex-col ${
+          isUser ? 'max-w-[78%] items-end' : 'w-full items-start'
+        }`}
+      >
           {/* 气泡（用户消息编辑态时切换为 MessageEditor） */}
           {isUser && editing ? (
             <MessageEditor
@@ -1387,20 +1468,20 @@ function MessageBubble({ msg, onRegenerate, onDelete, onEdit, onToggleDelegate, 
             />
           ) : (
             <div
-              className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+              className={`rounded-lg px-4 py-2.5 text-sm leading-relaxed ${
                 isUser
-                  ? 'bg-primary text-foreground'
+                  ? 'border border-primary/15 bg-primary/10 text-foreground'
                   : msg.status === 'error'
                   ? 'border border-destructive/40 bg-destructive/10 text-destructive'
-                  : 'bg-secondary text-foreground'
+                  : 'w-full border border-border bg-card text-foreground'
               }`}
             >
               {/* 流式光标 */}
               {msg.status === 'streaming' && !msg.content ? (
                 <span className="inline-flex gap-1">
-                  <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground [animation-delay:-0.3s]" />
-                  <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground [animation-delay:-0.15s]" />
-                  <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground" />
+                  <span className="h-2 w-2 animate-bounce rounded-full bg-primary/60 [animation-delay:-0.3s]" />
+                  <span className="h-2 w-2 animate-bounce rounded-full bg-primary/60 [animation-delay:-0.15s]" />
+                  <span className="h-2 w-2 animate-bounce rounded-full bg-primary/60" />
                 </span>
               ) : (
                 <div className="break-words">
@@ -1419,6 +1500,20 @@ function MessageBubble({ msg, onRegenerate, onDelete, onEdit, onToggleDelegate, 
             </div>
           )}
 
+          {/* 澄清选项卡片（clarify 提问：点击选项即作为用户回答发送下一轮） */}
+          {!isUser && msg.clarifies && msg.clarifies.length > 0 && (
+            <div className="mt-1.5 flex w-full flex-col gap-1.5">
+              {msg.clarifies.map((c, i) => (
+                <ClarifyCard
+                  key={i}
+                  clarify={c}
+                  disabled={msg.status === 'streaming'}
+                  onPick={(choice) => onAnswerClarify?.(i, choice)}
+                />
+              ))}
+            </div>
+          )}
+
           {/* 生成的文件（AI 消息，点击下载） */}
           {!isUser && msg.files && msg.files.length > 0 && (
             <div className="mt-1.5 flex flex-col gap-1">
@@ -1433,51 +1528,93 @@ function MessageBubble({ msg, onRegenerate, onDelete, onEdit, onToggleDelegate, 
                       toast.error(`下载失败：${err.message || err}`)
                     }
                   }}
-                  className="flex w-fit max-w-full items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs text-primary transition hover:bg-primary/20"
+                  className="flex w-fit max-w-full items-center gap-2 whitespace-nowrap rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-foreground transition hover:border-primary/40 hover:bg-accent"
                   title={`下载 ${f.file_name}`}
                 >
-                  <Download className="h-3.5 w-3.5 shrink-0" />
+                  <Download className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 truncate">{f.file_name}</span>
                   {f.rows != null && (
-                    <span className="shrink-0 text-[10px] text-primary/60">{f.rows} 行</span>
+                    <span className="shrink-0 text-[10px] text-muted-foreground">{f.rows} 行</span>
                   )}
                 </button>
               ))}
             </div>
           )}
 
-          {/* 思考过程折叠区（仅 AI 消息有 thinking 时显示） */}
+          {/* 思考过程折叠区（仅 AI 消息有 thinking 时显示）——左侧主色竖线 + 缩进，
+              与正文/执行过程形成视觉分区 */}
           {!isUser && msg.thinking && (
-            <ThinkingPanel thinking={msg.thinking} streaming={msg.status === 'streaming'} />
-          )}
-
-          {/* 执行过程日志（状态/日志消息，仅 AI 消息） */}
-          {!isUser && msg.statusMsgs && msg.statusMsgs.length > 0 && (
-            <div className="mt-1.5">
-              <button
-                type="button"
-                onClick={() => setProcessOpen((v) => !v)}
-                className="flex items-center gap-1 text-[11px] text-muted-foreground/70 transition hover:text-muted-foreground"
-              >
-                <ChevronRight className={`inline-block h-3 w-3 transition-transform ${processOpen ? 'rotate-90' : ''}`} />
-                <ScrollText className="h-4 w-4" />
-                <span>执行过程</span>
-                <span className="text-muted-foreground/60">({msg.statusMsgs.length})</span>
-              </button>
-              {processOpen && (
-                <div className="mt-1 max-h-40 overflow-y-auto rounded-lg border border-border bg-card/60 p-2.5 text-[12px] leading-relaxed text-muted-foreground whitespace-pre-wrap break-words">
-                  {msg.statusMsgs.map((s, i) => (
-                    <div key={i} className="py-0.5">{s}</div>
-                  ))}
-                </div>
-              )}
+            <div className="mt-1.5 w-full border-l-2 border-primary/30 pl-3">
+              <ThinkingPanel thinking={msg.thinking} streaming={msg.status === 'streaming'} />
             </div>
           )}
 
-          {/* 工具调用时间线（仅 AI 消息，垂直 Timeline 展示） */}
-          {!isUser && msg.toolCalls && msg.toolCalls.length > 0 && (
-            <ToolTimeline toolCalls={msg.toolCalls} />
-          )}
+          {/* 执行过程面板（工具链路 + 引擎状态日志合并为紧凑面板：默认折叠、
+              折叠头横向展示步骤 chips 与状态圆点，展开显示每步详情，仅 AI 消息） */}
+          {!isUser &&
+            ((msg.toolCalls && msg.toolCalls.length > 0) ||
+              (msg.statusMsgs && msg.statusMsgs.length > 0)) && (
+              <div className="mt-2 w-full">
+                {/* 折叠头：标题 + 横向步骤 chips */}
+                <button
+                  type="button"
+                  onClick={() => setProcessOpen((v) => !v)}
+                  className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition hover:bg-muted"
+                >
+                  <ChevronRight
+                    className={`h-3 w-3 shrink-0 text-muted-foreground transition-transform ${processOpen ? 'rotate-90' : ''}`}
+                  />
+                  <ScrollText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="shrink-0 text-[11px] text-muted-foreground">执行过程</span>
+                  <span className="shrink-0 whitespace-nowrap text-[10px] tabular-nums text-muted-foreground">
+                    ({(msg.toolCalls?.length || 0) + (msg.statusMsgs?.length || 0)})
+                  </span>
+                  {/* 横向步骤 chips：状态圆点（运行中/成功/失败）+ 工具名 */}
+                  <span className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+                    {(msg.toolCalls || []).map((tc, i) => (
+                      <span
+                        key={tc.call_id || `${tc.name}-${i}`}
+                        className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                        title={tc.name}
+                      >
+                        <span
+                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                            tc.status === 'running'
+                              ? 'dot-pulse bg-primary'
+                              : tc.message &&
+                                (tc.message.includes('错误') || tc.message.includes('error'))
+                              ? 'bg-destructive'
+                              : 'bg-success'
+                          }`}
+                        />
+                        <span className="max-w-[10rem] truncate font-mono">{tc.name}</span>
+                      </span>
+                    ))}
+                  </span>
+                </button>
+                {/* 展开内容：工具时间线（含每步「详情」）+ 状态/日志（圆角浅灰底） */}
+                {processOpen && (
+                  <div className="mt-1 rounded-lg bg-muted p-2.5">
+                    {msg.toolCalls && msg.toolCalls.length > 0 && (
+                      <ToolTimeline toolCalls={msg.toolCalls} embedded />
+                    )}
+                    {msg.statusMsgs && msg.statusMsgs.length > 0 && (
+                      <div
+                        className={`max-h-40 overflow-y-auto text-[12px] leading-relaxed text-muted-foreground whitespace-pre-wrap break-words ${
+                          msg.toolCalls && msg.toolCalls.length > 0
+                            ? 'mt-1.5 border-t border-border pt-1.5'
+                            : ''
+                        }`}
+                      >
+                        {msg.statusMsgs.map((s, i) => (
+                          <div key={i} className="py-0.5">{s}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
           {/* 子代理委派事件折叠区 */}
           {!isUser && msg.delegateGroups && msg.delegateGroups.length > 0 && (
@@ -1502,16 +1639,16 @@ function MessageBubble({ msg, onRegenerate, onDelete, onEdit, onToggleDelegate, 
               <button
                 type="button"
                 onClick={handleCopy}
-                className="text-[10px] text-muted-foreground/60 hover:text-muted-foreground"
+                className="whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] text-muted-foreground transition hover:bg-muted hover:text-muted-foreground"
                 title="复制"
               >
-                {copied ? <span className="inline-flex items-center gap-1"><Check className="h-3 w-3" /> 已复制</span> : '复制'}
+                {copied ? <span className="inline-flex items-center gap-1 whitespace-nowrap"><Check className="h-3 w-3" /> 已复制</span> : '复制'}
               </button>
               {isUser && (
                 <button
                   type="button"
                   onClick={() => setEditing(true)}
-                  className="text-[10px] text-muted-foreground/60 hover:text-muted-foreground"
+                  className="whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] text-muted-foreground transition hover:bg-muted hover:text-muted-foreground"
                   title="编辑并重发（删除此消息及之后所有消息，用新文本重新发送）"
                 >
                   编辑
@@ -1521,7 +1658,7 @@ function MessageBubble({ msg, onRegenerate, onDelete, onEdit, onToggleDelegate, 
                 <button
                   type="button"
                   onClick={() => onRegenerate(msg.id)}
-                  className="text-[10px] text-muted-foreground/60 hover:text-muted-foreground"
+                  className="whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] text-muted-foreground transition hover:bg-muted hover:text-muted-foreground"
                   title="重新生成（删除此消息及之后所有消息，从对应用户消息重发）"
                 >
                   重新生成
@@ -1530,7 +1667,7 @@ function MessageBubble({ msg, onRegenerate, onDelete, onEdit, onToggleDelegate, 
               <button
                 type="button"
                 onClick={onDelete}
-                className="text-[10px] text-muted-foreground/60 hover:text-destructive"
+                className="whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
                 title="删除"
               >
                 删除
@@ -1539,37 +1676,77 @@ function MessageBubble({ msg, onRegenerate, onDelete, onEdit, onToggleDelegate, 
           )}
 
           {/* 时间戳 + Token 用量 */}
-          <div className={`mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground/50 ${isUser ? 'justify-end' : 'justify-start'}`}>
-            <span>{new Date(msg.timestamp).toLocaleTimeString('zh-CN', {
+          <div className={`mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground ${isUser ? 'justify-end' : 'justify-start'}`}>
+            <span className="whitespace-nowrap tabular-nums">{new Date(msg.timestamp).toLocaleTimeString('zh-CN', {
               hour: '2-digit',
               minute: '2-digit',
             })}</span>
-            {/* Token 用量（仅 AI 消息且 done 状态有 usage 时显示） */}
+            {/* Token 用量（仅 AI 消息且 done 状态有 usage 时显示）——badge 徽章 + 等宽数字 */}
             {!isUser && msg.status === 'done' && msg.usage && (
-              <span className="flex items-center gap-1">
-                <span className="text-muted-foreground/40">·</span>
-                <span title="输入 Token">
-                  <span className="text-muted-foreground/40">入</span>
-                  <span className="ml-0.5 text-muted-foreground/70">{msg.usage.input_tokens ?? 0}</span>
-                </span>
-                <span title="输出 Token">
-                  <span className="text-muted-foreground/40">出</span>
-                  <span className="ml-0.5 text-muted-foreground/70">{msg.usage.output_tokens ?? 0}</span>
-                </span>
-                <span className="text-muted-foreground/40">·</span>
-                <span title="总 Token">
-                  <span className="text-muted-foreground/40">共</span>
-                  <span className="ml-0.5 text-muted-foreground/70">{msg.usage.total_tokens ?? 0}</span>
-                </span>
+              <span className="badge whitespace-nowrap bg-primary/10 tabular-nums text-primary" title="Token 用量">
+                <span title="输入 Token">入 {msg.usage.input_tokens ?? 0}</span>
+                <span title="输出 Token">出 {msg.usage.output_tokens ?? 0}</span>
+                <span title="总 Token">共 {msg.usage.total_tokens ?? 0}</span>
               </span>
             )}
           </div>
         </div>
-      </div>
     </div>
   )
 }
 
+
+// ============================================================================
+// clarify 澄清选项卡片：智能体向用户提问（如"要查询哪台设备的主机信息？"），
+// 点击选项即以该选项文本作为用户回答发送进入下一轮；已回答后转为已选态
+// ============================================================================
+function ClarifyCard({ clarify, disabled, onPick }) {
+  if (!clarify || (!clarify.choices || clarify.choices.length === 0)) {
+    // 无选项的开放性提问：仅展示问题（用户在输入框回答）
+    if (!clarify || !clarify.question) return null
+    return (
+      <div className="mt-1.5 flex w-full items-center gap-1.5 rounded-lg border border-border bg-muted px-3 py-2 text-xs text-foreground">
+        <HelpCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <span className="truncate" title={clarify.question}>{clarify.question}</span>
+      </div>
+    )
+  }
+  return (
+    <div className="mt-1.5 w-full rounded-lg border border-border bg-muted px-3 py-2.5">
+      {/* 问题 */}
+      <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-foreground">
+        <HelpCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <span className="truncate" title={clarify.question}>{clarify.question}</span>
+      </div>
+      {clarify.answered ? (
+        // 已回答：展示所选项
+        <div className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-foreground">
+          <Check className="h-3.5 w-3.5 shrink-0 text-success" />
+          <span className="truncate" title={clarify.answered}>{clarify.answered}</span>
+        </div>
+      ) : (
+        // 选项列表：点击即作为用户回答发送
+        <div className="flex flex-col gap-1.5">
+          {clarify.choices.map((choice, i) => (
+            <button
+              key={i}
+              type="button"
+              disabled={disabled}
+              onClick={() => onPick?.(choice)}
+              className="flex w-full items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-left text-xs text-foreground transition hover:border-primary/40 hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:bg-card"
+              title={choice}
+            >
+              <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-border text-[9px] font-semibold text-muted-foreground">
+                {String.fromCharCode(65 + i)}
+              </span>
+              <span className="truncate">{choice}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 // 子代理委派事件迷你卡片（简化版）
 function DelegateGroupMini({ group, onToggle }) {
@@ -1580,31 +1757,31 @@ function DelegateGroupMini({ group, onToggle }) {
   }
   const statusColor = {
     running: 'text-primary',
-    completed: 'text-emerald-300',
+    completed: 'text-emerald-500',
     failed: 'text-destructive',
   }
   return (
     <button
       type="button"
       onClick={onToggle}
-      className="flex items-center gap-1.5 rounded border border-primary/40 bg-primary/10 px-2 py-1 text-[10px] transition hover:bg-primary/20"
+      className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-[10px] transition hover:bg-muted"
     >
-      <span className="text-[8px] text-muted-foreground/60">{group.expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}</span>
+      <span className="text-[8px] text-muted-foreground">{group.expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}</span>
       <span className={statusColor[group.status] || 'text-muted-foreground'}>
         {statusIcon[group.status] || '•'}
       </span>
-      <span className="font-mono text-primary">{group.subagent_id}</span>
-      <span className="text-muted-foreground/60">
+      <span className="font-mono text-foreground">{group.subagent_id}</span>
+      <span className="whitespace-nowrap tabular-nums text-muted-foreground">
         ({group.events.length} 事件)
       </span>
       {group.expanded && (
-        <span className="ml-1 flex max-w-md flex-col gap-0.5 text-left text-[10px] text-muted-foreground/70">
+        <span className="ml-1 flex max-w-md flex-col gap-0.5 text-left text-[10px] text-muted-foreground">
           {group.events
             .filter((e) => e.type !== 'token')
             .slice(-5)
             .map((e, i) => (
               <span key={i}>
-                <span className="text-muted-foreground/60">
+                <span className="text-muted-foreground">
                   {e.type === 'tool_start' ? <Wrench className="inline h-3 w-3" /> : e.type === 'tool_end' ? <Check className="inline h-3 w-3 text-success" /> : e.type === 'done' ? <Flag className="inline h-3 w-3 text-primary" /> : '•'}
                 </span>{' '}
                 {e.tool_name || e.message || e.content || e.type}
@@ -1633,6 +1810,10 @@ function ChatInput({
   onFileDelete,
   onFileDownload,
   onToggleFile,
+  modelValue = null,
+  onModelChange,
+  llmConfigs = [],
+  agentDefaultModelId = null,
 }) {
   const textareaRef = useRef(null)
   const fileInputRef = useRef(null)
@@ -1688,25 +1869,26 @@ function ChatInput({
   const selectedCount = selectedFileIds.size
 
   return (
-    <div className="shrink-0 border-t border-border bg-card/30 px-6 py-4">
-      <div className="mx-auto max-w-4xl">
+    <div className="shrink-0 px-6 pb-3 pt-1">
+      {/* 与消息区同宽居中（max-w-3xl） */}
+      <div className="mx-auto w-full max-w-3xl">
         {/* 文件列表区（可折叠） */}
         {uploadedFiles.length > 0 && (
-          <div className="mb-2 rounded-lg border border-border bg-card/60">
+          <div className="mb-2 rounded-lg border border-border bg-card">
             <button
               type="button"
               onClick={() => setShowFileList((s) => !s)}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-muted-foreground transition hover:text-foreground"
+              className="flex w-full items-center gap-2 whitespace-nowrap px-3 py-1.5 text-left text-[11px] text-muted-foreground transition hover:text-foreground"
             >
               <span className="text-[9px]">{showFileList ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}</span>
               <Paperclip className="h-4 w-4" />
-              <span>已上传文件 ({uploadedFiles.length})</span>
+              <span className="tabular-nums">已上传文件 ({uploadedFiles.length})</span>
               {selectedCount > 0 && (
-                <span className="rounded bg-primary/20 px-1.5 py-0.5 text-[10px] text-primary">
+                <span className="whitespace-nowrap rounded bg-muted px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
                   已选 {selectedCount} 个
                 </span>
               )}
-              <span className="ml-auto text-[10px] text-muted-foreground/60">
+              <span className="ml-auto text-[10px] text-muted-foreground">
                 勾选后发送，智能体将自主读取
               </span>
             </button>
@@ -1718,7 +1900,7 @@ function ChatInput({
                     <div
                       key={f.id}
                       className={`flex items-center gap-2 rounded px-2 py-1.5 text-xs transition ${
-                        checked ? 'bg-primary/10' : 'hover:bg-muted'
+                        checked ? 'bg-muted' : 'hover:bg-muted'
                       }`}
                     >
                       <input
@@ -1731,11 +1913,11 @@ function ChatInput({
                       <span className="min-w-0 flex-1 truncate text-muted-foreground" title={f.original_name}>
                         {f.original_name}
                       </span>
-                      <span className="shrink-0 text-[10px] text-muted-foreground/60">{formatSize(f.file_size)}</span>
+                      <span className="shrink-0 text-[10px] text-muted-foreground">{formatSize(f.file_size)}</span>
                       <button
                         type="button"
                         onClick={() => onFileDownload?.(f)}
-                        className="shrink-0 text-muted-foreground/50 transition hover:text-primary"
+                        className="shrink-0 rounded p-0.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
                         title="下载文件"
                       >
                         <Download className="h-3 w-3" />
@@ -1743,7 +1925,7 @@ function ChatInput({
                       <button
                         type="button"
                         onClick={() => onFileDelete?.(f.id)}
-                        className="shrink-0 text-muted-foreground/50 hover:text-destructive"
+                        className="shrink-0 rounded p-0.5 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
                         title="删除文件"
                       >
                         <X className="h-3 w-3" />
@@ -1756,36 +1938,18 @@ function ChatInput({
           </div>
         )}
 
-        {/* 上传中提示 */}
+        {/* 上传中提示（呼吸点动画） */}
         {uploading && (
-          <div className="mb-2 flex items-center gap-2 text-[11px] text-primary">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-primary" />
+          <div className="mb-2 flex items-center gap-2 whitespace-nowrap text-[11px] text-muted-foreground">
+            <span className="dot-pulse h-2 w-2 rounded-full bg-primary" />
             正在上传文件…
           </div>
         )}
 
-        {/* 输入行：附件按钮 + textarea + 发送按钮，统一 h-12 (48px) 高度居中对齐 */}
-        <div className="flex items-center gap-2">
-          {/* 附件按钮 */}
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={streaming || uploading}
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary text-muted-foreground/70 transition hover:bg-secondary hover:text-muted-foreground disabled:opacity-50"
-            title="上传文件（Excel/Word/PDF 等，不做 RAG）"
-          >
-            <Paperclip className="h-5 w-5" />
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            accept=".xlsx,.xls,.docx,.pdf,.csv,.txt,.json,.md"
-            onChange={handleFileSelect}
-          />
-
-          {/* 输入框：h-12 (48px) 与按钮对齐 */}
+        {/* 悬浮输入卡片：上方文本域，底部一行分左右两组
+            （左：附件按钮；右：模型选择 + 发送按钮）。
+            悬停/聚焦主色边框 + 光环反馈（对齐 .input-base 交互） */}
+        <div className="rounded-xl border border-border bg-card p-2.5 shadow-sm transition hover:border-primary/45 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary">
           <textarea
             ref={textareaRef}
             value={value}
@@ -1793,42 +1957,69 @@ function ChatInput({
             onKeyDown={handleKeyDown}
             placeholder={`和 ${agentName || '智能体'} 对话中…`}
             rows={1}
-            className="w-full flex-1 resize-none rounded-lg border border-border bg-secondary px-3.5 py-3 text-sm text-foreground placeholder-muted-foreground transition focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-            style={{ maxHeight: `${INPUT_MAX_HEIGHT}px`, minHeight: '48px' }}
+            className="w-full resize-none bg-transparent px-2 pb-2 pt-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+            style={{ maxHeight: `${INPUT_MAX_HEIGHT}px`, minHeight: '44px' }}
             disabled={streaming}
           />
+          <div className="flex items-center justify-between gap-2">
+            {/* 左：附件按钮 + 隐藏的文件选择 input */}
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={streaming || uploading}
+                className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-40"
+                title="上传文件（Excel/Word/PDF 等，不做 RAG）"
+              >
+                <Paperclip className="h-4 w-4" />
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                accept=".xlsx,.xls,.docx,.pdf,.csv,.txt,.json,.md"
+                onChange={handleFileSelect}
+              />
+            </div>
 
-          {/* 发送/停止按钮 */}
-          {streaming ? (
-            <button
-              type="button"
-              onClick={onStop}
-              className="flex h-12 shrink-0 items-center gap-1.5 rounded-lg bg-destructive px-5 text-sm font-medium text-foreground transition hover:bg-destructive"
-            >
-              <span className="h-3 w-3 rounded-sm bg-white" />
-              停止
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleSendClick}
-              // 文本为空但勾选了文件时同样可发送（仅发附件）
-              disabled={!(value.trim() || selectedFileIds.size > 0)}
-              className="btn-primary flex h-12 shrink-0 items-center gap-1.5 px-5"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="22" y1="2" x2="11" y2="13" />
-                <polygon points="22 2 15 22 11 13 2 9 22 2" />
-              </svg>
-              发送
-            </button>
-          )}
+            {/* 右：模型选择 + 发送/停止按钮 */}
+            <div className="flex items-center gap-1.5">
+              <ModelSwitcher
+                value={modelValue}
+                onChange={onModelChange}
+                llmConfigs={llmConfigs}
+                agentDefaultModelId={agentDefaultModelId}
+              />
+              {streaming ? (
+                <button
+                  type="button"
+                  onClick={onStop}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-sm transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive"
+                  title="停止"
+                >
+                  <span className="h-2.5 w-2.5 rounded-[2px] bg-current" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleSendClick}
+                  // 文本为空但勾选了文件时同样可发送（仅发附件）
+                  disabled={!(value.trim() || selectedFileIds.size > 0)}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition hover:opacity-90 hover:shadow-[0_0_14px_oklch(var(--primary)/0.4)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:opacity-40 disabled:hover:shadow-none"
+                  title="发送"
+                >
+                  <ArrowUp className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
-        {/* 底部提示 */}
-        <div className="mt-1.5 flex items-center justify-between text-[10px] text-muted-foreground/50">
-          <span>Enter 发送 · Shift+Enter 换行</span>
-          <span>{value.length} 字</span>
+        {/* 快捷键提示与字数统计（卡片外右下角小字，数字等宽） */}
+        <div className="mt-1.5 flex items-center justify-between px-1 text-[10px] text-muted-foreground">
+          <span className="whitespace-nowrap">Enter 发送 · Shift+Enter 换行</span>
+          <span className="whitespace-nowrap tabular-nums">{value.length} 字</span>
         </div>
       </div>
     </div>

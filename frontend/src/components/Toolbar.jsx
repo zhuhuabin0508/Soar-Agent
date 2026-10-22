@@ -504,13 +504,13 @@ function Toolbar({ isFullscreen = false, onToggleFullscreen }) {
         />
         {statusBadge}
         {workflowId != null && (
-          <span className="hidden shrink-0 font-mono text-[10px] text-muted-foreground/60 sm:inline">
+          <span className="hidden shrink-0 font-mono text-[10px] text-muted-foreground sm:inline">
             #{workflowId}
           </span>
         )}
       </div>
 
-      <div className="flex shrink-0 items-center gap-0.5 rounded-md border border-border bg-secondary/60 p-0.5">
+      <div className="flex shrink-0 items-center gap-0.5 rounded-md border border-border bg-secondary p-0.5">
         <button
           type="button"
           onClick={undo}
@@ -672,7 +672,7 @@ function Toolbar({ isFullscreen = false, onToggleFullscreen }) {
                   className="flex w-full flex-col items-start gap-0.5 rounded px-2.5 py-1.5 text-left transition hover:bg-accent"
                 >
                   <span className="text-xs font-medium text-foreground">{tpl.name}</span>
-                  <span className="text-[10px] text-muted-foreground/70">{tpl.description}</span>
+                  <span className="text-[10px] text-muted-foreground">{tpl.description}</span>
                 </button>
               ))}
             </div>
@@ -800,7 +800,7 @@ function Toolbar({ isFullscreen = false, onToggleFullscreen }) {
             value={publishNote}
             onChange={(e) => setPublishNote(e.target.value)}
           />
-          <p className="text-[11px] leading-relaxed text-muted-foreground/70">
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
             发布将基于当前画布创建一个新版本快照，并将工作流状态置为「已发布」。发布前会自动保存并校验工作流。
           </p>
         </div>

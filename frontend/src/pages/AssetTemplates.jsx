@@ -9,7 +9,7 @@ import { confirm } from '../components/ConfirmDialog'
 import { toast } from '../store/toastStore'
 import { inputCls, labelCls } from '../components/property/FormControls'
 import {
-  PageContainer, Card, Badge, LoadingState, ErrorState, EmptyState, StatusBadge,
+  Card, Badge, ErrorState, EmptyState, StatusBadge, CompactSelect,
 } from '../components/ui'
 import { useUnsavedChanges } from '../hooks/useUnsavedChanges'
 
@@ -176,20 +176,20 @@ function TemplateEditor({ open, template, onClose, onSaved }) {
         </div>
         <div>
           <label className={labelCls}>主题色</label>
-          <select className={inputCls} value={form.color} onChange={(e) => update({ color: e.target.value })}>
+          <CompactSelect value={form.color} onChange={(e) => update({ color: e.target.value })} size="lg" block>
             {COLOR_TOKENS.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
+          </CompactSelect>
         </div>
         <div>
           <label className={labelCls}>标识字段（唯一标识）</label>
-          <select className={inputCls} value={form.identifier_field} onChange={(e) => update({ identifier_field: e.target.value })}>
+          <CompactSelect value={form.identifier_field} onChange={(e) => update({ identifier_field: e.target.value })} size="lg" block>
             {form.fields.map((f) => <option key={f.key} value={f.key}>{f.label || f.key}</option>)}
-          </select>
+          </CompactSelect>
         </div>
       </div>
 
       {/* 标识聚合开关 */}
-      <div className="mt-3 flex items-start gap-3 rounded-lg border border-border bg-muted/20 p-3">
+      <div className="mt-3 flex items-start gap-3 rounded-lg border border-border bg-muted p-3">
         <label className="mt-0.5 flex cursor-pointer items-center gap-2">
           <input
             type="checkbox"
@@ -216,7 +216,7 @@ function TemplateEditor({ open, template, onClose, onSaved }) {
         </div>
         <div className="space-y-2">
           {form.fields.map((f, idx) => (
-            <div key={idx} className="rounded-lg border border-border bg-muted/20 p-3">
+            <div key={idx} className="rounded-lg border border-border bg-muted p-3">
               <div className="grid grid-cols-12 items-end gap-2">
                 <div className="col-span-3">
                   <label className="text-[10px] text-muted-foreground">字段 key</label>
@@ -228,16 +228,16 @@ function TemplateEditor({ open, template, onClose, onSaved }) {
                 </div>
                 <div className="col-span-2">
                   <label className="text-[10px] text-muted-foreground">类型</label>
-                  <select className={inputCls} value={f.type} onChange={(e) => updateField(idx, { type: e.target.value })}>
+                  <CompactSelect value={f.type} onChange={(e) => updateField(idx, { type: e.target.value })} size="lg" block>
                     {FIELD_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
+                  </CompactSelect>
                 </div>
                 <div className="col-span-3">
                   <label className="text-[10px] text-muted-foreground">映射目标</label>
-                  <select className={inputCls} value={f.mapped_to} onChange={(e) => updateField(idx, { mapped_to: e.target.value })}>
+                  <CompactSelect value={f.mapped_to} onChange={(e) => updateField(idx, { mapped_to: e.target.value })} size="lg" block>
                     <option value="extra">extra（扩展字段）</option>
                     {STANDARD_COLS.map((c) => <option key={c} value={`standard:${c}`}>standard:{c}</option>)}
-                  </select>
+                  </CompactSelect>
                 </div>
                 <div className="col-span-1 flex items-center justify-end gap-1">
                   <button onClick={() => moveField(idx, -1)} disabled={idx === 0} className="rounded p-1 text-muted-foreground hover:bg-accent disabled:opacity-30" title="上移">
@@ -263,10 +263,10 @@ function TemplateEditor({ open, template, onClose, onSaved }) {
                 </label>
                 <label className="flex items-center gap-1 text-xs text-muted-foreground">
                   宽度
-                  <select className="h-7 rounded border border-border bg-transparent px-1 text-xs" value={f.width || 'half'} onChange={(e) => updateField(idx, { width: e.target.value })}>
+                  <CompactSelect variant="ghost" size="sm" value={f.width || 'half'} onChange={(e) => updateField(idx, { width: e.target.value })}>
                     <option value="half">半行</option>
                     <option value="full">整行</option>
-                  </select>
+                  </CompactSelect>
                 </label>
                 <input className={`${inputCls} h-7 max-w-[160px]`} value={f.placeholder || ''} onChange={(e) => updateField(idx, { placeholder: e.target.value })} placeholder="占位提示" />
                 {f.type === 'select' && (
@@ -343,7 +343,7 @@ function TagManager() {
       </div>
       <div className="space-y-4 p-4">
         {/* 新建 */}
-        <div className="flex flex-wrap items-end gap-2 rounded-lg border border-border bg-muted/20 p-3">
+        <div className="flex flex-wrap items-end gap-2 rounded-lg border border-border bg-muted p-3">
           <div className="min-w-[140px] flex-1">
             <label className={labelCls}>标签名称</label>
             <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="如：核心系统" onKeyDown={(e) => e.key === 'Enter' && handleCreate()} />
@@ -354,9 +354,9 @@ function TagManager() {
           </div>
           <div>
             <label className={labelCls}>颜色</label>
-            <select className={inputCls} value={color} onChange={(e) => setColor(e.target.value)}>
+            <CompactSelect value={color} onChange={(e) => setColor(e.target.value)} size="lg" block>
               {['brand', 'success', 'warning', 'danger', 'neutral', 'info'].map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
+            </CompactSelect>
           </div>
           <button onClick={handleCreate} disabled={!name.trim()} className="btn-primary btn-sm flex items-center gap-1">
             <Plus className="h-3.5 w-3.5" /> 添加
@@ -365,7 +365,14 @@ function TagManager() {
         {err && <div className="text-xs text-danger">{err}</div>}
         {/* 列表（按分类分组） */}
         {loading ? (
-          <LoadingState rows={3} />
+          <div className="space-y-4">
+            <div className="h-3 w-16 rounded skeleton-shimmer" />
+            <div className="flex flex-wrap gap-2">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="h-6 w-20 rounded-full skeleton-shimmer" />
+              ))}
+            </div>
+          </div>
         ) : tags.length === 0 ? (
           <EmptyState icon={TagIcon} title="暂无标签" description="创建标签用于资产分组与筛选" />
         ) : (
@@ -377,7 +384,9 @@ function TagManager() {
                   {list.map((t) => (
                     <div key={t.id} className="group flex items-center gap-1.5 rounded-full border border-border bg-card py-1 pl-3 pr-1.5">
                       <Badge variant={t.color || 'brand'}>{t.name}</Badge>
-                      <span className="text-[10px] text-muted-foreground">{t.asset_count}</span>
+                      <span className={`text-[10px] tabular-nums ${t.asset_count > 0 ? 'text-muted-foreground' : 'text-muted-foreground'}`} title={t.asset_count == null ? '未统计' : `关联 ${t.asset_count} 项资产`}>
+                        {(t.asset_count ?? 0).toLocaleString()}
+                      </span>
                       <button onClick={() => handleDelete(t)} className="rounded-full p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-danger group-hover:opacity-100" title="删除">
                         <X className="h-3 w-3" />
                       </button>
@@ -424,23 +433,30 @@ export default function AssetTemplates() {
   }
 
   return (
-    <PageContainer>
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">类型模板与标签</h1>
-          <p className="mt-1 text-sm text-muted-foreground">定义资产数据模型（字段 schema）与全局标签</p>
+    <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
+      <header className="flex items-center justify-between gap-4 border-b border-border bg-card px-6 py-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">类型模板与标签</h1>
+          {tab === 'templates' && !loading && (
+            <span className="text-xs text-muted-foreground">
+              共 <span className="font-medium tabular-nums text-foreground">{templates.length}</span> 个模板
+            </span>
+          )}
+          <span className="hidden text-xs text-muted-foreground xl:inline">定义资产数据模型（字段 schema）与全局标签</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
+          <button type="button" onClick={load} className="btn-secondary btn-sm" title="刷新模板列表">
+            <RefreshCw className={`mr-1 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> 刷新
+          </button>
           {tab === 'templates' && (
-            <button onClick={() => { setEditing(null); setEditorOpen(true) }} className="btn-primary btn-sm flex items-center gap-1">
-              <Plus className="h-4 w-4" /> 新建类型
+            <button onClick={() => { setEditing(null); setEditorOpen(true) }} className="btn-primary btn-sm">
+              <Plus className="mr-1 h-3.5 w-3.5" /> 新建类型
             </button>
           )}
-          <button onClick={load} className="btn-secondary btn-sm flex items-center gap-1">
-            <RefreshCw className="h-4 w-4" /> 刷新
-          </button>
         </div>
-      </div>
+      </header>
+
+      <div className="flex-1 overflow-y-auto p-6">
 
       {/* Tab 切换 */}
       <div className="mb-4 flex items-center gap-1.5 border-b border-border pb-px">
@@ -455,12 +471,37 @@ export default function AssetTemplates() {
       </div>
 
       {tab === 'templates' ? (
-        loading ? <LoadingState rows={3} /> : error ? <ErrorState description={error} onRetry={load} /> : (
+        loading ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex flex-col rounded-lg border border-border bg-card">
+                <div className="flex items-start gap-3 border-b border-border p-4">
+                  <div className="h-10 w-10 shrink-0 rounded-lg skeleton-shimmer" />
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <div className="h-3.5 w-2/3 rounded skeleton-shimmer" />
+                    <div className="h-2.5 w-1/2 rounded skeleton-shimmer" />
+                  </div>
+                </div>
+                <div className="flex-1 space-y-2 p-4">
+                  <div className="h-2.5 w-full rounded skeleton-shimmer" />
+                  <div className="flex flex-wrap gap-1.5">
+                    {Array.from({ length: 5 }).map((_, j) => (
+                      <div key={j} className="h-4 w-14 rounded skeleton-shimmer" />
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center justify-end gap-1 border-t border-border px-3 py-2">
+                  <div className="h-6 w-14 rounded skeleton-shimmer" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : error ? <ErrorState description={error} onRetry={load} /> : (
+          <div className="card-stagger grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {templates.map((t) => {
               const Icon = TEMPLATE_ICONS[t.code] || Boxes
               return (
-                <Card key={t.code} hover className="flex flex-col">
+                <div key={t.code} className="card-hover flex flex-col rounded-lg border border-border bg-card transition-colors hover:border-primary/40">
                   <div className="flex items-start gap-3 border-b border-border p-4">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
                       <Icon className="h-5 w-5" />
@@ -486,7 +527,7 @@ export default function AssetTemplates() {
                   </div>
                   <div className="min-h-0 flex-1 p-4">
                     {t.description && <p className="mb-3 text-xs text-muted-foreground">{t.description}</p>}
-                    <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                    <div className="mb-2 text-[11px] font-medium tabular-nums uppercase tracking-wider text-muted-foreground">
                       字段（{(t.fields || []).length}）
                     </div>
                     <div className="flex flex-wrap gap-1.5">
@@ -506,21 +547,30 @@ export default function AssetTemplates() {
                     </div>
                   </div>
                   <div className="flex items-center justify-end gap-1 border-t border-border px-3 py-2">
-                    <button onClick={() => { setEditing(t); setEditorOpen(true) }} className="flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground">
-                      <Pencil className="h-3.5 w-3.5" /> 编辑
+                    <button onClick={() => { setEditing(t); setEditorOpen(true) }} className="btn-secondary btn-sm" title="编辑模板">
+                      <Pencil className="h-3 w-3" />
                     </button>
                     {!t.is_preset && (
-                      <button onClick={() => handleDelete(t)} className="flex items-center gap-1 rounded px-2 py-1 text-xs text-danger hover:bg-destructive/10">
-                        <Trash2 className="h-3.5 w-3.5" /> 删除
+                      <button onClick={() => handleDelete(t)} className="btn-danger btn-sm" title="删除模板">
+                        <Trash2 className="h-3 w-3" />
                       </button>
                     )}
                   </div>
-                </Card>
+                </div>
               )
             })}
             {templates.length === 0 && (
               <div className="col-span-full">
-                <EmptyState icon={Boxes} title="暂无资产类型" description="点击「新建类型」定义第一个资产数据模型" />
+                <EmptyState
+                  icon={Boxes}
+                  title="暂无资产类型"
+                  description="创建第一个类型模板，为资产清单定义字段结构"
+                  action={
+                    <button onClick={() => { setEditing(null); setEditorOpen(true) }} className="btn-primary btn-sm">
+                      <Plus className="mr-1 h-3.5 w-3.5" /> 新建类型
+                    </button>
+                  }
+                />
               </div>
             )}
           </div>
@@ -536,6 +586,7 @@ export default function AssetTemplates() {
         onClose={() => { setEditorOpen(false); setEditing(null) }}
         onSaved={load}
       />
-    </PageContainer>
+      </div>
+    </div>
   )
 }

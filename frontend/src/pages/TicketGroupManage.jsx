@@ -2,7 +2,7 @@
 // - 分组卡片列表：名称/启停/描述/成员标签 + 编辑/成员管理/删除
 // - 成员管理弹窗：全量用户勾选（复选框本身触发），支持搜索过滤
 import { useState, useEffect, useMemo } from 'react'
-import { Users, Plus, Pencil, Trash2, UserCog, Search, Inbox } from 'lucide-react'
+import { Users, Plus, Pencil, Trash2, UserCog, Search, RefreshCw } from 'lucide-react'
 import { toast } from '../store/toastStore'
 import { confirm } from '../components/ConfirmDialog'
 import { Modal } from '../components/Dialog'
@@ -119,21 +119,56 @@ export default function TicketGroupManage() {
     <PageContainer>
       <div className="mb-6 flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="text-[22px] font-bold text-foreground">处理分组</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">处理分组</h1>
+            {!loading && (
+              <span className="text-sm font-medium tabular-nums text-foreground">
+                共 {groups.length.toLocaleString()} 个分组
+              </span>
+            )}
+          </div>
           <p className="mt-2 text-[13px] text-muted-foreground">将系统人员账号自定义分组（如监测预警组、研判分析组、应急处置组），流程节点绑定分组后，组内全员可见、任一成员提交即代表全组</p>
         </div>
-        {canEdit && (
-          <Button variant="primary" size="sm" onClick={openCreate}>
-            <Plus className="mr-1 h-3.5 w-3.5" />新建分组
-          </Button>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          <button type="button" onClick={load} className="btn-secondary btn-sm" title="刷新分组列表">
+            <RefreshCw className={`mr-1 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />刷新
+          </button>
+          {canEdit && (
+            <Button variant="primary" size="sm" onClick={openCreate}>
+              <Plus className="mr-1 h-3.5 w-3.5" />新建分组
+            </Button>
+          )}
+        </div>
       </div>
 
       {loading ? (
-        <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">加载中...</div>
+        <div className="card-stagger grid grid-cols-1 gap-4 xl:grid-cols-2">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="flex h-[168px] flex-col rounded-lg border border-border bg-card px-6 py-5">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-9 w-9 shrink-0 rounded-md skeleton-shimmer" />
+                  <div className="flex-1">
+                    <div className="h-4 w-1/3 rounded skeleton-shimmer" />
+                    <div className="mt-2 h-3 w-1/2 rounded skeleton-shimmer" />
+                  </div>
+                </div>
+                <div className="h-7 w-24 rounded skeleton-shimmer" />
+              </div>
+              <div className="mt-auto flex items-center justify-between border-t border-border pt-3">
+                <div className="h-3 w-16 rounded skeleton-shimmer" />
+                <div className="flex gap-1.5">
+                  <div className="h-6 w-14 rounded skeleton-shimmer" />
+                  <div className="h-6 w-14 rounded skeleton-shimmer" />
+                  <div className="h-6 w-14 rounded skeleton-shimmer" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       ) : !groups.length ? (
         <EmptyState
-          icon={Inbox}
+          icon={Users}
           title="暂无处理分组"
           description="创建分组后即可在流程模板中绑定节点，开始编排工单流转"
           action={canEdit && (
@@ -143,9 +178,9 @@ export default function TicketGroupManage() {
           )}
         />
       ) : (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <div className="card-stagger grid grid-cols-1 gap-4 xl:grid-cols-2">
           {groups.map((g) => (
-            <div key={g.id} className="flex flex-col rounded-md border border-border bg-card p-6">
+            <div key={g.id} className="card-hover flex flex-col rounded-lg border border-border bg-card p-6 transition-colors hover:border-primary/40">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2.5">
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
@@ -162,29 +197,31 @@ export default function TicketGroupManage() {
                   </div>
                 </div>
                 {canEdit && (
-                  <div className="flex shrink-0 items-center gap-1">
-                    <button onClick={() => openEdit(g)} className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground" title="编辑分组">
-                      <Pencil className="h-4 w-4" />
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <button onClick={() => openEdit(g)} className="btn-secondary btn-sm" title="编辑分组">
+                      <Pencil className="h-3 w-3" />编辑
                     </button>
-                    <button onClick={() => openMembers(g)} className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground" title="管理成员">
-                      <UserCog className="h-4 w-4" />
+                    <button onClick={() => openMembers(g)} className="btn-secondary btn-sm" title="管理成员">
+                      <UserCog className="h-3 w-3" />成员
                     </button>
-                    <button onClick={() => handleDelete(g)} className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title="删除分组">
-                      <Trash2 className="h-4 w-4" />
+                    <button onClick={() => handleDelete(g)} className="btn-danger btn-sm" title="删除分组">
+                      <Trash2 className="h-3 w-3" />删除
                     </button>
                   </div>
                 )}
               </div>
               <div className="mt-4 flex flex-1 flex-col justify-end">
-                <div className="text-xs text-muted-foreground">成员（{g.member_count || 0}）</div>
+                <div className="text-xs text-muted-foreground">
+                  成员（<span className={`font-medium tabular-nums ${g.member_count ? 'text-foreground' : 'text-muted-foreground'}`}>{(g.member_count || 0).toLocaleString()}</span>）
+                </div>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {(g.members || []).length ? g.members.slice(0, 8).map((m) => (
                     <span key={m.user_id} className="whitespace-nowrap rounded bg-muted px-2 py-1 text-xs text-foreground">
                       {m.display_name || m.username}
                     </span>
-                  )) : <span className="text-xs text-muted-foreground">--</span>}
+                  )) : <span className="text-xs text-muted-foreground">暂无成员</span>}
                   {(g.members || []).length > 8 && (
-                    <span className="rounded bg-muted px-2 py-1 text-xs text-muted-foreground">等 {g.members.length} 人</span>
+                    <span className="rounded bg-muted px-2 py-1 text-xs text-muted-foreground">等 <span className="tabular-nums">{g.members.length.toLocaleString()}</span> 人</span>
                   )}
                 </div>
               </div>
@@ -260,7 +297,7 @@ export default function TicketGroupManage() {
                 return (
                   <label
                     key={u.id}
-                    className={`flex cursor-pointer items-center gap-3 rounded px-3 py-2 ${checked ? 'bg-primary/5' : 'hover:bg-muted/60'}`}
+                    className={`flex cursor-pointer items-center gap-3 rounded px-3 py-2 ${checked ? 'bg-primary/5' : 'hover:bg-muted'}`}
                   >
                     {/* 复选框本身触发选择，整行仅作视觉反馈 */}
                     <input type="checkbox" className="h-4 w-4 accent-primary" checked={checked}

@@ -19,6 +19,7 @@
 import { Component, useState, useEffect } from 'react'
 import { useRouteError, useNavigate } from 'react-router-dom'
 import { AlertTriangle, RefreshCw, Copy, Check } from 'lucide-react'
+import { getFirstPermittedPath } from './AppShell'
 
 // 友好降级 UI：错误图标 + 标题 + 摘要 + 操作按钮
 function ErrorFallback({ error, onReset, onReload }) {
@@ -45,7 +46,7 @@ function ErrorFallback({ error, onReset, onReload }) {
         </p>
       </div>
       {isDev && error?.message && (
-        <pre className="max-h-40 w-full max-w-2xl overflow-auto rounded-md border border-border bg-muted/40 p-3 text-left text-xs text-destructive">
+        <pre className="max-h-40 w-full max-w-2xl overflow-auto rounded-md border border-border bg-muted p-3 text-left text-xs text-destructive">
           {error.message}
           {error?.stack ? '\n\n' + error.stack : ''}
         </pre>
@@ -116,15 +117,15 @@ export function RouteErrorFallback() {
   if (error?.status === 404) {
     return (
       <div className="flex min-h-[60vh] w-full flex-col items-center justify-center gap-4 px-6 py-12 text-center">
-        <div className="text-5xl font-bold text-muted-foreground/40">404</div>
+        <div className="text-5xl font-bold text-muted-foreground">404</div>
         <div className="max-w-md">
           <h2 className="text-base font-semibold text-foreground">页面不存在</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             你访问的页面可能已被移除或地址有误。
           </p>
         </div>
-        <button type="button" onClick={() => navigate('/dashboard', { replace: true })} className="btn-primary btn-sm">
-          返回运营大屏
+        <button type="button" onClick={() => navigate(getFirstPermittedPath(), { replace: true })} className="btn-primary btn-sm">
+          返回首页
         </button>
       </div>
     )
@@ -132,7 +133,7 @@ export function RouteErrorFallback() {
   return (
     <ErrorFallback
       error={error}
-      onReload={() => navigate('/dashboard', { replace: true })}
+      onReload={() => navigate(getFirstPermittedPath(), { replace: true })}
     />
   )
 }

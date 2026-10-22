@@ -12,7 +12,8 @@ import { X, Copy, Download, FileJson, Info, ArrowLeftRight, Server, FileText, Br
 import { toast } from '../store/toastStore'
 import { alertApi } from '../api/alert'
 import { inputBaseCls } from '../components/property/FormControls'
-import { hasPermission } from '../utils/permissions'
+import { CompactSelect } from '../components/ui'
+import { hasPermission, guardNavPermission } from '../utils/permissions'
 import usersApi from '../api/users'
 import useLockBackgroundScroll from '../hooks/useLockBackgroundScroll'
 
@@ -74,9 +75,9 @@ function CodeBlock({ text, max = 520 }) {
     navigator.clipboard.writeText(text).then(() => toast.success('已复制到剪贴板')).catch(() => toast.error('复制失败'))
   }
   return (
-    <div className="group relative rounded-lg border border-border bg-muted/40">
+    <div className="group relative rounded-lg border border-border bg-muted">
       <button
-        className="absolute right-2 top-2 z-base flex items-center gap-1 rounded-md border border-border bg-background/90 px-2 py-1 text-[11px] text-muted-foreground opacity-0 transition hover:text-primary group-hover:opacity-100"
+        className="absolute right-2 top-2 z-base flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] text-muted-foreground opacity-0 transition hover:text-primary group-hover:opacity-100"
         onClick={copy}
       >
         <Copy className="h-3 w-3" /> 复制
@@ -230,7 +231,7 @@ export default function AlertDetailDrawer({ open, alertId, onClose, onHandled })
                       <div className="mt-0.5 truncate text-sm text-foreground" title={detail.device_type}>{detail.device_type}</div>
                     ) : (
                       <div className="mt-0.5 flex items-center gap-1.5">
-                        <span className="text-sm text-muted-foreground/70">未识别</span>
+                        <span className="text-sm text-muted-foreground">未识别</span>
                         <button
                           type="button"
                           className="text-xs text-primary transition hover:underline"
@@ -256,7 +257,7 @@ export default function AlertDetailDrawer({ open, alertId, onClose, onHandled })
                         <span className="text-sm text-muted-foreground">--</span>
                       ) : (
                         (Array.isArray(detail.attck_technique) ? detail.attck_technique : []).map((t, i) => (
-                          <span key={i} className="rounded-md border border-border bg-muted/50 px-2 py-0.5 font-mono text-xs text-foreground">{typeof t === 'string' ? t : JSON.stringify(t)}</span>
+                          <span key={i} className="rounded-md border border-border bg-muted px-2 py-0.5 font-mono text-xs text-foreground">{typeof t === 'string' ? t : JSON.stringify(t)}</span>
                         ))
                       )}
                     </div>
@@ -304,7 +305,7 @@ export default function AlertDetailDrawer({ open, alertId, onClose, onHandled })
                       <button
                         className="mt-0.5 flex max-w-full items-baseline gap-1 text-left text-sm text-primary underline-offset-2 hover:underline"
                         title={`点击查看资产：${detail.relate_asset_ip || detail.relate_asset_name}`}
-                        onClick={() => navigate(`/assets/list?keyword=${encodeURIComponent(detail.relate_asset_ip || detail.relate_asset_name || '')}`)}
+                        onClick={() => { if (!guardNavPermission('asset_list', 'view', '资产清单')) return; navigate(`/assets/list?keyword=${encodeURIComponent(detail.relate_asset_ip || detail.relate_asset_name || '')}`) }}
                       >
                         <span className="truncate">{detail.relate_asset_name || `资产 #${detail.relate_asset_id}`}</span>
                         {detail.relate_asset_ip && (
@@ -325,7 +326,7 @@ export default function AlertDetailDrawer({ open, alertId, onClose, onHandled })
                   <KV label="Agent ID" value={detail.agent_id} mono />
                   {/* 容器字段仅 relate_asset_type=1（容器）时显示 */}
                   {isContainer && (
-                    <div className="col-span-2 rounded-lg border border-border bg-muted/30 p-4">
+                    <div className="col-span-2 rounded-lg border border-border bg-muted p-4">
                       <div className="mb-3 text-xs font-medium text-muted-foreground">容器信息</div>
                       <div className="grid grid-cols-2 gap-x-8 gap-y-5">
                         <KV label="容器名称" value={detail.extensions?.container_name || detail.extensions?.containerName || '--'} />
@@ -387,7 +388,7 @@ export default function AlertDetailDrawer({ open, alertId, onClose, onHandled })
               {tab === 'handle' && (
                 <div className="space-y-6">
                   {/* 当前状态摘要 */}
-                  <div className="grid grid-cols-3 gap-4 rounded-lg border border-border bg-muted/30 p-4">
+                  <div className="grid grid-cols-3 gap-4 rounded-lg border border-border bg-muted p-4">
                     <div>
                       <div className="text-[11px] text-muted-foreground">当前处置状态</div>
                       <div className="mt-1 text-sm font-medium text-foreground">
@@ -411,29 +412,31 @@ export default function AlertDetailDrawer({ open, alertId, onClose, onHandled })
                       <div className="space-y-4">
                         <div>
                           <label className="mb-1 block text-xs text-muted-foreground">目标状态</label>
-                          <select
-                            className={`${inputBaseCls} h-[34px] w-full`}
+                          <CompactSelect
+                            size="lg"
+                            block
                             value={handleForm.to_status}
                             onChange={(e) => setHandleForm((f) => ({ ...f, to_status: Number(e.target.value) }))}
                           >
                             {DEAL_STATUS_OPTS
                               .filter((o) => allowedTargets.includes(o.v))
                               .map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
-                          </select>
+                          </CompactSelect>
                           {allowedTargets.length === 0 && (
                             <span className="text-[11px] text-muted-foreground">当前状态无可用流转</span>
                           )}
                         </div>
                         <div>
                           <label className="mb-1 block text-xs text-muted-foreground">指派处理人（可选）</label>
-                          <select
-                            className={`${inputBaseCls} h-[34px] w-full`}
+                          <CompactSelect
+                            size="lg"
+                            block
                             value={handleForm.assignee_id}
                             onChange={(e) => setHandleForm((f) => ({ ...f, assignee_id: e.target.value }))}
                           >
                             <option value="">不指派</option>
                             {users.map((u) => <option key={u.id} value={u.id}>{u.display_name || u.username}</option>)}
-                          </select>
+                          </CompactSelect>
                         </div>
                         <div>
                           <label className="mb-1 block text-xs text-muted-foreground">处置备注</label>
@@ -456,7 +459,7 @@ export default function AlertDetailDrawer({ open, alertId, onClose, onHandled })
                       </div>
                     </div>
                   ) : (
-                    <div className="rounded-lg border border-border bg-muted/30 p-4 text-center text-sm text-muted-foreground">
+                    <div className="rounded-lg border border-border bg-muted p-4 text-center text-sm text-muted-foreground">
                       无处置权限
                     </div>
                   )}
@@ -469,7 +472,7 @@ export default function AlertDetailDrawer({ open, alertId, onClose, onHandled })
                     ) : (
                       <div className="space-y-3">
                         {handleLogs.map((log) => (
-                          <div key={log.id} className="flex gap-3 rounded-lg border border-border bg-muted/20 p-3">
+                          <div key={log.id} className="flex gap-3 rounded-lg border border-border bg-muted p-3">
                             <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
                               <ShieldCheck className="h-3.5 w-3.5" />
                             </div>

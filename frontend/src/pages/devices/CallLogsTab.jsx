@@ -100,7 +100,7 @@ export function CallLogsTab() {
   return (
     <div className="flex flex-col gap-4">
       {/* 工具栏 */}
-      <div className="flex items-center justify-between gap-3 whitespace-nowrap rounded-lg border border-border bg-card/60 p-4">
+      <div className="flex items-center justify-between gap-3 whitespace-nowrap rounded-lg border border-border bg-card p-4">
         <div className="flex shrink-0 items-center gap-2">
           <span className="text-xs text-muted-foreground">时间范围：</span>
           {dayOptions.map((d) => (
@@ -200,11 +200,11 @@ export function CallLogsTab() {
 
       {/* 明细表格 */}
       {loading ? (
-        <div className="flex h-40 items-center justify-center text-sm text-muted-foreground/70">
+        <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
           加载中...
         </div>
       ) : filteredLogs.length === 0 ? (
-        <div className="flex h-60 flex-col items-center justify-center gap-2 text-muted-foreground/70">
+        <div className="flex h-60 flex-col items-center justify-center gap-2 text-muted-foreground">
           <History className="h-10 w-10" />
           <div className="text-sm">暂无调用记录</div>
         </div>
@@ -231,7 +231,7 @@ export function CallLogsTab() {
                     l.status === 'failed'
                       ? 'bg-destructive/5'
                       : idx % 2 === 0
-                      ? 'bg-card/30'
+                      ? 'bg-card'
                       : ''
                   }`}
                   onClick={() => openDetail(l)}
@@ -252,7 +252,7 @@ export function CallLogsTab() {
                   </td>
                   <td className="truncate px-4 py-3 text-foreground">
                     <div className="truncate">{l.device_name || '-'}</div>
-                    <div className="truncate text-[11px] text-muted-foreground/70">
+                    <div className="truncate text-[11px] text-muted-foreground">
                       {l.action_name || '-'}
                     </div>
                   </td>
@@ -291,7 +291,7 @@ export function CallLogsTab() {
         }
       >
         {detailLoading ? (
-          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground/70">
+          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
             加载中...
           </div>
         ) : detailLog ? (

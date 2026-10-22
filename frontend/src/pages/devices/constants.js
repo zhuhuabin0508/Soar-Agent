@@ -26,7 +26,7 @@ export const STATUS_META = {
   online: { label: '在线', dot: 'bg-success', cls: 'bg-success/15 text-success' },
   offline: { label: '离线', dot: 'bg-destructive', cls: 'bg-destructive/15 text-destructive' },
   abnormal: { label: '异常', dot: 'bg-warning', cls: 'bg-warning/15 text-warning' },
-  unconfigured: { label: '未配置', dot: 'bg-muted-foreground/60', cls: 'bg-secondary text-muted-foreground' },
+  unconfigured: { label: '未配置', dot: 'bg-muted-foreground', cls: 'bg-secondary text-muted-foreground' },
   disabled: { label: '停用', dot: 'bg-zinc-700', cls: 'bg-zinc-700/20 text-zinc-400' },
 }
 export const STATUS_OPTIONS = [
@@ -117,6 +117,20 @@ export const VIEW_MODES = [
 ]
 
 // ============ 工具函数 ============
+// 数值格式化：千位分隔符（表格数值列统一使用）
+export function fmtNum(v) {
+  if (v == null) return null
+  const n = Number(v)
+  if (Number.isNaN(n)) return null
+  return n.toLocaleString('zh-CN')
+}
+// 表格数值单元格内容：null/undefined → '--'，0 → 灰色 '0'，其余千位分隔
+export function numCell(v) {
+  if (v == null) return { text: '--', muted: true }
+  const text = fmtNum(v)
+  if (text == null) return { text: '--', muted: true }
+  return { text, muted: Number(v) === 0 }
+}
 export function fmtTime(t) {
   if (!t) return '-'
   try {

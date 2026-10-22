@@ -6,11 +6,11 @@ import {
   CheckCircle2, ChevronDown, ChevronRight, ChevronsUp, CloudUpload, Download,
   Eye, FileArchive, FileSpreadsheet, FileText, Folder, FolderArchive, FolderOpen,
   FolderPlus, HardDrive, LayoutGrid, List, Loader2, MoreVertical, Move,
-  Pencil, Plus, Save, Search, Trash2, Upload, X, XCircle,
+  Pencil, Plus, RefreshCw, Save, Search, Trash2, Upload, X, XCircle,
 } from 'lucide-react'
 import { deliverablesApi } from '../api/client'
 import { toast } from '../store/toastStore'
-import { PageContainer, PageHeader, Button, EmptyState, Pagination } from '../components/ui'
+import { PageContainer, Button, EmptyState, Pagination, CompactSelect } from '../components/ui'
 import { confirm } from '../components/ConfirmDialog'
 import { hasPermission } from '../utils/permissions'
 import { TutorialButton, TutorialDrawer } from '../components/TutorialDrawer'
@@ -31,6 +31,17 @@ const LEGACY_OFFICE_EXTS = ['doc']
 const PREVIEWABLE_EXTS = ['pdf', 'txt', 'csv', 'md', 'docx', 'xlsx', 'xls', 'doc']
 const OFFICE_PREVIEW_MAX = 25 * 1024 * 1024
 
+// 材料类型分布 chips：类型 → 彩色圆点 / 激活态配色（状态指标条点击可筛选当前页）
+const TYPE_CHIPS = [
+  { key: 'doc', label: '文档', dot: 'bg-blue-500', activeCls: 'bg-blue-500/15 text-blue-400 ring-1 ring-blue-500/40', exts: ['doc', 'docx'] },
+  { key: 'sheet', label: '表格', dot: 'bg-emerald-500', activeCls: 'bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/40', exts: ['xlsx', 'xls', 'csv'] },
+  { key: 'slide', label: '演示', dot: 'bg-orange-500', activeCls: 'bg-orange-500/15 text-orange-400 ring-1 ring-orange-500/40', exts: ['ppt', 'pptx'] },
+  { key: 'pdf', label: 'PDF', dot: 'bg-rose-500', activeCls: 'bg-rose-500/15 text-rose-400 ring-1 ring-rose-500/40', exts: ['pdf'] },
+  { key: 'archive', label: '压缩包', dot: 'bg-amber-500', activeCls: 'bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/40', exts: ['zip', 'rar', '7z'] },
+  { key: 'text', label: '文本', dot: 'bg-zinc-500', activeCls: 'bg-zinc-500/15 text-zinc-400 ring-1 ring-zinc-500/40', exts: ['txt', 'md'] },
+]
+const typeChipOf = (key) => TYPE_CHIPS.find((c) => c.key === key)
+
 // 扩展名 → 图标/颜色
 function FileIcon({ ext, className = 'h-4 w-4' }) {
   if (['xlsx', 'xls', 'csv'].includes(ext)) return <FileSpreadsheet className={`${className} text-emerald-500`} />
@@ -41,7 +52,7 @@ function FileIcon({ ext, className = 'h-4 w-4' }) {
 }
 
 function fmtSize(bytes) {
-  if (bytes == null) return '—'
+  if (bytes == null) return '--'
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
@@ -242,7 +253,7 @@ function Field({ label, children, hint }) {
     <div className="mb-3">
       <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{label}</label>
       {children}
-      {hint && <p className="mt-1 text-xs text-muted-foreground/80">{hint}</p>}
+      {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
     </div>
   )
 }
@@ -273,6 +284,8 @@ export default function DeliverableManagement() {
   const [pageSize, setPageSize] = useState(PAGE_SIZE)
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
+  // 材料类型快速筛选（仅前端过滤当前页，点击指标条 chips 切换）
+  const [typeFilter, setTypeFilter] = useState('')
   const [loading, setLoading] = useState(false)
 
   // 批量选择（selectedIds=材料文件，selectedCatIds=子目录）
@@ -370,7 +383,27 @@ export default function DeliverableManagement() {
     if (!kids) return []
     return kids.map((id) => catIndex.byId.get(id)).filter(Boolean)
   }, [activeCatId, catIndex])
-  const showFolders = subCategories.length > 0 && !search
+  const showFolders = subCategories.length > 0 && !search && !typeFilter
+
+  // 类型分布统计：从当前页 rows 派生（不新增 API 请求），驱动指标条 chips 计数
+  const typeStats = useMemo(() => {
+    const stats = { doc: 0, sheet: 0, slide: 0, pdf: 0, archive: 0, text: 0 }
+    for (const r of rows) {
+      const ext = (r.file_ext || '').toLowerCase()
+      const chip = TYPE_CHIPS.find((c) => c.exts.includes(ext))
+      if (chip) stats[chip.key] += 1
+    }
+    return stats
+  }, [rows])
+
+  // 类型筛选后的展示行（仅前端过滤当前页，不影响服务端分页/搜索）
+  const displayRows = useMemo(
+    () =>
+      typeFilter
+        ? rows.filter((r) => (typeChipOf(typeFilter)?.exts || []).includes((r.file_ext || '').toLowerCase()))
+        : rows,
+    [rows, typeFilter]
+  )
 
   // 当前页可勾选集合 = 材料行 + 子目录行（子目录也可被选中后批量移动）
   const pageFolderIds = useMemo(
@@ -517,6 +550,11 @@ export default function DeliverableManagement() {
     setSelectedIds(new Set())
     setSelectedCatIds(new Set())
   }, [activeCatId, page, pageSize, search])
+
+  // 切换目录时重置类型快速筛选，避免新目录被旧筛选遮挡
+  useEffect(() => {
+    setTypeFilter('')
+  }, [activeCatId])
 
   // 打开「移动目录」/「批量移动」弹窗时重置目录树展开状态：默认只展示第一层，
   // 由用户点箭头逐级展开（避免一次性铺开上百行）
@@ -1103,7 +1141,7 @@ export default function DeliverableManagement() {
           className={`group relative mb-0.5 flex cursor-pointer items-center gap-1 rounded-md py-1.5 pr-2 transition-colors ${
             active
               ? 'bg-[#00d4aa]/10'
-              : 'hover:bg-muted/60'
+              : 'hover:bg-muted'
           }`}
         >
           {/* 选中态：左侧 3px 青色竖线 */}
@@ -1170,7 +1208,7 @@ export default function DeliverableManagement() {
                   : 'bg-[#21262d] text-[#8b949e]'
             }`}
           >
-            {node.deliverable_count}
+            {node.deliverable_count == null ? '--' : node.deliverable_count.toLocaleString()}
           </span>
           {/* 悬停操作按钮组：渐变显示 */}
           {canEdit && (
@@ -1357,56 +1395,111 @@ export default function DeliverableManagement() {
   // ===== 渲染 =====
   return (
     <PageContainer>
-      <PageHeader
-        title="材料管理"
-        description="按树形目录归档管理交付文件，支持最多 10 级子目录"
-        actions={
-          <div className="flex items-center gap-2">
-            <TutorialButton onClick={() => setTutorialOpen(true)} />
-            {canEdit && (
-              <>
-                <Button size="sm" variant="secondary" onClick={() => setCatModal({ mode: 'create', name: '', description: '', parentId: 0 })}>
-                  <FolderPlus className="h-3.5 w-3.5" />
-                  新建目录
-                </Button>
-                <Button
-                  size="sm"
-                  disabled={!activeCatId}
-                  onClick={() => setUploadModal({ files: [], version: '', description: '' })}
-                >
-                  <CloudUpload className="h-3.5 w-3.5" />
-                  上传材料
-                </Button>
-              </>
-            )}
-          </div>
-        }
-      />
-
-      {/* 紧凑统计条 */}
-      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-lg border border-border bg-card px-4 py-2 text-xs text-muted-foreground">
-        <span className="flex items-center gap-1.5">
-          <FolderOpen className="h-3.5 w-3.5 text-primary" />
-          目录总数 <b className="text-foreground tabular-nums">{categories.length}</b>
-        </span>
-        <span className="h-3 w-px bg-border" aria-hidden />
-        <span className="flex items-center gap-1.5">
-          <HardDrive className="h-3.5 w-3.5 text-primary" />
-          材料总数 <b className="text-foreground tabular-nums">{totalFiles}</b>
-        </span>
-        {activeCat && (
-          <>
-            <span className="h-3 w-px bg-border" aria-hidden />
-            <span className="flex items-center gap-1.5">
-              当前目录
-              <span className="inline-flex items-center gap-1 rounded-full bg-[#00d4aa]/15 px-2 py-0.5 font-medium text-[#00d4aa]">
-                {activeCat.name}
-              </span>
-              含子目录共 <b className="text-foreground tabular-nums">{activeCat.deliverable_count || 0}</b> 个材料
+      {/* 页头：标题 + 计数 + 右侧操作区（教程 / 刷新 / 新建目录 / 上传材料） */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">材料管理</h1>
+          {!catLoading && (
+            <span className="text-xs text-muted-foreground">
+              共 <span className="text-sm font-medium tabular-nums text-foreground">{totalFiles.toLocaleString()}</span> 个材料
             </span>
-          </>
+          )}
+          <span className="hidden text-xs text-muted-foreground xl:inline">
+            按树形目录归档管理交付文件，支持最多 10 级子目录
+          </span>
+        </div>
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <TutorialButton onClick={() => setTutorialOpen(true)} />
+          <button
+            type="button"
+            onClick={() => { loadCategories(); loadDeliverables() }}
+            className="btn-secondary btn-sm"
+            title="刷新目录与材料列表"
+          >
+            <RefreshCw className={`mr-1 h-3.5 w-3.5 ${catLoading || loading ? 'animate-spin' : ''}`} />
+            刷新
+          </button>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => setCatModal({ mode: 'create', name: '', description: '', parentId: 0 })}
+              className="btn-secondary btn-sm"
+            >
+              <FolderPlus className="mr-1 h-3.5 w-3.5" />
+              新建目录
+            </button>
+          )}
+          {canEdit && (
+            <button
+              type="button"
+              disabled={!activeCatId}
+              onClick={() => setUploadModal({ files: [], version: '', description: '' })}
+              className="btn-primary btn-sm"
+              title={activeCatId ? '上传材料到当前目录' : '请先选择目录'}
+            >
+              <Plus className="mr-1 h-3.5 w-3.5" />
+              上传材料
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 状态指标条：材料类型分布 chips（点击筛选当前页 / 再点取消）+ 右侧汇总 */}
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-4 py-2.5 text-xs">
+        {!loading && rows.length > 0 && TYPE_CHIPS.map((chip) => {
+          const active = typeFilter === chip.key
+          const count = typeStats[chip.key] || 0
+          return (
+            <button
+              key={chip.key}
+              type="button"
+              onClick={() => setTypeFilter(active ? '' : chip.key)}
+              title={active ? '点击取消该类型筛选' : `点击筛选「${chip.label}」类型的材料（当前页）`}
+              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 transition ${
+                active
+                  ? `border-transparent ${chip.activeCls}`
+                  : count === 0
+                    ? 'border-border bg-secondary text-muted-foreground'
+                    : 'border-border bg-secondary text-muted-foreground hover:border-primary/40 hover:text-foreground'
+              }`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${chip.dot}`} />
+              {chip.label}
+              <span className="font-medium tabular-nums">{count}</span>
+            </button>
+          )
+        })}
+        {activeCat && (!loading && rows.length > 0 ? <span className="mx-1 h-4 w-px bg-border" aria-hidden /> : null)}
+        {activeCat && (
+          <span className="inline-flex flex-wrap items-center gap-1.5 text-muted-foreground">
+            当前目录
+            <span className="inline-flex max-w-40 items-center truncate rounded-full bg-primary/15 px-2 py-0.5 font-medium text-primary" title={activeCat.name}>
+              {activeCat.name}
+            </span>
+            含子目录共
+            <b className={`font-semibold tabular-nums ${(activeCat.deliverable_count || 0) > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+              {(activeCat.deliverable_count || 0).toLocaleString()}
+            </b>
+            个材料
+          </span>
         )}
-        <span className="ml-auto text-muted-foreground/60">支持 xlsx / word / pdf / zip 等 13 种类型，单文件 ≤ 200MB</span>
+        <div className="ml-auto flex items-center gap-4 text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5" title="全部目录数量">
+            <FolderOpen className="h-3.5 w-3.5 text-primary/80" />
+            目录总数
+            <b className={`font-semibold tabular-nums ${categories.length > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+              {categories.length > 0 ? categories.length.toLocaleString() : '--'}
+            </b>
+          </span>
+          <span className="inline-flex items-center gap-1.5" title="全部材料数量">
+            <HardDrive className="h-3.5 w-3.5 text-primary/80" />
+            材料总数
+            <b className={`font-semibold tabular-nums ${totalFiles > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+              {totalFiles > 0 ? totalFiles.toLocaleString() : '--'}
+            </b>
+          </span>
+          <span className="hidden text-muted-foreground md:inline">支持 xlsx / word / pdf / zip 等 13 种类型，单文件 ≤ 200MB</span>
+        </div>
       </div>
 
       {/* 面包屑导航 */}
@@ -1414,7 +1507,7 @@ export default function DeliverableManagement() {
         <nav className="mb-3 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
           {breadcrumbPath.map((cat, idx) => (
             <span key={cat.id} className="flex items-center gap-1">
-              {idx > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground/60" />}
+              {idx > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground" />}
               <button
                 type="button"
                 className={`rounded px-1.5 py-0.5 hover:bg-muted hover:text-foreground ${
@@ -1485,10 +1578,20 @@ export default function DeliverableManagement() {
           </div>
           <div className="min-h-[120px] max-h-[calc(100vh-260px)] flex-1 overflow-y-auto p-2">
             {catLoading && categories.length === 0 ? (
-              <div className="px-2 py-6 text-center text-xs text-muted-foreground">加载中…</div>
+              <div className="flex flex-col gap-1 p-1">
+                {Array.from({ length: 9 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-2 rounded-md px-2 py-2">
+                    <div className="h-4 w-4 shrink-0 rounded skeleton-shimmer" />
+                    <div
+                      className="h-3 rounded skeleton-shimmer"
+                      style={{ width: `${50 + ((i * 17) % 40)}%` }}
+                    />
+                  </div>
+                ))}
+              </div>
             ) : categories.length === 0 ? (
               <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-muted-foreground">
-                <FolderPlus className="h-6 w-6 text-muted-foreground/50" />
+                <FolderPlus className="h-6 w-6 text-muted-foreground" />
                 <span>暂无目录</span>
                 {canEdit && (
                   <Button
@@ -1549,17 +1652,22 @@ export default function DeliverableManagement() {
               {activeCat ? activeCat.name : '未选择目录'}
             </span>
             <span className="text-xs text-muted-foreground">
-              本目录 {total} 个
+              本目录 {total.toLocaleString()} 个
               {activeCat && (activeCat.deliverable_count || 0) > total && (
-                <span className="ml-1 text-muted-foreground/70">/ 含子目录共 {activeCat.deliverable_count} 个</span>
+                <span className="ml-1 text-muted-foreground">/ 含子目录共 {activeCat.deliverable_count.toLocaleString()} 个</span>
+              )}
+              {typeFilter && rows.length > 0 && (
+                <span className="ml-1 text-primary/80" title="类型筛选仅作用于当前页">
+                  · 类型筛选 {displayRows.length}/{rows.length}
+                </span>
               )}
             </span>
             {selectedTotal > 0 && (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-2.5 py-1 text-xs font-medium text-primary">
                 已选
-                {selectedIds.size > 0 && <span> {selectedIds.size} 个材料</span>}
+                {selectedIds.size > 0 && <span> {selectedIds.size.toLocaleString()} 个材料</span>}
                 {selectedIds.size > 0 && selectedCatIds.size > 0 && <span> +</span>}
-                {selectedCatIds.size > 0 && <span> {selectedCatIds.size} 个目录</span>}
+                {selectedCatIds.size > 0 && <span> {selectedCatIds.size.toLocaleString()} 个目录</span>}
                 <button
                   type="button"
                   className="ml-0.5 rounded text-primary/70 hover:text-primary"
@@ -1579,7 +1687,7 @@ export default function DeliverableManagement() {
                   onClick={handleBatchDownload}
                 >
                   <Download className="h-3.5 w-3.5" />
-                  批量下载 ({selectedIds.size})
+                  批量下载 ({selectedIds.size.toLocaleString()})
                 </Button>
               )}
               {selectedTotal > 0 && canEdit && (
@@ -1589,7 +1697,7 @@ export default function DeliverableManagement() {
                   onClick={() => setBatchMoveModal({ targetCategoryId: null })}
                 >
                   <Move className="h-3.5 w-3.5" />
-                  批量移动 ({selectedTotal})
+                  批量移动 ({selectedTotal.toLocaleString()})
                 </Button>
               )}
               {selectedIds.size > 0 && canDelete && (
@@ -1600,7 +1708,7 @@ export default function DeliverableManagement() {
                   onClick={handleBatchDelete}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
-                  批量删除 ({selectedIds.size})
+                  批量删除 ({selectedIds.size.toLocaleString()})
                 </Button>
               )}
               {/* 列表/网格视图切换按钮组 */}
@@ -1641,7 +1749,7 @@ export default function DeliverableManagement() {
           {/* 内容区 */}
           {!activeCat ? (
             <EmptyState
-              icon={<FolderPlus className="h-10 w-10" />}
+              icon={<FolderPlus className="h-6 w-6" />}
               title="请先创建目录"
               description={canEdit ? '点击下方按钮或左上角「新建目录」开始归档材料' : '等待管理员创建目录'}
               action={
@@ -1670,42 +1778,75 @@ export default function DeliverableManagement() {
               className="py-20"
             />
           ) : loading ? (
-            <div className="px-4 py-12 text-center text-sm text-muted-foreground">加载中…</div>
+            // 骨架屏：按当前视图分别模仿网格卡片 / 表格行的真实结构
+            viewMode === 'grid' ? (
+              <div className="grid grid-cols-2 gap-3 p-4 md:grid-cols-3 xl:grid-cols-4">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} className="flex min-h-[168px] flex-col rounded-lg border border-border bg-card p-3">
+                    <div className="mx-auto mt-5 h-12 w-12 rounded-lg skeleton-shimmer" />
+                    <div className="mx-auto mt-4 h-3 w-2/3 rounded skeleton-shimmer" />
+                    <div className="mt-auto flex items-center justify-between gap-2">
+                      <div className="h-2.5 w-1/2 rounded skeleton-shimmer" />
+                      <div className="h-2.5 w-10 rounded skeleton-shimmer" />
+                    </div>
+                    <div className="mt-2 h-2.5 w-full rounded skeleton-shimmer" />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3 p-4">
+                {Array.from({ length: 6 }).map((_, r) => (
+                  <div key={r} className="flex items-center gap-4">
+                    <div className="h-4 w-4 shrink-0 rounded skeleton-shimmer" />
+                    <div className="h-4 min-w-0 flex-1 rounded skeleton-shimmer" />
+                    <div className="h-4 w-32 shrink-0 rounded skeleton-shimmer" />
+                    <div className="h-4 w-14 shrink-0 rounded skeleton-shimmer" />
+                    <div className="h-4 w-12 shrink-0 rounded skeleton-shimmer" />
+                    <div className="hidden h-4 w-20 shrink-0 rounded skeleton-shimmer md:block" />
+                    <div className="hidden h-4 w-28 shrink-0 rounded skeleton-shimmer lg:block" />
+                    <div className="h-4 w-24 shrink-0 rounded skeleton-shimmer" />
+                  </div>
+                ))}
+              </div>
+            )
           ) : (
             <>
-              {rows.length === 0 && !showFolders ? (
+              {displayRows.length === 0 && !showFolders ? (
             <EmptyState
               icon={
-                search ? (
-                  <Search className="h-10 w-10" />
+                search || typeFilter ? (
+                  <Search className="h-6 w-6" />
                 ) : (
-                  <CloudUpload className="h-10 w-10" />
+                  <CloudUpload className="h-6 w-6" />
                 )
               }
-              title={search ? '未找到匹配的材料' : '该目录暂无材料'}
+              title={search || typeFilter ? '未找到匹配的材料' : '该目录暂无材料'}
               description={
                 search
-                  ? '换个关键词试试，或清空搜索查看全部'
-                  : canEdit
-                    ? `可直接上传文件到此目录${(activeCat.deliverable_count || 0) > 0 ? `，子目录中共有 ${activeCat.deliverable_count} 个材料` : ''}`
-                    : '等待有权限的用户上传'
+                  ? '换个关键词试试，或清除筛选后查看全部'
+                  : typeFilter
+                    ? `当前页没有「${typeChipOf(typeFilter)?.label || ''}」类型的材料，可切换类型或清除筛选`
+                    : canEdit
+                      ? `可直接上传文件到此目录${(activeCat.deliverable_count || 0) > 0 ? `，子目录中共有 ${activeCat.deliverable_count.toLocaleString()} 个材料` : ''}`
+                      : '等待有权限的用户上传'
               }
               action={
                 <div className="flex items-center gap-2">
-                  {search && (
+                  {(search || typeFilter) && (
                     <Button
                       size="sm"
                       variant="secondary"
                       onClick={() => {
                         setSearchInput('')
                         setSearch('')
+                        setTypeFilter('')
                         setPage(1)
                       }}
                     >
-                      清空搜索
+                      清除筛选
                     </Button>
                   )}
-                  {!search && canEdit && (
+                  {!search && !typeFilter && canEdit && (
                     <Button
                       size="sm"
                       onClick={() => setUploadModal({ files: [], version: '', description: '' })}
@@ -1714,7 +1855,7 @@ export default function DeliverableManagement() {
                       上传材料
                     </Button>
                   )}
-                  {!search && canEdit && (
+                  {!search && !typeFilter && canEdit && (
                     <Button
                       size="sm"
                       variant="secondary"
@@ -1730,7 +1871,7 @@ export default function DeliverableManagement() {
             />
           ) : viewMode === 'grid' ? (
             // 网格视图
-            <div className="grid grid-cols-2 gap-3 p-4 md:grid-cols-3 xl:grid-cols-4">
+            <div className="card-stagger grid grid-cols-2 gap-3 p-4 md:grid-cols-3 xl:grid-cols-4">
               {showFolders && subCategories.map((cat) => {
                 const checked = selectedCatIds.has(cat.id)
                 return (
@@ -1741,10 +1882,10 @@ export default function DeliverableManagement() {
                     onClick={() => enterSubCategory(cat)}
                     onKeyDown={(e) => { if (e.key === 'Enter') enterSubCategory(cat) }}
                     title={`打开「${cat.name}」`}
-                    className={`group relative flex min-h-[168px] cursor-pointer flex-col rounded-lg border p-3 transition-colors ${
+                    className={`card-hover group relative flex min-h-[168px] cursor-pointer flex-col rounded-lg border p-3 transition-colors ${
                       checked
-                        ? 'border-primary/40 bg-primary/5'
-                        : 'border-border bg-card hover:border-primary/40 hover:bg-primary/5'
+                        ? 'border-primary/60 bg-primary/5'
+                        : 'border-border bg-card hover:border-primary/40'
                     }`}
                   >
                     <input
@@ -1774,20 +1915,20 @@ export default function DeliverableManagement() {
                       </span>
                     </div>
                     <div className="mt-2 text-center text-[10px] text-muted-foreground tabular-nums">
-                      {cat.deliverable_count || 0} 个材料
+                      {(cat.deliverable_count || 0).toLocaleString()} 个材料
                     </div>
                   </div>
                 )
               })}
-              {rows.map((r) => {
+              {displayRows.map((r) => {
                 const checked = selectedIds.has(r.id)
                 const canPreview = PREVIEWABLE_EXTS.includes((r.file_ext || '').toLowerCase())
                 return (
                   <div
                     key={r.id}
-                    className={`group relative flex min-h-[168px] flex-col rounded-lg border p-3 transition-colors ${
-                      canPreview ? 'cursor-pointer hover:border-primary/40 hover:bg-primary/5' : ''
-                    } ${checked ? 'border-primary/40 bg-primary/5' : 'border-border bg-card'}`}
+                    className={`card-hover group relative flex min-h-[168px] flex-col rounded-lg border p-3 transition-colors ${
+                      canPreview ? 'cursor-pointer' : ''
+                    } ${checked ? 'border-primary/60 bg-primary/5' : 'border-border bg-card hover:border-primary/40'}`}
                     onClick={() => canPreview && handlePreview(r)}
                   >
                     <input
@@ -1822,35 +1963,40 @@ export default function DeliverableManagement() {
                     </div>
                     <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
                       <span className="truncate" title={r.filename}>{r.filename}</span>
-                      <span className="shrink-0 tabular-nums">{fmtSize(r.file_size)}</span>
+                      <span
+                        className={`shrink-0 tabular-nums ${r.file_size === 0 ? 'text-muted-foreground' : ''}`}
+                        title={r.file_size == null ? '未统计' : undefined}
+                      >
+                        {fmtSize(r.file_size)}
+                      </span>
                     </div>
                     <div
-                      className="flex items-center justify-end gap-1 border-t border-border/60 pt-2 opacity-0 transition-opacity group-hover:opacity-100"
+                      className="flex items-center justify-end gap-1 border-t border-border pt-2 opacity-0 transition-opacity group-hover:opacity-100"
                       onClick={(e) => e.stopPropagation()}
                     >
                       {canPreview && (
                         <button
                           type="button"
                           title="预览"
-                          className="rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                          className="btn-secondary btn-sm"
                           onClick={() => handlePreview(r)}
                         >
-                          <Eye className="h-3.5 w-3.5" />
+                          <Eye className="h-3 w-3" />
                         </button>
                       )}
                       <button
                         type="button"
                         title="下载"
-                        className="rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                        className="btn-secondary btn-sm"
                         onClick={() => handleDownload(r)}
                       >
-                        <Download className="h-3.5 w-3.5" />
+                        <Download className="h-3 w-3" />
                       </button>
                       {canEdit && (
                         <button
                           type="button"
                           title="编辑"
-                          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          className="btn-secondary btn-sm"
                           onClick={() =>
                             setEditModal({
                               id: r.id,
@@ -1862,17 +2008,17 @@ export default function DeliverableManagement() {
                             })
                           }
                         >
-                          <Pencil className="h-3.5 w-3.5" />
+                          <Pencil className="h-3 w-3" />
                         </button>
                       )}
                       {canDelete && (
                         <button
                           type="button"
                           title="删除"
-                          className="rounded p-1 text-muted-foreground hover:bg-red-500/10 hover:text-red-500"
+                          className="btn-danger btn-sm"
                           onClick={() => handleConfirmDelete({ type: 'deliverable', id: r.id, name: r.name, filename: r.filename })}
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          <Trash2 className="h-3 w-3" />
                         </button>
                       )}
                     </div>
@@ -1882,10 +2028,10 @@ export default function DeliverableManagement() {
             </div>
           ) : (
             // 列表视图
-            <div className="overflow-x-auto">
+            <div className="table-stagger overflow-x-auto">
               <table className="w-full table-fixed border-collapse text-sm">
                 <thead>
-                  <tr className="border-b border-border bg-muted/30 text-left text-xs text-muted-foreground">
+                  <tr className="border-b border-border bg-muted text-left text-xs text-muted-foreground">
                     <th className="w-12 px-3 py-2.5">
                       <div className="flex items-center gap-2">
                         <input
@@ -1906,7 +2052,7 @@ export default function DeliverableManagement() {
                             className="truncate text-xs text-primary hover:underline disabled:opacity-50"
                             title="选中当前条件下所有材料（含其他页）"
                           >
-                            {selectingAll ? '加载中…' : `全选 ${total}`}
+                            {selectingAll ? '加载中…' : `全选 ${total.toLocaleString()}`}
                           </button>
                         )}
                       </div>
@@ -1926,8 +2072,8 @@ export default function DeliverableManagement() {
                     return (
                     <tr
                       key={`folder-${cat.id}`}
-                      className={`cursor-pointer border-b border-border/60 transition-colors hover:bg-primary/5 ${
-                        catChecked ? 'bg-primary/5' : 'bg-muted/10'
+                      className={`cursor-pointer border-b border-border transition-colors hover:bg-primary/5 ${
+                        catChecked ? 'bg-primary/5' : 'bg-muted'
                       }`}
                       onClick={() => enterSubCategory(cat)}
                     >
@@ -1953,7 +2099,7 @@ export default function DeliverableManagement() {
                       <td className="px-4 py-2.5 text-xs text-muted-foreground">—</td>
                       <td className="px-4 py-2.5 text-xs text-muted-foreground">—</td>
                       <td className="whitespace-nowrap px-4 py-2.5 text-xs tabular-nums text-muted-foreground">
-                        {cat.deliverable_count || 0} 项
+                        {(cat.deliverable_count || 0).toLocaleString()} 项
                       </td>
                       <td className="px-4 py-2.5 text-xs text-muted-foreground">—</td>
                       <td className="px-4 py-2.5 text-xs text-muted-foreground">—</td>
@@ -1966,10 +2112,10 @@ export default function DeliverableManagement() {
                     </tr>
                     )
                   })}
-                  {rows.map((r) => {
+                  {displayRows.map((r) => {
                     const checked = selectedIds.has(r.id)
                     return (
-                      <tr key={r.id} className={`border-b border-border/60 transition-colors last:border-0 hover:bg-primary/5 ${checked ? 'bg-primary/5' : ''}`}>
+                      <tr key={r.id} className={`border-b border-border transition-colors last:border-0 hover:bg-primary/5 ${checked ? 'bg-primary/5' : ''}`}>
                         <td className="px-4 py-2.5">
                           <input
                             type="checkbox"
@@ -1999,7 +2145,12 @@ export default function DeliverableManagement() {
                             <span className="text-xs text-muted-foreground">—</span>
                           )}
                         </td>
-                        <td className="whitespace-nowrap px-4 py-2.5 text-xs tabular-nums text-muted-foreground">{fmtSize(r.file_size)}</td>
+                        <td
+                          className={`whitespace-nowrap px-4 py-2.5 text-xs tabular-nums text-muted-foreground ${r.file_size === 0 ? 'text-muted-foreground' : ''}`}
+                          title={r.file_size == null ? '未统计' : undefined}
+                        >
+                          {fmtSize(r.file_size)}
+                        </td>
                         <td className="whitespace-nowrap px-4 py-2.5 text-xs text-muted-foreground">{r.creator_name || '—'}</td>
                         <td className="whitespace-nowrap px-4 py-2.5 text-xs tabular-nums text-muted-foreground">{fmtTime(r.created_at)}</td>
                         <td className="whitespace-nowrap px-4 py-2.5 text-right">
@@ -2008,25 +2159,25 @@ export default function DeliverableManagement() {
                               <button
                                 type="button"
                                 title="预览"
-                                className="rounded p-1.5 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                                className="btn-secondary btn-sm"
                                 onClick={() => handlePreview(r)}
                               >
-                                <Eye className="h-3.5 w-3.5" />
+                                <Eye className="h-3 w-3" />
                               </button>
                             )}
                             <button
                               type="button"
                               title="下载"
-                              className="rounded p-1.5 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                              className="btn-secondary btn-sm"
                               onClick={() => handleDownload(r)}
                             >
-                              <Download className="h-3.5 w-3.5" />
+                              <Download className="h-3 w-3" />
                             </button>
                             {canEdit && (
                               <button
                                 type="button"
                                 title="编辑"
-                                className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                                className="btn-secondary btn-sm"
                                 onClick={() =>
                                   setEditModal({
                                     id: r.id,
@@ -2038,17 +2189,17 @@ export default function DeliverableManagement() {
                                   })
                                 }
                               >
-                                <Pencil className="h-3.5 w-3.5" />
+                                <Pencil className="h-3 w-3" />
                               </button>
                             )}
                             {canDelete && (
                               <button
                                 type="button"
                                 title="删除"
-                                className="rounded p-1.5 text-muted-foreground hover:bg-red-500/10 hover:text-red-500"
+                                className="btn-danger btn-sm"
                                 onClick={() => handleConfirmDelete({ type: 'deliverable', id: r.id, name: r.name, filename: r.filename })}
                               >
-                                <Trash2 className="h-3.5 w-3.5" />
+                                <Trash2 className="h-3 w-3" />
                               </button>
                             )}
                           </span>
@@ -2219,7 +2370,7 @@ export default function DeliverableManagement() {
                 <iframe
                   src={previewModal.blobUrl}
                   title="PDF 预览"
-                  className="h-full w-full flex-1 border-0 bg-muted/20"
+                  className="h-full w-full flex-1 border-0 bg-muted"
                 />
               ) : previewModal.type === 'office' && previewModal.arrayBuffer ? (
                 <Suspense
@@ -2237,7 +2388,7 @@ export default function DeliverableManagement() {
                 </Suspense>
               ) : previewModal.type === 'unsupported' ? (
                 <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
-                  <FileArchive className="h-10 w-10 text-muted-foreground/50" />
+                  <FileArchive className="h-10 w-10 text-muted-foreground" />
                   <p>
                     {previewModal.error
                       || `该文件类型（.${previewModal.row.file_ext}）暂不支持在线预览`}
@@ -2382,7 +2533,7 @@ export default function DeliverableManagement() {
           {catModal.mode === 'create' ? (
             // 创建模式：下拉选择父级目录
             <Field label="父级目录" hint="可选择任意已有目录作为父级，「根级」为最顶层">
-              <select
+              <CompactSelect
                 value={catModal.parentId || 0}
                 onChange={(e) => {
                   const pid = Number(e.target.value) || 0
@@ -2394,20 +2545,21 @@ export default function DeliverableManagement() {
                     parentLevel: parent ? parent.level : 0,
                   })
                 }}
-                className={inputCls}
+                size="lg"
+                block
               >
                 {parentOptions.map((opt) => (
                   <option key={opt.id} value={opt.id}>
                     {opt.label}
                   </option>
                 ))}
-              </select>
+              </CompactSelect>
             </Field>
           ) : (
             // 编辑模式：只读显示父级
             catModal.parentId ? (
               <Field label="父级目录">
-                <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
                   {categories.find((c) => c.id === catModal.parentId)?.name || '根级'}
                 </div>
               </Field>
@@ -2487,7 +2639,7 @@ export default function DeliverableManagement() {
             className={`flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-7 text-center transition-colors ${
               dragOver
                 ? 'border-primary bg-primary/5'
-                : 'border-border hover:border-primary/50 hover:bg-muted/40'
+                : 'border-border hover:border-primary/50 hover:bg-muted'
             }`}
           >
             <Upload className="h-8 w-8 text-muted-foreground" />
@@ -2518,7 +2670,7 @@ export default function DeliverableManagement() {
                 选择文件夹
               </Button>
             </div>
-            <p className="text-[11px] text-muted-foreground/80">
+            <p className="text-[11px] text-muted-foreground">
               支持 {ALLOWED_EXTS.length} 种类型，单文件 ≤ 200MB
             </p>
             <input
@@ -2566,7 +2718,7 @@ export default function DeliverableManagement() {
               {(uploadModal.files || []).map((item, idx) => (
                 <div
                   key={idx}
-                  className="relative flex items-center gap-2 border-b border-border/60 px-3 py-1.5 last:border-0"
+                  className="relative flex items-center gap-2 border-b border-border px-3 py-1.5 last:border-0"
                 >
                   <FileIcon ext={(item.file.name.split('.').pop() || '').toLowerCase()} className="h-3.5 w-3.5" />
                   <span
@@ -2662,7 +2814,7 @@ export default function DeliverableManagement() {
               />
             </Field>
             <Field label="上传到">
-              <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+              <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
                 {activeCat?.name || '—'}
                 {(uploadModal.files || []).some((f) => dirKeyOf(f.relativePath)) && (
                   <span className="mt-0.5 block text-[11px]">文件夹将按原结构创建到此目录下</span>
@@ -2764,7 +2916,7 @@ export default function DeliverableManagement() {
                 >
                   展开全部
                 </button>
-                <span className="text-muted-foreground/40">|</span>
+                <span className="text-muted-foreground">|</span>
                 <button
                   type="button"
                   className="text-primary hover:underline"
@@ -2784,7 +2936,7 @@ export default function DeliverableManagement() {
                   className={`flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-sm transition-colors ${
                     moveModal.targetParentId === 0
                       ? 'border-primary/40 bg-primary/10 text-primary'
-                      : 'border-transparent hover:bg-muted/60 text-foreground'
+                      : 'border-transparent hover:bg-muted text-foreground'
                   }`}
                 >
                   <span
@@ -2831,7 +2983,7 @@ export default function DeliverableManagement() {
                           className={`flex min-w-0 flex-1 items-center gap-2 rounded-md border px-2 py-1.5 text-left text-sm transition-colors ${
                             selected
                               ? 'border-primary/40 bg-primary/10 text-primary'
-                              : 'border-transparent hover:bg-muted/60 text-foreground'
+                              : 'border-transparent hover:bg-muted text-foreground'
                           }`}
                         >
                           <span
@@ -2903,7 +3055,7 @@ export default function DeliverableManagement() {
               >
                 展开全部
               </button>
-              <span className="text-muted-foreground/40">|</span>
+              <span className="text-muted-foreground">|</span>
               <button
                 type="button"
                 className="text-primary hover:underline"
@@ -2924,7 +3076,7 @@ export default function DeliverableManagement() {
                   className={`flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-sm transition-colors ${
                     batchMoveModal.targetCategoryId === 0
                       ? 'border-primary/40 bg-primary/10 text-primary'
-                      : 'border-transparent hover:bg-muted/60 text-foreground'
+                      : 'border-transparent hover:bg-muted text-foreground'
                   }`}
                 >
                   <span
@@ -2973,7 +3125,7 @@ export default function DeliverableManagement() {
                         className={`flex min-w-0 flex-1 items-center gap-2 rounded-md border px-2 py-1.5 text-left text-sm transition-colors ${
                           selected
                             ? 'border-primary/40 bg-primary/10 text-primary'
-                            : 'border-transparent hover:bg-muted/60 text-foreground'
+                            : 'border-transparent hover:bg-muted text-foreground'
                         }`}
                       >
                         <span

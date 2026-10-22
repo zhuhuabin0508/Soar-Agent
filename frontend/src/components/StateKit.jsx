@@ -7,7 +7,7 @@ import { Inbox } from 'lucide-react'
 export function LoadingSpinner({ text = '加载中...', rows = 3, className = '' }) {
   return (
     <div className={`flex flex-col gap-3 ${className}`}>
-      <div className="flex items-center gap-2 text-sm text-muted-foreground/70">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <svg
           className="h-4 w-4 animate-spin text-primary"
           viewBox="0 0 24 24"
@@ -56,10 +56,10 @@ export function EmptyState({
     <div
       className={`flex flex-col items-center justify-center gap-3 py-16 text-center ${className}`}
     >
-      <div className="text-muted-foreground/60">{iconNode}</div>
+      <div className="text-muted-foreground">{iconNode}</div>
       <div className="text-sm font-medium text-muted-foreground">{title}</div>
       {description && (
-        <div className="max-w-md text-xs text-muted-foreground/70">{description}</div>
+        <div className="max-w-md text-xs text-muted-foreground">{description}</div>
       )}
       {action && <div className="mt-2">{action}</div>}
     </div>

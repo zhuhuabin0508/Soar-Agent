@@ -9,7 +9,7 @@ import {
   ScrollText, Zap, Check, ChevronLeft, ChevronRight, Loader2, CheckCircle2,
   Server, Boxes, Sparkles, Info, FileJson, Radio, Globe, Plus,
 } from 'lucide-react'
-import { PageContainer, PageHeader, Button, Card, Badge } from '../../components/ui'
+import { PageContainer, PageHeader, Button, Card, Badge, CompactSelect } from '../../components/ui'
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges'
 import { inputCls, labelCls } from '../../components/property/FormControls'
 import { devices as devicesApi } from '../../api/client'
@@ -618,7 +618,7 @@ function StepLogCollect({ form, onChange, receivers, strategies }) {
           <div className="mb-2 text-xs font-medium text-muted-foreground">日志采集器</div>
           <div className="space-y-2">
             {receivers !== null && sysReceivers.length === 0 && (
-              <div className="text-xs text-muted-foreground/70">暂无现有采集器，将新建采集器接收日志</div>
+              <div className="text-xs text-muted-foreground">暂无现有采集器，将新建采集器接收日志</div>
             )}
             {sysReceivers.map((r) => {
               const picked = !isNew && String(r.id) === String(form.receiverId)
@@ -635,7 +635,7 @@ function StepLogCollect({ form, onChange, receivers, strategies }) {
                   }`}
                 >
                   <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${
-                    picked ? 'border-primary' : 'border-muted-foreground/40'
+                    picked ? 'border-primary' : 'border-muted-foreground'
                   }`}>
                     {picked && <span className="h-2 w-2 rounded-full bg-primary" />}
                   </span>
@@ -659,7 +659,7 @@ function StepLogCollect({ form, onChange, receivers, strategies }) {
               }`}
             >
               <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${
-                isNew ? 'border-primary' : 'border-muted-foreground/40'
+                isNew ? 'border-primary' : 'border-muted-foreground'
               }`}>
                 {isNew && <span className="h-2 w-2 rounded-full bg-primary" />}
               </span>
@@ -698,7 +698,7 @@ function StepLogCollect({ form, onChange, receivers, strategies }) {
                     >
                       <div className="flex items-center gap-2">
                         <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${
-                          picked ? 'border-primary' : 'border-muted-foreground/40'
+                          picked ? 'border-primary' : 'border-muted-foreground'
                         }`}>
                           {picked && <span className="h-2 w-2 rounded-full bg-primary" />}
                         </span>
@@ -723,11 +723,11 @@ function StepLogCollect({ form, onChange, receivers, strategies }) {
               </div>
               <div>
                 <label className={labelCls}>编码方式</label>
-                <select className={inputCls} value={form.encoding}
-                  onChange={(e) => onChange({ encoding: e.target.value })}>
+                <CompactSelect value={form.encoding}
+                  onChange={(e) => onChange({ encoding: e.target.value })} size="lg" block>
                   {ENCODING_OPTIONS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
-                </select>
-                <div className="mt-1 text-[11px] text-muted-foreground/70">设备日志的字符编码，选错会导致中文乱码</div>
+                </CompactSelect>
+                <div className="mt-1 text-[11px] text-muted-foreground">设备日志的字符编码，选错会导致中文乱码</div>
               </div>
               <div>
                 <label className={labelCls}>接收器名称</label>
@@ -736,25 +736,25 @@ function StepLogCollect({ form, onChange, receivers, strategies }) {
               </div>
               <div>
                 <label className={labelCls}>时间校正配置</label>
-                <select className={inputCls} value={form.timeCorrect}
-                  onChange={(e) => onChange({ timeCorrect: e.target.value })}>
+                <CompactSelect value={form.timeCorrect}
+                  onChange={(e) => onChange({ timeCorrect: e.target.value })} size="lg" block>
                   {TIME_CORRECT_OPTIONS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
-                </select>
-                <div className="mt-1 text-[11px] text-muted-foreground/70">设备日志时间存在时区偏差时的校正方式</div>
+                </CompactSelect>
+                <div className="mt-1 text-[11px] text-muted-foreground">设备日志时间存在时区偏差时的校正方式</div>
               </div>
               {form.timeCorrect === 'custom' && (
                 <div>
                   <label className={labelCls}>时区偏移（小时）</label>
                   <input type="number" className={inputCls} value={form.tzOffset}
                     onChange={(e) => onChange({ tzOffset: e.target.value })} placeholder="8" />
-                  <div className="mt-1 text-[11px] text-muted-foreground/70">范围 -12 ~ 14，如东八区填 8</div>
+                  <div className="mt-1 text-[11px] text-muted-foreground">范围 -12 ~ 14，如东八区填 8</div>
                 </div>
               )}
               <div>
                 <label className={labelCls}>上报异常通知间隔（分钟）</label>
                 <input type="number" className={inputCls} value={form.notifyInterval}
                   onChange={(e) => onChange({ notifyInterval: e.target.value })} placeholder="0" />
-                <div className="mt-1 text-[11px] leading-relaxed text-muted-foreground/70">
+                <div className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
                   接收器监听中断或解析异常时经通知中心提醒：0=仅首次通知，&gt;0=异常期间每 N 分钟重复提醒
                 </div>
               </div>
@@ -770,14 +770,14 @@ function StepLogCollect({ form, onChange, receivers, strategies }) {
             <label className={labelCls}>源 IP 地址 <span className="text-destructive">*</span></label>
             <input className={inputCls} value={form.sourceIp}
               onChange={(e) => onChange({ sourceIp: e.target.value })} placeholder="设备发送日志的 IP，如：192.168.1.10" />
-            <div className="mt-1 text-[11px] leading-relaxed text-muted-foreground/70">
+            <div className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
               日志到达后按来源 IP 自动生成数据源条目，请确保与设备实际发送 IP 一致
             </div>
           </div>
           <div>
             <label className={labelCls}>日志发送目标</label>
-            <input readOnly className={`${inputCls} cursor-default font-mono read-only:bg-secondary/40 read-only:text-muted-foreground read-only:hover:border-input read-only:focus:border-input read-only:focus:ring-0`} value={target} placeholder="--" />
-            <div className="mt-1 text-[11px] text-muted-foreground/70">请将设备侧日志发送目标配置为此地址</div>
+            <input readOnly className={`${inputCls} cursor-default font-mono read-only:bg-secondary read-only:text-muted-foreground read-only:hover:border-input read-only:focus:border-input read-only:focus:ring-0`} value={target} placeholder="--" />
+            <div className="mt-1 text-[11px] text-muted-foreground">请将设备侧日志发送目标配置为此地址</div>
           </div>
         </div>
         <div className="text-xs font-medium text-muted-foreground">解析模板</div>
@@ -790,7 +790,7 @@ function StepLogCollect({ form, onChange, receivers, strategies }) {
           >
             <div className="flex items-center gap-2">
               <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${
-                form.strategyMode === 'auto' ? 'border-primary' : 'border-muted-foreground/40'
+                form.strategyMode === 'auto' ? 'border-primary' : 'border-muted-foreground'
               }`}>
                 {form.strategyMode === 'auto' && <span className="h-2 w-2 rounded-full bg-primary" />}
               </span>
@@ -809,7 +809,7 @@ function StepLogCollect({ form, onChange, receivers, strategies }) {
           >
             <div className="flex items-center gap-2">
               <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${
-                form.strategyMode === 'specify' ? 'border-primary' : 'border-muted-foreground/40'
+                form.strategyMode === 'specify' ? 'border-primary' : 'border-muted-foreground'
               }`}>
                 {form.strategyMode === 'specify' && <span className="h-2 w-2 rounded-full bg-primary" />}
               </span>
@@ -829,15 +829,15 @@ function StepLogCollect({ form, onChange, receivers, strategies }) {
                 <Info className="h-3.5 w-3.5 shrink-0" /> 暂无已启用的解析模板，可切换为「自动匹配」或先在「解析模板」页面创建
               </div>
             ) : (
-              <select className={inputCls} value={form.strategyId}
-                onChange={(e) => onChange({ strategyId: e.target.value })}>
+              <CompactSelect value={form.strategyId}
+                onChange={(e) => onChange({ strategyId: e.target.value })} size="lg" block>
                 <option value="">请选择解析模板</option>
                 {enabledStrategies.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.strategy_name}{s.device_type ? `（${s.device_type}）` : ''}
                   </option>
                 ))}
-              </select>
+              </CompactSelect>
             )}
           </div>
         )}
@@ -871,8 +871,8 @@ function StepResponse({ form, onChange, needUserPass, needApiKey, apiUrl }) {
               <input className={inputCls} value={form.apiPath}
                 onChange={(e) => onChange({ apiPath: e.target.value })} placeholder="API 路径（如 /api）或完整 URL" />
             </div>
-            <div className="mt-1 break-all text-[11px] text-muted-foreground/70">
-              最终 API 基地址：<span className="font-mono text-foreground/80">{apiUrl || '--'}</span>
+            <div className="mt-1 break-all text-[11px] text-muted-foreground">
+              最终 API 基地址：<span className="font-mono text-foreground">{apiUrl || '--'}</span>
             </div>
           </div>
         </div>
@@ -883,10 +883,10 @@ function StepResponse({ form, onChange, needUserPass, needApiKey, apiUrl }) {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className={labelCls}>认证方式</label>
-            <select className={inputCls} value={form.authType}
-              onChange={(e) => onChange({ authType: e.target.value })}>
+            <CompactSelect value={form.authType}
+              onChange={(e) => onChange({ authType: e.target.value })} size="lg" block>
               {DEVICE_AUTH_TYPES.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
-            </select>
+            </CompactSelect>
           </div>
           {needUserPass && (
             <>
@@ -920,7 +920,7 @@ function StepResponse({ form, onChange, needUserPass, needApiKey, apiUrl }) {
           </div>
         )}
         {form.authType === 'none' && (
-          <div className="text-xs text-muted-foreground/70">无认证模式，直接访问 API。</div>
+          <div className="text-xs text-muted-foreground">无认证模式，直接访问 API。</div>
         )}
       </ConfigSection>
 
@@ -1005,7 +1005,7 @@ function StepDone({ done, caps, deviceForm, logForm, strategies }) {
       {/* 接入摘要 */}
       <div className="rounded-md border border-border">
         {rows.map((r, i) => (
-          <div key={r.label} className={`flex items-start gap-4 px-4 py-3 ${i > 0 ? 'border-t border-border/60' : ''}`}>
+          <div key={r.label} className={`flex items-start gap-4 px-4 py-3 ${i > 0 ? 'border-t border-border' : ''}`}>
             <span className="w-24 shrink-0 whitespace-nowrap text-xs text-muted-foreground">{r.label}</span>
             <span className="min-w-0 flex-1 break-all text-sm text-foreground">{r.value}</span>
           </div>

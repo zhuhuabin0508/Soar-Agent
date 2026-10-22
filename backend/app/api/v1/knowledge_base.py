@@ -115,17 +115,42 @@ def _doc_public_dict(doc: KnowledgeDocument, *, include_content: bool = False) -
     return data
 
 
+# 上传安全约束：扩展名白名单与 file_parser 支持类型一致；单文件大小上限
+_KB_ALLOWED_EXTENSIONS = {
+    "txt", "md", "csv", "json", "log", "html", "htm", "xml",
+    "pdf", "docx", "xlsx", "xls", "pptx",
+}
+_KB_UPLOAD_MAX_BYTES = 50 * 1024 * 1024  # 50MB
+
+
 async def _save_upload_as_document(
     kb_id: int,
     original_filename: str,
     file_bytes: bytes,
     db: Session,
 ) -> KnowledgeDocument:
-    title, file_type = parse_filename(original_filename)
+    # 安全清洗：仅取 basename（剥离 ../ 与分隔符，防路径穿越写任意路径），
+    # 拒绝控制字符与纯点文件名
+    safe_name = os.path.basename((original_filename or "").replace("\\", "/")).strip()
+    if (
+        not safe_name
+        or safe_name in {".", ".."}
+        or any(ord(c) < 32 for c in safe_name)
+    ):
+        raise HTTPException(status_code=400, detail="非法文件名")
+    title, file_type = parse_filename(safe_name)
+    if file_type not in _KB_ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的文件类型 {file_type or '(无扩展名)'}，"
+            f"允许：{'/'.join(sorted(_KB_ALLOWED_EXTENSIONS))}",
+        )
+    if len(file_bytes) > _KB_UPLOAD_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="文件超过 50MB 上限")
     if not title:
-        title = original_filename
+        title = safe_name
     os.makedirs(UPLOAD_DIR, exist_ok=True)
-    saved_filename = f"{uuid.uuid4().hex}_{original_filename}"
+    saved_filename = f"{uuid.uuid4().hex}_{safe_name}"
     saved_path = os.path.join(UPLOAD_DIR, saved_filename)
     file_size = len(file_bytes)
     with open(saved_path, "wb") as f:
@@ -138,7 +163,7 @@ async def _save_upload_as_document(
         title=title,
         content=content,
         source_type="upload",
-        file_name=original_filename,
+        file_name=safe_name,
         file_type=file_type,
         file_size=file_size,
         file_path=saved_filename,

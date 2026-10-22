@@ -122,7 +122,7 @@ function DocxView({ buffer }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center justify-between border-b border-border bg-muted/25 px-3 py-1.5">
+      <div className="flex shrink-0 items-center justify-between border-b border-border bg-muted px-3 py-1.5">
         <span className="text-[11px] text-muted-foreground">Word 预览</span>
         <ZoomBar
           scale={scale}
@@ -197,7 +197,7 @@ function ExcelView({ buffer }) {
 
   return (
     <div className="excel-preview-root flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center justify-between border-b border-border bg-muted/25 px-3 py-1.5">
+      <div className="flex shrink-0 items-center justify-between border-b border-border bg-muted px-3 py-1.5">
         <span className="text-[11px] text-muted-foreground">
           {grid.totalRows} 行 · {grid.totalCols} 列
           {grid.truncated ? `（预览最多 ${EXCEL_MAX_ROWS} 行 / ${EXCEL_MAX_COLS} 列）` : ''}

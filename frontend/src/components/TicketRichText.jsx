@@ -90,6 +90,7 @@ function insertEditorImage(root, url, alt) {
 }
 
 // markdown → 安全 HTML：文本段转义 + 换行转 <br>；图片引用仅放行本系统附件路径
+// 编辑器内的 <img> 需追加 query token 才能真正加载（无法带 Authorization 头）
 function mdToHtml(v) {
   const s = String(v ?? '')
   let html = ''
@@ -112,6 +113,7 @@ function nodeToMd(node) {
   const tag = node.nodeName
   if (tag === 'BR') return '\n'
   if (tag === 'IMG') {
+    // src 含运行时追加的 query token（仅供展示），导出数据层须剥离只留干净附件路径（优先取 data-url）
     const src = canonicalAttachUrl(node.getAttribute('data-url') || node.getAttribute('src') || '')
     if (!src) return ''
     return `![${node.getAttribute('alt') || '图片'}](${src})`
@@ -129,7 +131,8 @@ function htmlToMd(rootEl) {
 }
 
 // 图片放大预览（Portal 挂 body，点击空白 / 双击图片 / Esc 关闭）
-function Lightbox({ src, name, onClose }) {
+// 全屏图片放大预览（编辑器/只读视图/附件缩略图共用）
+export function Lightbox({ src, name, onClose }) {
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
@@ -238,7 +241,11 @@ export function RichEditable({ value, onChange, placeholder, className, minHeigh
       exportMd()
       toast.success('截图已插入')
     } catch (err) {
-      toast.error(err.message || '图片上传失败')
+      if (err && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+        toast.error('截图上传超时，请重试；请确认截图文件可正常读取')
+      } else {
+        toast.error(err.message || '图片上传失败')
+      }
     } finally {
       setPasting(false)
     }

@@ -13,6 +13,7 @@ import { useWorkflowStore } from '../store/workflowStore'
 import { getExecutions, getExecutionDetail } from '../api/executions'
 import { workflows as workflowsApi } from '../api/client'
 import { toast } from '../store/toastStore'
+import { CompactSelect } from './ui'
 
 // 格式化时间
 function fmtTime(t) {
@@ -103,7 +104,7 @@ function CollapsibleJson({ label, data }) {
     }
   })()
   return (
-    <div className="rounded border border-border bg-background/40">
+    <div className="rounded border border-border bg-background">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -156,7 +157,7 @@ function ExecutionRow({ exec, onRerun, rerunning }) {
     detail?.traces.length ?? exec.node_count ?? exec.trace_count ?? null
 
   return (
-    <div className="rounded-md border border-border bg-card/40">
+    <div className="rounded-md border border-border bg-card">
       {/* 行首：点击展开/折叠 */}
       <button
         type="button"
@@ -164,7 +165,7 @@ function ExecutionRow({ exec, onRerun, rerunning }) {
         className="flex w-full items-center gap-2 px-2.5 py-2 text-left hover:bg-muted"
       >
         <ChevronRight
-          className={`h-3 w-3 shrink-0 text-muted-foreground/70 transition-transform ${
+          className={`h-3 w-3 shrink-0 text-muted-foreground transition-transform ${
             expanded ? 'rotate-90' : ''
           }`}
         />
@@ -178,7 +179,7 @@ function ExecutionRow({ exec, onRerun, rerunning }) {
         <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
           #{exec.id}
         </span>
-        <span className="shrink-0 text-[10px] text-muted-foreground/80">
+        <span className="shrink-0 text-[10px] text-muted-foreground">
           {exec.trigger_type || '-'}
         </span>
         <span className="shrink-0 text-[10px] text-muted-foreground">
@@ -204,9 +205,9 @@ function ExecutionRow({ exec, onRerun, rerunning }) {
       </button>
 
       {/* 第二行：开始时间 + 节点数 */}
-      <div className="flex items-center gap-2 px-2.5 pb-1.5 pl-7 text-[10px] text-muted-foreground/70">
+      <div className="flex items-center gap-2 px-2.5 pb-1.5 pl-7 text-[10px] text-muted-foreground">
         <span className="truncate">{fmtTime(exec.created_at)}</span>
-        <span className="text-muted-foreground/50">·</span>
+        <span className="text-muted-foreground">·</span>
         <span>节点 {nodeCount != null ? nodeCount : '-'}</span>
       </div>
 
@@ -214,7 +215,7 @@ function ExecutionRow({ exec, onRerun, rerunning }) {
       {expanded && (
         <div className="border-t border-border p-2.5">
           {loadingDetail && (
-            <div className="py-2 text-center text-[11px] text-muted-foreground/70">
+            <div className="py-2 text-center text-[11px] text-muted-foreground">
               加载详情…
             </div>
           )}
@@ -231,13 +232,13 @@ function ExecutionRow({ exec, onRerun, rerunning }) {
                   节点轨迹（{detail.traces.length}）
                 </div>
                 {detail.traces.length === 0 ? (
-                  <div className="text-[11px] text-muted-foreground/60">暂无轨迹</div>
+                  <div className="text-[11px] text-muted-foreground">暂无轨迹</div>
                 ) : (
                   <div className="flex flex-col gap-1.5">
                     {detail.traces.map((tr, idx) => (
                       <div
                         key={idx}
-                        className="rounded bg-background/40 p-1.5 text-[10px]"
+                        className="rounded bg-background p-1.5 text-[10px]"
                       >
                         <div className="flex items-center gap-1.5">
                           <span
@@ -255,7 +256,7 @@ function ExecutionRow({ exec, onRerun, rerunning }) {
                               {tr.node_type}
                             </span>
                           )}
-                          <span className="shrink-0 text-muted-foreground/70">
+                          <span className="shrink-0 text-muted-foreground">
                             {traceDuration(tr).toFixed(2)}s
                           </span>
                         </div>
@@ -280,7 +281,7 @@ function ExecutionRow({ exec, onRerun, rerunning }) {
                   日志（{detail.logs.length}）
                 </div>
                 {detail.logs.length === 0 ? (
-                  <div className="text-[11px] text-muted-foreground/60">暂无日志</div>
+                  <div className="text-[11px] text-muted-foreground">暂无日志</div>
                 ) : (
                   <div className="flex max-h-40 flex-col gap-0.5 overflow-y-auto">
                     {detail.logs.map((log, idx) => (
@@ -509,16 +510,16 @@ function RunLogDrawer() {
 
               {/* 状态筛选（仅历史 Tab） */}
               {tab === 'history' && (
-                <select
+                <CompactSelect
+                  size="lg"
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="rounded-md border border-border bg-secondary px-1.5 py-0.5 text-[11px] text-foreground outline-none focus:border-primary"
                 >
                   <option value="">全部</option>
                   <option value="success">成功</option>
                   <option value="failed">失败</option>
                   <option value="running">运行中</option>
-                </select>
+                </CompactSelect>
               )}
 
               {/* 刷新按钮（仅历史 Tab） */}
@@ -564,11 +565,11 @@ function RunLogDrawer() {
                 </div>
               )}
               {loading && executions.length === 0 ? (
-                <div className="py-8 text-center text-[11px] text-muted-foreground/70">
+                <div className="py-8 text-center text-[11px] text-muted-foreground">
                   加载中…
                 </div>
               ) : executions.length === 0 ? (
-                <div className="py-8 text-center text-[11px] text-muted-foreground/60">
+                <div className="py-8 text-center text-[11px] text-muted-foreground">
                   {workflowId ? '暂无执行记录' : '请先保存工作流'}
                 </div>
               ) : (
@@ -588,7 +589,7 @@ function RunLogDrawer() {
             // 实时日志 Tab
             <div className="flex h-full flex-col">
               {runLogs.length === 0 ? (
-                <div className="flex flex-1 items-center justify-center text-[11px] text-muted-foreground/60">
+                <div className="flex flex-1 items-center justify-center text-[11px] text-muted-foreground">
                   暂无实时日志，运行工作流后将在此显示
                 </div>
               ) : (
@@ -612,7 +613,7 @@ function RunLogDrawer() {
                         {log.message}
                       </span>
                       {log.timestamp && (
-                        <span className="shrink-0 text-[10px] text-muted-foreground/60">
+                        <span className="shrink-0 text-[10px] text-muted-foreground">
                           {fmtTime(log.timestamp)}
                         </span>
                       )}

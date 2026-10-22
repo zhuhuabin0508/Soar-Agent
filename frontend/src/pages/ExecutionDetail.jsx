@@ -88,7 +88,7 @@ function JsonViewer({ label, data }) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="mb-1 flex items-center gap-1 text-xs text-muted-foreground/70 hover:text-muted-foreground"
+        className="mb-1 flex items-center gap-1 text-xs text-muted-foreground hover:text-muted-foreground"
       >
         <span className="inline-block w-3 text-muted-foreground">{open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}</span>
         <span>{label}</span>
@@ -135,17 +135,17 @@ function LogsSection({ logs }) {
         </div>
       </div>
       {filtered.length === 0 ? (
-        <div className="flex h-24 items-center justify-center text-sm text-muted-foreground/70">
+        <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
           暂无日志
         </div>
       ) : (
-        <div className="max-h-96 overflow-y-auto rounded-lg border border-border bg-card/60">
+        <div className="max-h-96 overflow-y-auto rounded-lg border border-border bg-card">
           {filtered.map((log, idx) => (
             <div
               key={idx}
               className="flex items-start gap-4 border-b border-border px-4 py-2 text-xs last:border-b-0"
             >
-              <span className="shrink-0 text-muted-foreground/70">{fmtTime(log.timestamp)}</span>
+              <span className="shrink-0 text-muted-foreground">{fmtTime(log.timestamp)}</span>
               <span
                 className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase ${logLevelBadgeClass(log.level)}`}
               >
@@ -220,7 +220,7 @@ function ExecutionDetail() {
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
       {/* 顶部标题栏 */}
-      <header className="flex items-center justify-between border-b border-border bg-card/60 px-6 py-4">
+      <header className="flex items-center justify-between border-b border-border bg-card px-6 py-4">
         <div className="flex items-center gap-4">
           <button
             type="button"
@@ -250,22 +250,22 @@ function ExecutionDetail() {
         )}
 
         {loading ? (
-          <div className="flex h-40 items-center justify-center text-sm text-muted-foreground/70">
+          <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
             加载中...
           </div>
         ) : !data ? (
-          <div className="flex h-40 items-center justify-center text-sm text-muted-foreground/70">
+          <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
             未找到数据
           </div>
         ) : (
           <>
             {/* 执行概要 */}
-            <div className="mb-6 w-full rounded-lg border border-border bg-card/60 p-5">
+            <div className="mb-6 w-full rounded-lg border border-border bg-card p-5">
               <div className="grid w-full grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
                 <InfoCell label="执行 ID" value={`#${execution.id}`} />
                 <InfoCell label="工作流 ID" value={execution.workflow_id} />
                 <div className="min-w-0">
-                  <div className="text-xs text-muted-foreground/70">状态</div>
+                  <div className="text-xs text-muted-foreground">状态</div>
                   <span className={`mt-1 inline-block rounded px-2 py-0.5 text-xs font-medium ${statusBadgeClass(execution.status)}`}>
                     {execution.status || '-'}
                   </span>
@@ -283,7 +283,7 @@ function ExecutionDetail() {
                 执行轨迹（{traces.length} 个节点）
               </div>
               {traces.length === 0 ? (
-                <div className="flex h-32 items-center justify-center text-sm text-muted-foreground/70">
+                <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
                   暂无轨迹数据
                 </div>
               ) : (
@@ -298,7 +298,7 @@ function ExecutionDetail() {
                           className={`relative z-dropdown mt-1 h-5 w-5 shrink-0 rounded-full ring-4 ${dotColor(tr.status)}`}
                         />
                         {/* 右侧详情卡片：填满剩余宽度 */}
-                        <div className="min-w-0 flex-1 rounded-lg border border-border bg-card/60 p-4">
+                        <div className="min-w-0 flex-1 rounded-lg border border-border bg-card p-4">
                           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2">
                             <div className="flex items-center gap-2">
                               <span className="text-sm font-medium text-foreground">
@@ -347,7 +347,7 @@ function ExecutionDetail() {
 function InfoCell({ label, value }) {
   return (
     <div className="min-w-0">
-      <div className="text-xs text-muted-foreground/70">{label}</div>
+      <div className="text-xs text-muted-foreground">{label}</div>
       <div className="truncate text-sm text-foreground" title={String(value)}>
         {value == null ? '-' : String(value)}
       </div>

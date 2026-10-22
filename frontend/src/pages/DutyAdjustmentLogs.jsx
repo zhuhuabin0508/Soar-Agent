@@ -3,8 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { ClipboardList, Undo2, Trash2 } from 'lucide-react'
 import { toast } from '../store/toastStore'
 import { confirm } from '../components/ConfirmDialog'
-import { inputBaseCls } from '../components/property/FormControls'
-import { Button, PageContainer, DataTable, Pagination } from '../components/ui'
+import { Button, PageContainer, DataTable, Pagination, DatePicker } from '../components/ui'
 import { hasPermission } from '../utils/permissions'
 import dutyApi from '../api/duty'
 
@@ -97,7 +96,7 @@ export default function DutyAdjustmentLogs() {
         const isDay = r.shift === 'DAY'
         const cls = isDay ? 'bg-blue-500/10 text-blue-500' : 'bg-purple-500/10 text-purple-500'
         return (
-          <span className={`inline-flex items-center rounded px-2.5 py-1 text-xs whitespace-nowrap ${cls}`}>
+          <span className={`inline-flex items-center rounded px-2.5 py-1 text-xs font-medium whitespace-nowrap ${cls}`}>
             {SHIFT_META[r.shift] || r.shift}
           </span>
         )
@@ -108,7 +107,7 @@ export default function DutyAdjustmentLogs() {
       render: (r) => (
         <div className="flex flex-col">
           <span className="font-medium text-foreground">{r.original_member_name || '待分配'}</span>
-          <span className="text-xs text-muted-foreground">{r.original_member_phone || '-'}</span>
+          <span className="text-xs text-muted-foreground tabular-nums">{r.original_member_phone || '-'}</span>
         </div>
       ),
     },
@@ -117,20 +116,20 @@ export default function DutyAdjustmentLogs() {
       render: (r) => (
         <div className="flex flex-col">
           <span className="font-medium text-foreground">{r.new_member_name || '待分配'}</span>
-          <span className="text-xs text-muted-foreground">{r.new_member_phone || '-'}</span>
+          <span className="text-xs text-muted-foreground tabular-nums">{r.new_member_phone || '-'}</span>
         </div>
       ),
     },
     { key: 'reason', header: '调整原因', render: (r) => <span className="text-muted-foreground">{r.reason || '-'}</span> },
     { key: 'operator_name', header: '操作人', width: '110px', render: (r) => r.operator_name || '-' },
-    { key: 'operated_at', header: '操作时间', width: '170px', render: (r) => r.operated_at ? new Date(r.operated_at).toLocaleString('zh-CN') : '-' },
+    { key: 'operated_at', header: '操作时间', width: '170px', className: 'tabular-nums', render: (r) => r.operated_at ? new Date(r.operated_at).toLocaleString('zh-CN') : '-' },
     {
-      key: 'actions', header: '操作', width: '120px',
+      key: 'actions', header: '操作', width: '195px',
       render: (r) => {
         // 反向撤销日志（reason 以「撤销调班」开头）不再提供撤销按钮
         const isRevertLog = (r.reason || '').startsWith('撤销调班')
         const canRevert = canEdit && !isRevertLog
-        if (!canRevert && !canDelete) return <span className="text-xs text-muted-foreground/40">-</span>
+        if (!canRevert && !canDelete) return <span className="text-xs text-muted-foreground">-</span>
         return (
           <div className="flex items-center gap-1 whitespace-nowrap">
             {canRevert && (
@@ -162,15 +161,15 @@ export default function DutyAdjustmentLogs() {
   return (
     <PageContainer>
       <div className="mb-6">
-        <h1 className="text-[22px] font-bold text-foreground">调班记录</h1>
-        <p className="mt-2 text-[13px] text-muted-foreground">记录所有手动调整值班人员的操作日志（原值班人、新值班人、原因、操作人），支持撤销</p>
+        <h1 className="text-[22px] font-bold tracking-tight text-foreground">调班记录</h1>
+        <p className="mt-1.5 text-sm text-muted-foreground">记录所有手动调整值班人员的操作日志（原值班人、新值班人、原因、操作人），支持撤销</p>
       </div>
 
       <div className="mb-4 flex items-center gap-3 rounded-md border border-border bg-card px-4 py-2.5">
         <label className="text-xs text-muted-foreground whitespace-nowrap">按值班日期</label>
-        <input type="date" className={`${inputBaseCls} h-9 w-40`} value={range.start_date} onChange={(e) => setRange((r) => ({ ...r, start_date: e.target.value }))} />
+        <DatePicker value={range.start_date} onChange={(e) => setRange((r) => ({ ...r, start_date: e.target.value }))} />
         <span className="text-muted-foreground">~</span>
-        <input type="date" className={`${inputBaseCls} h-9 w-40`} value={range.end_date} onChange={(e) => setRange((r) => ({ ...r, end_date: e.target.value }))} />
+        <DatePicker value={range.end_date} onChange={(e) => setRange((r) => ({ ...r, end_date: e.target.value }))} />
         <div className="flex-1" />
         <Button size="sm" variant="secondary" onClick={() => { setPage(1); load() }} className="h-9 whitespace-nowrap">查询</Button>
         <Button size="sm" variant="ghost" onClick={() => { setRange({ start_date: '', end_date: '' }); setPage(1) }} className="h-9 whitespace-nowrap">重置</Button>
@@ -178,12 +177,12 @@ export default function DutyAdjustmentLogs() {
 
       {canDelete && !!list.length && (
         <div className="mb-3 flex items-center gap-3">
-          <span className="text-xs text-muted-foreground">已选 {selectedKeys.length} 项</span>
+          <span className="text-xs text-muted-foreground">已选 <span className="font-medium tabular-nums text-foreground">{selectedKeys.length}</span> 项</span>
           <Button size="sm" variant="danger" onClick={handleBatchDelete} disabled={!selectedKeys.length || batchDeleting} className="h-9">
             <Trash2 className="mr-1 h-3.5 w-3.5" />{batchDeleting ? '删除中' : '批量删除'}
           </Button>
           {!!selectedKeys.length && (
-            <button onClick={() => setSelectedKeys([])} className="text-xs text-muted-foreground hover:text-foreground">清空选择</button>
+            <button onClick={() => setSelectedKeys([])} className="rounded px-2 py-1 text-xs text-muted-foreground transition hover:bg-accent hover:text-foreground">清空选择</button>
           )}
         </div>
       )}

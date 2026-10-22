@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useMemo, Fragment } from 'react'
 import { ClipboardList, Copy } from 'lucide-react'
 import { toast } from '../../store/toastStore'
 import { systemMonitorApi } from '../../api/systemMonitor'
+import { CompactSelect, DatePicker } from '../ui'
 
 // 资源类型中文映射
 export const RESOURCE_LABELS = {
@@ -17,7 +18,7 @@ export const RESOURCE_LABELS = {
 // 操作类型中文映射 + 颜色
 export const ACTION_META = {
   login: { label: '登录', cls: 'bg-primary/20 text-primary', icon: '🔑' },
-  logout: { label: '登出', cls: 'bg-muted-foreground/20 text-muted-foreground', icon: '🚪' },
+  logout: { label: '登出', cls: 'bg-muted text-muted-foreground', icon: '🚪' },
   create: { label: '创建', cls: 'bg-success/20 text-success', icon: '➕' },
   update: { label: '更新', cls: 'bg-info/20 text-info', icon: '✏️' },
   delete: { label: '删除', cls: 'bg-destructive/20 text-destructive', icon: '🗑️' },
@@ -40,7 +41,7 @@ export function ResultBadge({ result }) {
   const isFailed = result === 'failed' || result === 'fail' || result === 'error'
   if (isSuccess) return <span className="rounded bg-success/20 px-2 py-0.5 text-[11px] font-medium text-success">成功</span>
   if (isFailed) return <span className="rounded bg-destructive/20 px-2 py-0.5 text-[11px] font-medium text-destructive">失败</span>
-  return <span className="rounded bg-muted-foreground/20 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{result || '-'}</span>
+  return <span className="rounded bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{result || '-'}</span>
 }
 
 // ============ 面板内部工具 ============
@@ -142,13 +143,13 @@ export default function AuditLogsPanel() {
 
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
-  const selectCls = 'rounded-md border border-border bg-secondary px-2 py-1.5 text-xs text-foreground outline-none focus:border-primary'
-  const inputCls = 'min-w-0 flex-1 rounded-md border border-border bg-secondary px-2 py-1.5 text-xs text-foreground outline-none placeholder:text-muted-foreground/70 focus:border-primary'
+  const selectCls = 'h-9 rounded-md border border-border bg-secondary px-2.5 text-xs text-foreground outline-none transition hover:border-primary/45 focus:border-primary'
+  const inputCls = 'h-9 min-w-0 flex-1 rounded-md border border-border bg-secondary px-2.5 text-xs text-foreground outline-none transition placeholder:text-muted-foreground hover:border-primary/45 focus:border-primary'
 
   return (
     <div className="flex flex-col gap-4">
-      {/* 筛选栏 */}
-      <div className="rounded-lg border border-border bg-card/60 p-4">
+      {/* 筛选栏：基准卡片条 */}
+      <div className="rounded-md border border-border bg-card px-4 py-2.5">
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <span className="text-xs text-muted-foreground">时间范围：</span>
           {[['24h', '最近24小时'], ['today', '今天'], ['7d', '最近7天'], ['30d', '最近30天'], ['custom', '自定义']].map(([k, label]) => (
@@ -156,25 +157,25 @@ export default function AuditLogsPanel() {
           ))}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <select value={input.action} onChange={(e) => setInput((p) => ({ ...p, action: e.target.value }))} className={selectCls}>
+          <CompactSelect size="lg" value={input.action} onChange={(e) => setInput((p) => ({ ...p, action: e.target.value }))}>
             <option value="">全部操作</option>
             {ACTION_OPTIONS.map((a) => <option key={a} value={a}>{ACTION_META[a]?.label || a}</option>)}
-          </select>
-          <select value={input.resource_type} onChange={(e) => setInput((p) => ({ ...p, resource_type: e.target.value }))} className={selectCls}>
+          </CompactSelect>
+          <CompactSelect size="lg" value={input.resource_type} onChange={(e) => setInput((p) => ({ ...p, resource_type: e.target.value }))}>
             <option value="">全部资源</option>
             {RESOURCE_OPTIONS.map((r) => <option key={r} value={r}>{RESOURCE_LABELS[r]}</option>)}
-          </select>
-          <select value={input.result} onChange={(e) => setInput((p) => ({ ...p, result: e.target.value }))} className={selectCls}>
+          </CompactSelect>
+          <CompactSelect size="lg" value={input.result} onChange={(e) => setInput((p) => ({ ...p, result: e.target.value }))}>
             <option value="">全部结果</option>
             <option value="success">成功</option>
             <option value="failed">失败</option>
-          </select>
+          </CompactSelect>
           <input value={input.username} onChange={(e) => setInput((p) => ({ ...p, username: e.target.value }))} placeholder="用户名..." className={inputCls} onKeyDown={(e) => e.key === 'Enter' && handleQuery()} />
           <input value={input.ip_address} onChange={(e) => setInput((p) => ({ ...p, ip_address: e.target.value }))} placeholder="IP 地址..." className={inputCls} onKeyDown={(e) => e.key === 'Enter' && handleQuery()} />
           {input.quickRange === 'custom' && (
             <>
-              <input type="datetime-local" value={input.start_time} onChange={(e) => setInput((p) => ({ ...p, start_time: e.target.value }))} className={selectCls} />
-              <input type="datetime-local" value={input.end_time} onChange={(e) => setInput((p) => ({ ...p, end_time: e.target.value }))} className={selectCls} />
+              <DatePicker type="datetime" value={input.start_time} onChange={(e) => setInput((p) => ({ ...p, start_time: e.target.value }))} />
+              <DatePicker type="datetime" value={input.end_time} onChange={(e) => setInput((p) => ({ ...p, end_time: e.target.value }))} />
             </>
           )}
           <button type="button" onClick={handleQuery} className="btn-primary btn-sm">查询</button>
@@ -191,9 +192,9 @@ export default function AuditLogsPanel() {
 
       {/* 日志表格 */}
       {loading ? (
-        <div className="flex h-40 items-center justify-center text-sm text-muted-foreground/70">加载中...</div>
+        <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">加载中...</div>
       ) : logs.length === 0 ? (
-        <div className="flex h-60 flex-col items-center justify-center gap-2 text-muted-foreground/70"><ClipboardList className="h-10 w-10" /><div className="text-sm">未查询到符合条件的日志</div></div>
+        <div className="flex h-60 flex-col items-center justify-center gap-2 text-muted-foreground"><ClipboardList className="h-10 w-10" /><div className="text-sm">未查询到符合条件的日志</div></div>
       ) : (
         <div className="w-full overflow-x-auto rounded-lg border border-border">
           <table className="w-full min-w-[980px] table-fixed border-collapse text-sm">
@@ -216,29 +217,29 @@ export default function AuditLogsPanel() {
                 const objectName = extractObjectName(log)
                 return (
                   <Fragment key={log.id}>
-                    <tr onClick={() => setExpandedId(expanded ? null : log.id)} className={`cursor-pointer border-t border-border transition-colors hover:bg-primary/5 ${isFailed ? 'bg-destructive/5' : idx % 2 === 0 ? 'bg-card/40' : 'bg-card/20'}`}>
-                      <td className="px-4 py-3 text-muted-foreground">{fmtTime(log.created_at)}</td>
-                      <td className="truncate px-4 py-3 text-foreground">{log.username || '-'}</td>
+                    <tr onClick={() => setExpandedId(expanded ? null : log.id)} className={`cursor-pointer border-t border-border transition-colors hover:bg-primary/5 ${isFailed ? 'bg-destructive/5' : idx % 2 === 0 ? 'bg-muted' : 'bg-card'}`}>
+                      <td className="px-4 py-3 text-xs tabular-nums text-muted-foreground">{fmtTime(log.created_at)}</td>
+                      <td className="truncate px-4 py-3 tabular-nums text-foreground">{log.username || '-'}</td>
                       <td className="px-4 py-3"><ActionBadge action={log.action} /></td>
-                      <td className="px-4 py-3 text-muted-foreground">{RESOURCE_LABELS[log.resource_type] || log.resource_type || '-'}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{RESOURCE_LABELS[log.resource_type] || log.resource_type || '-'}</td>
                       <td className="truncate px-4 py-3 text-foreground" title={objectName || (log.resource_id != null ? `ID: ${log.resource_id}` : '')}>
                         {objectName || <span className="font-mono text-xs text-primary">{log.resource_id ?? '-'}</span>}
                       </td>
                       <td className="px-4 py-3"><ResultBadge result={log.result} /></td>
-                      <td className="truncate px-4 py-3 font-mono text-xs text-muted-foreground">
+                      <td className="truncate px-4 py-3 font-mono text-xs tabular-nums text-muted-foreground">
                         {isFailed && log.detail ? (typeof log.detail === 'string' ? log.detail.slice(0, 60) : JSON.stringify(log.detail).slice(0, 60)) : (log.ip_address || '-')}
                       </td>
                     </tr>
                     {expanded && (
-                      <tr className="border-t border-border bg-background/60">
+                      <tr className="border-t border-border bg-background">
                         <td colSpan={7} className="px-4 py-3">
                           <div className="mb-2 flex items-center justify-between">
-                            <span className="text-xs text-muted-foreground/70">详情（点击行收起）</span>
+                            <span className="text-xs text-muted-foreground">详情（点击行收起）</span>
                             <button onClick={() => copyText(detail || '')} className="flex items-center gap-1 text-[11px] text-primary hover:underline"><Copy className="h-3 w-3" /> 复制</button>
                           </div>
                           {detail ? (
-                            <pre className="max-h-72 w-full overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-background/80 p-4 font-mono text-xs leading-relaxed" dangerouslySetInnerHTML={{ __html: highlightJson(detail) }} />
-                          ) : <div className="text-xs text-muted-foreground/60">暂无详情</div>}
+                            <pre className="max-h-72 w-full overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-background p-4 font-mono text-xs leading-relaxed" dangerouslySetInnerHTML={{ __html: highlightJson(detail) }} />
+                          ) : <div className="text-xs text-muted-foreground">暂无详情</div>}
                         </td>
                       </tr>
                     )}
@@ -253,7 +254,7 @@ export default function AuditLogsPanel() {
       {/* 分页 */}
       {!loading && logs.length > 0 && (
         <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>共 {total} 条，第 {currentPage} / {totalPages} 页</span>
+          <span className="tabular-nums">共 {total} 条，第 {currentPage} / {totalPages} 页</span>
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => { setOffset(Math.max(0, offset - PAGE_SIZE)); setExpandedId(null) }} disabled={offset === 0} className="btn-secondary btn-sm">上一页</button>
             <button type="button" onClick={() => { setOffset(offset + PAGE_SIZE); setExpandedId(null) }} disabled={offset + PAGE_SIZE >= total} className="btn-secondary btn-sm">下一页</button>

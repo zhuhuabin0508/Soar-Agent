@@ -159,7 +159,7 @@ function ExecutionList() {
             {wfNameMap[r.workflow_id] || `工作流 #${r.workflow_id}`}
           </span>
         ) : (
-          <span className="text-muted-foreground/70">—（智能体测试）</span>
+          <span className="text-muted-foreground">—（智能体测试）</span>
         ),
     },
     {

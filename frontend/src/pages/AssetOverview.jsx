@@ -6,7 +6,8 @@ import {
   Activity, RefreshCw, Server, Network, Globe, ArrowRight,
 } from 'lucide-react'
 import { assetsApi } from '../api/assets'
-import { PageContainer, Card, LoadingState, ErrorState, StatusBadge } from '../components/ui'
+import { guardNavPermission } from '../utils/permissions'
+import { PageContainer, Card, ErrorState, StatusBadge } from '../components/ui'
 
 // ECharts 配色（与 chart-1..5 令牌呼应）
 const CHART_COLORS = [
@@ -84,8 +85,13 @@ function StatCard({ icon: Icon, label, value, color = 'chart-1', sub }) {
       </div>
       <div className="min-w-0 flex-1">
         <div className="text-xs text-muted-foreground">{label}</div>
-        <div className="mt-0.5 text-2xl font-bold text-foreground">{value}</div>
-        {sub && <div className="mt-0.5 text-[11px] text-muted-foreground/70">{sub}</div>}
+        <div
+          className={`mt-0.5 text-2xl font-bold tabular-nums ${value > 0 ? 'text-foreground' : 'text-muted-foreground'}`}
+          title={value == null ? '未统计' : undefined}
+        >
+          {value == null ? '--' : value.toLocaleString()}
+        </div>
+        {sub && <div className="mt-0.5 text-[11px] text-muted-foreground">{sub}</div>}
       </div>
     </Card>
   )
@@ -126,7 +132,6 @@ export default function AssetOverview() {
     load()
   }, [load])
 
-  if (loading) return <PageContainer><LoadingState rows={6} /></PageContainer>
   if (error)
     return (
       <PageContainer>
@@ -303,39 +308,55 @@ export default function AssetOverview() {
   }
 
   return (
-    <PageContainer>
+    <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
       {/* 顶部操作栏 */}
-      <div className="mb-5 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">资产总览</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            多维度可视化资产分布，掌握全局资产态势
-          </p>
+      <header className="flex items-center justify-between gap-4 border-b border-border bg-card px-6 py-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">资产总览</h1>
+          {!loading && (
+            <span className="text-xs text-muted-foreground">
+              共 <span className="font-medium tabular-nums text-foreground">{total.toLocaleString()}</span> 项资产 ·{' '}
+              <span className="font-medium tabular-nums text-foreground">{tplCount}</span> 个类型
+            </span>
+          )}
+          <span className="hidden text-xs text-muted-foreground xl:inline">多维度可视化资产分布，掌握全局资产态势</span>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => navigate('/assets/list')}
-            className="btn-secondary btn-sm flex items-center gap-1.5"
-          >
-            <ListIcon className="h-4 w-4" /> 资产清单
+        <div className="flex shrink-0 items-center gap-2">
+          <button type="button" onClick={load} className="btn-secondary btn-sm" title="刷新资产总览数据">
+            <RefreshCw className={`mr-1 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> 刷新
           </button>
           <button
             type="button"
-            onClick={load}
-            className="btn-primary btn-sm flex items-center gap-1.5"
+            onClick={() => { if (!guardNavPermission('asset_list', 'view', '资产清单')) return; navigate('/assets/list') }}
+            className="btn-secondary btn-sm"
+            title="进入资产清单"
           >
-            <RefreshCw className="h-4 w-4" /> 刷新
+            <ListIcon className="mr-1 h-3.5 w-3.5" /> 资产清单
           </button>
         </div>
-      </div>
+      </header>
 
-      {/* 统计卡片 */}
-      <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard icon={Boxes} label="资产总数" value={total} color="chart-1" sub={`${tplCount} 个资产类型`} />
-        <StatCard icon={Activity} label="在用资产" value={inUse} color="chart-2" sub={`占比 ${total ? Math.round((inUse / total) * 100) : 0}%`} />
-        <StatCard icon={ShieldAlert} label="高危资产" value={highCrit} color="chart-3" sub="高 + 严重" />
-        <StatCard icon={PieIcon} label="资产类型" value={tplCount} color="chart-4" sub="含预设与自定义" />
+      <div className="flex-1 overflow-y-auto p-6">
+      {/* 统计卡片（加载时渲染同结构骨架） */}
+      <div className="card-stagger mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {loading
+          ? Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-4 rounded-lg border border-border bg-card p-5">
+                <div className="h-12 w-12 shrink-0 rounded-xl skeleton-shimmer" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="h-3 w-20 rounded skeleton-shimmer" />
+                  <div className="h-8 w-24 rounded skeleton-shimmer" />
+                </div>
+              </div>
+            ))
+          : (
+            <>
+              <StatCard icon={Boxes} label="资产总数" value={total} color="chart-1" sub={`${tplCount} 个资产类型`} />
+              <StatCard icon={Activity} label="在用资产" value={inUse} color="chart-2" sub={`占比 ${total ? Math.round((inUse / total) * 100) : 0}%`} />
+              <StatCard icon={ShieldAlert} label="高危资产" value={highCrit} color="chart-3" sub="高 + 严重" />
+              <StatCard icon={PieIcon} label="资产类型" value={tplCount} color="chart-4" sub="含预设与自定义" />
+            </>
+          )}
       </div>
 
       {/* 模板卡片（可点击进入清单） */}
@@ -344,45 +365,74 @@ export default function AssetOverview() {
           <h2 className="text-sm font-semibold text-foreground">资产类型分布</h2>
           <button
             type="button"
-            onClick={() => navigate('/assets/templates')}
+            onClick={() => { if (!guardNavPermission('asset_templates', 'view', '类型模板')) return; navigate('/assets/templates') }}
             className="flex items-center gap-1 text-xs text-primary hover:underline"
           >
             管理模板 <ArrowRight className="h-3 w-3" />
           </button>
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {(data?.templates || []).map((t, idx) => {
-            const Icon = TEMPLATE_ICONS[t.code] || Boxes
-            const color = CHART_COLORS[idx % CHART_COLORS.length]
-            return (
-              <button
-                key={t.code}
-                type="button"
-                onClick={() => navigate(`/assets/list?type_code=${encodeURIComponent(t.code)}`)}
-                className="group flex items-center gap-3 rounded-lg border border-border bg-card p-4 text-left transition-all hover:border-primary/40 hover:shadow-md"
-              >
-                <div
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
-                  style={{ background: `${color}20`, color }}
+        <div className="card-stagger grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {loading
+            ? Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-3 rounded-lg border border-border bg-card p-4">
+                  <div className="h-10 w-10 shrink-0 rounded-lg skeleton-shimmer" />
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <div className="h-3.5 w-1/2 rounded skeleton-shimmer" />
+                    <div className="h-2.5 w-3/4 rounded skeleton-shimmer" />
+                  </div>
+                  <div className="h-7 w-10 rounded skeleton-shimmer" />
+                </div>
+              ))
+            : (data?.templates || []).map((t, idx) => {
+              const Icon = TEMPLATE_ICONS[t.code] || Boxes
+              const color = CHART_COLORS[idx % CHART_COLORS.length]
+              return (
+                <button
+                  key={t.code}
+                  type="button"
+                  onClick={() => { if (!guardNavPermission('asset_list', 'view', '资产清单')) return; navigate(`/assets/list?type_code=${encodeURIComponent(t.code)}`) }}
+                  className="card-hover group flex items-center gap-3 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:border-primary/40"
                 >
-                  <Icon className="h-5 w-5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium text-foreground">{t.name}</div>
-                  <div className="truncate text-[11px] text-muted-foreground">{t.description || t.code}</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-lg font-bold text-foreground">{t.count}</div>
-                  <div className="text-[10px] text-muted-foreground">条</div>
-                </div>
-              </button>
-            )
-          })}
+                  <div
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
+                    style={{ background: `${color}20`, color }}
+                  >
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium text-foreground">{t.name}</div>
+                    <div className="truncate text-[11px] text-muted-foreground">{t.description || t.code}</div>
+                  </div>
+                  <div className="text-right">
+                    <div
+                      className={`text-lg font-bold tabular-nums ${t.count > 0 ? 'text-foreground' : 'text-muted-foreground'}`}
+                      title={t.count == null ? '未统计' : undefined}
+                    >
+                      {t.count == null ? '--' : t.count.toLocaleString()}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">条</div>
+                  </div>
+                </button>
+              )
+            })}
         </div>
       </div>
 
-      {/* 图表网格 */}
+      {/* 图表网格（加载时渲染同结构骨架） */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {loading
+          ? Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex flex-col rounded-lg border border-border bg-card">
+                <div className="border-b border-border px-5 py-3">
+                  <div className="h-3.5 w-28 rounded skeleton-shimmer" />
+                </div>
+                <div className="p-4">
+                  <div className="h-[280px] w-full rounded-md skeleton-shimmer" />
+                </div>
+              </div>
+            ))
+          : (
+            <>
         <ChartCard title="按资产类型分布">
           {(data?.templates || []).some((t) => t.count > 0) ? (
             <ReactECharts option={tplPieOption} style={{ height: 300 }} />
@@ -417,14 +467,17 @@ export default function AssetOverview() {
         <ChartCard title="近 30 天新增趋势">
           <ReactECharts option={trendLineOption} style={{ height: 300 }} />
         </ChartCard>
+            </>
+          )}
       </div>
-    </PageContainer>
+      </div>
+    </div>
   )
 }
 
 function EmptyChart({ text = '暂无数据' }) {
   return (
-    <div className="flex h-[280px] items-center justify-center text-sm text-muted-foreground/60">
+    <div className="flex h-[280px] items-center justify-center text-sm text-muted-foreground">
       {text}
     </div>
   )

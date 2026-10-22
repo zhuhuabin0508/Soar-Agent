@@ -12,6 +12,7 @@ import ipaddress
 import logging
 import os
 import random
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,38 @@ _WHITELIST_NETWORKS = [
     ipaddress.ip_network("10.0.0.0/8"),
     ipaddress.ip_network("172.16.0.0/12"),
     ipaddress.ip_network("192.168.0.0/16"),
+]
+
+# Mock 威胁情报数据池：按 IP 种子确定性抽样，保证同一 IP 结果稳定、不同 IP 内容不同
+_TI_TAG_POOL = [
+    "Botnet", "C2", "钓鱼", "扫描器", "恶意软件分发",
+    "Tor 出口", "暴力破解", "DDoS 参与节点", "挖矿",
+]
+_TI_TYPE_POOL = [
+    "C2 通信", "僵尸网络节点", "暴力破解", "端口扫描",
+    "Web 攻击", "垃圾邮件", "恶意软件宿主", "挖矿行为", "钓鱼站点",
+]
+_TI_MALWARE_POOL = [
+    "Mirai", "Emotet", "Cobalt Strike", "Conficker",
+    "WannaCry", "XMRig 挖矿木马", "Gh0st 远控", "Sality",
+]
+_TI_PATTERN_POOL = [
+    "T1071 - 标准应用层协议（C2 通信）",
+    "T1110 - 暴力破解",
+    "T1059 - 命令与脚本解释器",
+    "T1190 - 利用面向公众的应用",
+    "T1046 - 网络服务发现",
+    "T1498 - 网络拒绝服务",
+    "T1566.002 - 鱼叉式钓鱼链接",
+]
+_TI_GEO_POOL = [
+    ("美国", "境外", "未知城市", "未知 ISP"),
+    ("俄罗斯", "境外", "莫斯科", "未知 ISP"),
+    ("荷兰", "境外", "阿姆斯特丹", "商业主机商"),
+    ("新加坡", "境外", "新加坡", "云服务商"),
+    ("中国香港", "境外", "香港", "商业主机商"),
+    ("巴西", "境外", "圣保罗", "未知 ISP"),
+    ("越南", "境外", "河内", "未知 ISP"),
 ]
 
 
@@ -126,33 +159,37 @@ async def get_threat_intel(ip: str) -> dict:
     await asyncio.sleep(random.uniform(0.3, 0.8))
     is_malicious = not _is_in_whitelist(ip)
 
+    # Mock 情报按 IP 确定性变化（种子随机）：不同 IP 呈现不同的标签/类型/恶意软件/
+    # 攻击模式/置信度/时间与地理归属，避免所有外网 IP 情报内容雷同。
+    rng = random.Random(f"soar-ti:{ip}")
+
     if is_malicious:
-        tags = ["Botnet", "C2"]
-        confidence = 0.92
-        threat_types = ["C2 通信", "僵尸网络节点", "暴力破解"]
-        severity = "high"
-        first_seen = "2026-07-15T08:23:00"
-        last_seen = "2026-07-29T06:45:00"
+        threat_types = rng.sample(_TI_TYPE_POOL, k=rng.randint(2, 4))
+        tags = sorted(set(threat_types) & set(_TI_TAG_POOL)) or rng.sample(_TI_TAG_POOL, k=2)
+        confidence = round(rng.uniform(0.62, 0.97), 2)
+        sev_roll = rng.random()
+        severity = "high" if sev_roll > 0.6 else ("medium" if sev_roll > 0.3 else "low")
+        first_seen = (datetime.now() - timedelta(days=rng.randint(20, 120), hours=rng.randint(0, 23))).strftime("%Y-%m-%dT%H:%M:%S")
+        last_seen = (datetime.now() - timedelta(days=rng.randint(0, 14), hours=rng.randint(0, 23))).strftime("%Y-%m-%dT%H:%M:%S")
         source = "内部威胁情报平台 + 开源情报(OSINT)"
-        description = (
-            f"该 IP {ip} 被多个威胁情报源标记为恶意，"
-            "关联多个僵尸网络家族，持续对外发起 C2 通信和 SSH 暴力破解攻击。"
-            "近期活跃度较高，建议立即封禁。"
-        )
+        country, region, city, isp = rng.choice(_TI_GEO_POOL)
         geo_info = {
-            "country": "中国",
-            "region": "境外",
-            "city": "未知",
-            "isp": "未知 ISP",
+            "country": country,
+            "region": region,
+            "city": city,
+            "isp": isp,
             "latitude": None,
             "longitude": None,
         }
-        related_malware = ["Mirai", "Emotet", "Cobalt Strike"]
-        attack_patterns = [
-            "T1071 - 标准应用层协议（C2 通信）",
-            "T1110 - 暴力破解",
-            "T1059 - 命令与脚本解释器",
-        ]
+        related_malware = rng.sample(_TI_MALWARE_POOL, k=rng.randint(1, 3))
+        attack_patterns = rng.sample(_TI_PATTERN_POOL, k=rng.randint(2, 4))
+        activity = rng.choice(["较高", "中等", "较低"])
+        description = (
+            f"该 IP {ip} 被 {len(threat_types)} 类威胁情报标记为恶意，"
+            f"关联「{'、'.join(threat_types[:3])}」等威胁行为"
+            f"（关联恶意软件：{'、'.join(related_malware)}），"
+            f"近期活跃度{activity}，建议立即封禁并排查内网主机与该地址的通信记录。"
+        )
     else:
         tags = []
         confidence = 0.0

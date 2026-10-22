@@ -115,6 +115,8 @@ def _seed_admin_user(db) -> None:
         display_name="系统管理员",
         role="admin",
         is_active=True,
+        # 默认弱口令种子时强制首登改密（与新建用户逻辑一致）
+        must_change_password=settings.SEED_ADMIN_PASSWORD == _DEFAULT_ADMIN_PASSWORD,
     )
     db.add(admin)
     db.commit()
@@ -194,10 +196,45 @@ def _sync_role_permission_modules(db) -> None:
         logger.info("角色权限模块已是最新，无需同步")
 
 
+_DEFAULT_JWT_SECRET = "soar-dev-secret-change-me-in-production-please"
+_DEFAULT_ADMIN_PASSWORD = "admin123"
+
+
+def _check_security_config() -> None:
+    """启动安全基线校验：生产环境禁止使用默认 JWT 密钥/管理员口令。
+
+    - JWT_SECRET 为公开默认值时，攻击者可离线伪造 admin JWT 接管平台；
+    - SEED_ADMIN_PASSWORD 为默认值时，部署即可用 admin/admin123 登录。
+    APP_ENV=production 下任一命中即拒绝启动；dev 环境仅输出醒目警告。
+    """
+    is_prod = settings.APP_ENV.strip().lower() == "production"
+    problems: list[str] = []
+    if settings.JWT_SECRET == _DEFAULT_JWT_SECRET or len(settings.JWT_SECRET) < 32:
+        problems.append(
+            "JWT_SECRET 使用默认值或长度不足 32 字节，攻击者可伪造任意用户 token"
+        )
+    if settings.SEED_ADMIN_PASSWORD == _DEFAULT_ADMIN_PASSWORD:
+        problems.append("SEED_ADMIN_PASSWORD 为默认弱口令 admin123")
+    if not problems:
+        return
+    for p in problems:
+        msg = f"安全基线校验失败: {p}"
+        if is_prod:
+            logger.critical(msg)
+        else:
+            logger.warning(msg + "（dev 环境放行，生产环境将拒绝启动）")
+    if is_prod:
+        raise RuntimeError(
+            "生产环境安全基线不达标（默认 JWT_SECRET/管理员口令），"
+            "请在 .env 配置强随机 JWT_SECRET（>=32 字节）与自定义 SEED_ADMIN_PASSWORD"
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期：启动时建表并种子数据。"""
     logger.info("SOAR API starting...")
+    _check_security_config()
     try:
         _init_db()
     except Exception as exc:  # noqa: BLE001

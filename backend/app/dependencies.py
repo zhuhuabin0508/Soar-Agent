@@ -192,15 +192,32 @@ def require_role(*allowed_roles: str) -> Callable:
     return _checker
 
 
+def _check_matrix_permission(db: Session, user: User, module: str, action: str) -> bool:
+    """按统一口径判定用户是否拥有 ``module:action`` 权限（不抛异常）。
+
+    口径（与 ``/auth/me`` 的 ``_resolve_permissions`` 一致）：
+    1. admin 角色自动通过。
+    2. ``user.role_id`` 关联角色存在且有权限矩阵时，矩阵为**唯一权威口径**，
+       不再 fallback 默认角色——否则前端按矩阵隐藏了菜单而后端仍放行，形成越权。
+    3. 仅当无 role_id（legacy 用户）或关联角色无矩阵时，fallback 到
+       ``DEFAULT_ROLES`` 中 ``user.role`` 对应的权限。
+    """
+    if is_admin(user, db):
+        return True
+    if user.role_id:
+        role = db.query(Role).filter(Role.id == user.role_id).first()
+        if role and role.permissions:
+            return has_permission(migrate_permissions(role.permissions), module, action)
+    for default_role in DEFAULT_ROLES:
+        if default_role["name"] == user.role:
+            return has_permission(default_role["permissions"], module, action)
+    return False
+
+
 def require_permission(module: str, action: str) -> Callable:
     """权限矩阵校验依赖工厂（基于 Role.permissions）。
 
     用法：``Depends(require_permission("user", "edit"))``
-
-    校验逻辑：
-    1. admin 角色自动通过（拥有所有权限）。
-    2. 优先查 ``user.role_id`` 关联的 Role.permissions 矩阵。
-    3. 若无 role_id，fallback 到 ``DEFAULT_ROLES`` 中 ``user.role`` 对应的权限。
 
     Args:
         module: 权限模块名（如 ``"user"`` / ``"workflow"``）。
@@ -214,23 +231,40 @@ def require_permission(module: str, action: str) -> Callable:
         user: User = Depends(get_current_user),
         db: Session = Depends(get_db),
     ) -> User:
-        # admin 角色自动拥有所有权限（含 role_id 指向 admin）
-        if is_admin(user, db):
+        if _check_matrix_permission(db, user, module, action):
             return user
-        # 优先查 role_id 关联的角色权限矩阵
-        if user.role_id:
-            role = db.query(Role).filter(Role.id == user.role_id).first()
-            if role and has_permission(migrate_permissions(role.permissions), module, action):
-                return user
-        # fallback：查 DEFAULT_ROLES 中 user.role 对应的权限
-        for default_role in DEFAULT_ROLES:
-            if default_role["name"] == user.role:
-                if has_permission(default_role["permissions"], module, action):
-                    return user
-                break
         logger.warning(
             "权限不足: uid=%s, username=%s, module=%s, action=%s",
             user.id, user.username, module, action,
+        )
+        raise _FORBIDDEN_EXCEPTION
+
+    return _checker
+
+
+def require_any_permission(*module_action_pairs: tuple[str, str]) -> Callable:
+    """任一 (module, action) 命中即放行的权限校验依赖工厂。
+
+    用于跨模块共享端点（如资产标签同时服务「资产清单」与「类型模板」）：
+    ``Depends(require_any_permission(("asset_list", "view"), ("asset_templates", "view")))``
+
+    Args:
+        module_action_pairs: (模块名, 动作名) 元组列表，任一命中即放行。
+
+    Returns:
+        FastAPI 依赖函数，返回当前用户（已校验权限）。
+    """
+
+    def _checker(
+        user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
+    ) -> User:
+        for module, action in module_action_pairs:
+            if _check_matrix_permission(db, user, module, action):
+                return user
+        logger.warning(
+            "权限不足: uid=%s, username=%s, required_any=%s",
+            user.id, user.username, module_action_pairs,
         )
         raise _FORBIDDEN_EXCEPTION
 

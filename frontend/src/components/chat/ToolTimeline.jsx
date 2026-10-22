@@ -63,7 +63,7 @@ function ToolNode({ tc, idx, total }) {
             ? <Loader2 className="h-2.5 w-2.5 animate-spin text-primary" />
             : isError
             ? <AlertTriangle className="h-2.5 w-2.5 text-destructive" />
-            : <Check className="h-2.5 w-2.5 text-emerald-400" />}
+            : <Check className="h-2.5 w-2.5 text-emerald-500" />}
         </div>
         {/* 连接线 */}
         {!isLast && (
@@ -80,27 +80,27 @@ function ToolNode({ tc, idx, total }) {
           className={`flex w-full items-center gap-2 text-left ${resultStr || tc.message ? 'cursor-pointer' : 'cursor-default'}`}
         >
           {(resultStr || tc.message) && (
-            <ChevronRight className={`h-3 w-3 shrink-0 text-muted-foreground/50 transition-transform ${open ? 'rotate-90' : ''}`} />
+            <ChevronRight className={`h-3 w-3 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`} />
           )}
           <span className="font-mono text-xs text-foreground">{tc.name}</span>
           {timestamp && (
-            <span className="text-[10px] text-muted-foreground/50">{timestamp}</span>
+            <span className="text-[10px] text-muted-foreground">{timestamp}</span>
           )}
           {duration && (
-            <span className="rounded bg-secondary px-1 text-[9px] text-muted-foreground/60">{duration}</span>
+            <span className="rounded bg-secondary px-1 text-[9px] text-muted-foreground">{duration}</span>
           )}
           {tc.message && !resultStr && (
-            <span className="truncate text-[10px] text-muted-foreground/60">{tc.message}</span>
+            <span className="truncate text-[10px] text-muted-foreground">{tc.message}</span>
           )}
           {(resultStr || tc.message) && (
-            <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/50">
+            <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
               {open ? '收起' : '详情'}
             </span>
           )}
         </button>
         {/* 展开详情 */}
         {open && (resultStr || tc.message) && (
-          <div className="mt-1 max-h-48 overflow-y-auto rounded-md border border-border bg-card/80 p-2 font-mono text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap break-words">
+          <div className="mt-1 max-h-48 overflow-y-auto rounded-md border border-border bg-card p-2 font-mono text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap break-words">
             {resultStr || tc.message}
           </div>
         )}
@@ -109,13 +109,14 @@ function ToolNode({ tc, idx, total }) {
   )
 }
 
-export default function ToolTimeline({ toolCalls = [] }) {
+export default function ToolTimeline({ toolCalls = [], embedded = false }) {
   if (!toolCalls.length) return null
+  // embedded：嵌入「执行过程」面板内部使用（外层已提供圆角浅灰底与内边距）
   return (
-    <div className="mt-1.5 rounded-lg border border-border bg-card/30 p-2.5">
-      <div className="mb-1 flex items-center gap-1 text-[10px] text-muted-foreground/60">
+    <div className={embedded ? '' : 'mt-1.5 rounded-lg border border-border bg-card p-2.5'}>
+      <div className="mb-1 flex items-center gap-1 text-[10px] text-muted-foreground">
         <span>执行链路</span>
-        <span className="text-muted-foreground/40">({toolCalls.length} 步)</span>
+        <span className="text-muted-foreground">({toolCalls.length} 步)</span>
       </div>
       <div>
         {toolCalls.map((tc, idx) => (

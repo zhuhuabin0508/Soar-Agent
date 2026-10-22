@@ -74,7 +74,7 @@ function DetailSection({ title, data }) {
   return (
     <div>
       <div className="mb-1.5 text-xs font-medium text-muted-foreground">{title}</div>
-      <pre className="max-h-56 overflow-auto rounded-lg border border-border bg-muted/30 p-3 font-mono text-[11px] leading-relaxed text-foreground/80">
+      <pre className="max-h-56 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-[11px] leading-relaxed text-foreground">
         {typeof data === 'string' ? data : JSON.stringify(data, null, 2)}
       </pre>
     </div>
@@ -215,7 +215,7 @@ export default function BanApprovals({ embedded = false }) {
     {
       key: 'alert_name', header: '告警名称', width: '180px',
       render: (r) => (
-        <button className="max-w-[170px] truncate text-left font-medium text-foreground transition hover:text-primary" title={r.alert_name} onClick={() => openDetail(r)}>
+        <button className="max-w-[170px] truncate text-left font-medium text-foreground transition hover:text-primary" title={r.alert_name} onClick={(e) => { e.stopPropagation(); openDetail(r) }}>
           {r.alert_name || '--'}
         </button>
       ),
@@ -244,7 +244,7 @@ export default function BanApprovals({ embedded = false }) {
     },
     { key: 'status', header: '状态', width: '85px', render: (r) => <Badge variant={TICKET_VARIANT[r.status] || 'neutral'}>{r.status_label}</Badge> },
     {
-      key: 'actions', header: '操作', width: tab === 'pending' && canApprove ? '190px' : (admin ? '110px' : '70px'),
+      key: 'actions', header: '操作', width: tab === 'pending' && canApprove ? '235px' : (admin ? '110px' : '70px'),
       render: (r) => (
         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
           <button className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-primary" title="查看详情" onClick={() => openDetail(r)}>
@@ -278,7 +278,7 @@ export default function BanApprovals({ embedded = false }) {
       {/* Tab + 搜索 */}
       <Card className="mb-4">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1 rounded-lg border border-border bg-muted/40 p-1">
+          <div className="flex items-center gap-1 rounded-lg border border-border bg-muted p-1">
             {TABS.map((tb) => (
               <button
                 key={tb.key}
@@ -317,6 +317,7 @@ export default function BanApprovals({ embedded = false }) {
           loading={loading}
           rowKey={(r) => r.id}
           selectable={false}
+          onRowClick={(r) => openDetail(r)}
           emptyText={tab === 'pending' ? '暂无待审批工单' : '暂无记录'}
           emptyDescription={tab === 'pending' ? '高危境外 IP 将自动封禁，国内 IP 需确认的工单与工作流人工审批节点会出现在这里' : '当前 Tab 暂无工单记录'}
           emptyIcon={Inbox}
@@ -350,7 +351,7 @@ export default function BanApprovals({ embedded = false }) {
         ) : t.isWorkflow ? (
           /* 工作流工单详情：工作流信息 + 告警数据 + 智能体结论 */
           <div className="max-h-[65vh] space-y-4 overflow-y-auto pr-1">
-            <div className="grid grid-cols-2 gap-x-6 gap-y-2 rounded-lg border border-border bg-muted/30 p-3 text-sm lg:grid-cols-3">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-2 rounded-lg border border-border bg-muted p-3 text-sm lg:grid-cols-3">
               <div className="flex items-center gap-1.5"><WorkflowIcon className="h-3.5 w-3.5 text-primary" /><span className="text-muted-foreground">工作流：</span>{t.workflow_name || '--'}</div>
               <div><span className="text-muted-foreground">IP：</span><span className="font-mono font-medium">{t.ip || '--'}</span></div>
               <div><span className="text-muted-foreground">状态：</span>{t.status_label}</div>
@@ -367,7 +368,7 @@ export default function BanApprovals({ embedded = false }) {
         ) : (
           /* 封禁工单详情 */
           <div className="max-h-[65vh] space-y-4 overflow-y-auto pr-1">
-            <div className="grid grid-cols-2 gap-x-6 gap-y-2 rounded-lg border border-border bg-muted/30 p-3 text-sm lg:grid-cols-3">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-2 rounded-lg border border-border bg-muted p-3 text-sm lg:grid-cols-3">
               <div><span className="text-muted-foreground">IP：</span><span className="font-mono font-medium">{t.ip}</span></div>
               <div><span className="text-muted-foreground">风险等级：</span><Badge variant={riskVariant(t.risk_level)}>{t.risk_level || '未知'}</Badge></div>
               <div><span className="text-muted-foreground">建议动作：</span>{ACTION_LABELS[t.action] || t.action || '--'}</div>
@@ -378,15 +379,15 @@ export default function BanApprovals({ embedded = false }) {
               {t.approver && <div><span className="text-muted-foreground">审批人：</span>{t.approver}</div>}
             </div>
             {t.approval_comment && (
-              <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
+              <div className="rounded-lg border border-border bg-muted px-3 py-2 text-sm">
                 <span className="text-muted-foreground">审批意见：</span>{t.approval_comment}
                 {t.approved_at && <span className="ml-2 font-mono text-xs text-muted-foreground">{fmtTime(t.approved_at)}</span>}
               </div>
             )}
             {(t.reasons || []).length > 0 && (
-              <div className="rounded-lg border border-border bg-muted/30 p-3">
+              <div className="rounded-lg border border-border bg-muted p-3">
                 <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><ShieldQuestion className="h-3.5 w-3.5" /> 决策依据</div>
-                <ul className="list-inside list-disc space-y-0.5 text-sm text-foreground/90">
+                <ul className="list-inside list-disc space-y-0.5 text-sm text-foreground">
                   {t.reasons.map((r, i) => <li key={i}>{r}</li>)}
                 </ul>
               </div>

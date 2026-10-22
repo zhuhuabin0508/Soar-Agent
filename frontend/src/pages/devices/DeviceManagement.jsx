@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Shield, Plus, RefreshCw, Download, Upload, Wifi, WifiOff, Files, Columns, CheckSquare,
+  Database, ChevronDown, Activity, Zap, CheckCircle2, FilePlus2,
 } from 'lucide-react'
 import { devices as devicesApi } from '../../api/client'
 import { Modal } from '../../components/Dialog'
@@ -17,8 +18,11 @@ import {
   DEVICE_TYPES,
   DEVICE_TYPE_LABELS,
   STATUS_OPTIONS,
+  STATUS_META,
   fmtRelative,
   fmtTime,
+  fmtNum,
+  numCell,
   parseTags,
   truncate,
 } from './constants'
@@ -31,7 +35,7 @@ import {
   TemplateModal,
 } from './ActionModal'
 import { CallLogsTab } from './CallLogsTab'
-import { ActionTable, DeviceCard, DeviceRow } from './DeviceList'
+import { ActionTable, DeviceCard, DeviceRow, DeviceCardSkeleton, DeviceTableSkeleton, NumCell } from './DeviceList'
 import { DeviceFormModal } from './DeviceModal'
 
 function DeviceManagement() {
@@ -140,6 +144,19 @@ function DeviceManagement() {
 
   // 导入文件 input ref
   const importInputRef = useRef(null)
+  // 头部「数据」下拉菜单（ref + document 监听实现点击外部关闭，不用全屏遮罩避免拦截交互）
+  const [dataMenuOpen, setDataMenuOpen] = useState(false)
+  const dataMenuRef = useRef(null)
+  useEffect(() => {
+    if (!dataMenuOpen) return
+    const onDocMouseDown = (e) => {
+      if (dataMenuRef.current && !dataMenuRef.current.contains(e.target)) {
+        setDataMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDocMouseDown)
+    return () => document.removeEventListener('mousedown', onDocMouseDown)
+  }, [dataMenuOpen])
 
   // 加载设备
   const loadDevices = useCallback(async () => {
@@ -546,6 +563,32 @@ function DeviceManagement() {
     return [{ value: '', label: '全部厂商' }, ...Array.from(set).map((v) => ({ value: v, label: v }))]
   }, [devices])
 
+  // 状态指标统计（指标条用：状态分布 + 动作/调用量汇总）
+  const statusStats = useMemo(() => {
+    const s = { online: 0, offline: 0, abnormal: 0, unconfigured: 0, disabled: 0 }
+    let totalActions = 0
+    let todayCalls = 0
+    devices.forEach((d) => {
+      const st = d.status || (d.enabled ? 'unconfigured' : 'disabled')
+      if (s[st] != null) s[st] += 1
+      totalActions += d.action_count || 0
+      todayCalls += d.today_call_count || 0
+    })
+    return { ...s, total: devices.length, totalActions, todayCalls }
+  }, [devices])
+
+  // 指标条状态 chips 配置（dot/text 色与 STATUS_META 对齐）
+  const statChips = useMemo(
+    () => [
+      { key: 'online', dot: 'bg-success', active: 'bg-success/15 text-success ring-success/40' },
+      { key: 'offline', dot: 'bg-destructive', active: 'bg-destructive/15 text-destructive ring-destructive/40' },
+      { key: 'abnormal', dot: 'bg-warning', active: 'bg-warning/15 text-warning ring-warning/40' },
+      { key: 'unconfigured', dot: 'bg-muted-foreground', active: 'bg-secondary text-foreground ring-border' },
+      { key: 'disabled', dot: 'bg-zinc-500', active: 'bg-zinc-500/15 text-zinc-400 ring-zinc-500/40' },
+    ],
+    []
+  )
+
   // 标签选项
   const tagOptions = useMemo(() => {
     const set = new Set()
@@ -585,11 +628,13 @@ function DeviceManagement() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
-      <header className="flex items-center justify-between gap-4 border-b border-border bg-card/60 px-6 py-4">
-        <div className="flex min-w-0 items-center gap-4">
-          <h1 className="text-xl font-semibold text-foreground">设备对接</h1>
-          {activeTab === 'devices' && (
-            <span className="text-xs text-muted-foreground/70">共 {filteredDevices.length} 台</span>
+      <header className="flex items-center justify-between gap-4 border-b border-border bg-card px-6 py-4">
+        <div className="flex min-w-0 items-baseline gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">设备对接</h1>
+          {activeTab === 'devices' && !loading && (
+            <span className="text-xs text-muted-foreground">
+              共 <span className="font-medium tabular-nums text-foreground">{filteredDevices.length}</span> 台设备
+            </span>
           )}
         </div>
         {activeTab === 'devices' && (
@@ -602,38 +647,9 @@ function DeviceManagement() {
               className="btn-secondary btn-sm"
               title="对所有启用的设备执行健康检查"
             >
-              {healthChecking ? '检查中…' : '健康检查'}
+              <Activity className="mr-1 h-3.5 w-3.5" /> {healthChecking ? '检查中…' : '健康检查'}
             </button>
-            <button type="button" onClick={toggleCheckAll} className="btn-secondary btn-sm" title="全选/取消全选当前列表用于导出">
-               <CheckSquare className="mr-1 h-3.5 w-3.5" /> {checkIds.length ? `已选 ${checkIds.length}` : '全选'}
-            </button>
-            <button
-              type="button"
-              onClick={handleExportSelected}
-              className="btn-secondary btn-sm"
-              title="导出已勾选的设备（含动作）"
-            >
-              <Download className="mr-1 h-3.5 w-3.5" /> 导出所选
-            </button>
-            <button type="button" onClick={() => handleExport()} className="btn-secondary btn-sm" title="导出全部设备（含动作）">
-              <Download className="mr-1 h-3.5 w-3.5" /> 导出全部
-            </button>
-            <button
-              type="button"
-              onClick={() => importInputRef.current?.click()}
-              className="btn-secondary btn-sm"
-              title="导入 JSON"
-            >
-              <Upload className="mr-1 h-3.5 w-3.5" /> 导入
-            </button>
-            <input
-              ref={importInputRef}
-              type="file"
-              accept="application/json,.json"
-              onChange={handleImport}
-              className="hidden"
-            />
-            <button type="button" onClick={loadDevices} className="btn-secondary btn-sm">
+            <button type="button" onClick={loadDevices} className="btn-secondary btn-sm" title="刷新设备列表">
               <RefreshCw className="mr-1 h-3.5 w-3.5" /> 刷新
             </button>
             <button
@@ -644,6 +660,74 @@ function DeviceManagement() {
             >
               <Files className="mr-1 h-3.5 w-3.5" /> 从模板
             </button>
+            {/* 数据操作下拉：全选 / 导入 / 导出（点击外部自动关闭） */}
+            <div className="relative" ref={dataMenuRef}>
+              <button
+                type="button"
+                onClick={() => setDataMenuOpen((v) => !v)}
+                className={`btn-secondary btn-sm ${dataMenuOpen ? 'ring-1 ring-ring' : ''}`}
+                title="数据导入 / 导出"
+              >
+                <Database className="mr-1 h-3.5 w-3.5" /> 数据
+                <ChevronDown className={`ml-1 h-3 w-3 transition-transform ${dataMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {dataMenuOpen && (
+                <div className="absolute right-0 top-full z-50 mt-1.5 w-52 overflow-hidden rounded-lg border border-border bg-popover py-1 shadow-xl shadow-black/20">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        toggleCheckAll()
+                        setDataMenuOpen(false)
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground transition hover:bg-accent"
+                    >
+                      <CheckSquare className="h-3.5 w-3.5 text-muted-foreground" />
+                      {checkIds.length ? `取消全选（已选 ${checkIds.length}）` : '全选当前列表'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleExportSelected()
+                        setDataMenuOpen(false)
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground transition hover:bg-accent"
+                    >
+                      <Download className="h-3.5 w-3.5 text-muted-foreground" />
+                      导出所选{checkIds.length ? `（${checkIds.length} 台）` : ''}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleExport()
+                        setDataMenuOpen(false)
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground transition hover:bg-accent"
+                    >
+                      <Download className="h-3.5 w-3.5 text-muted-foreground" />
+                      导出全部设备
+                    </button>
+                    <div className="my-1 border-t border-border" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        importInputRef.current?.click()
+                        setDataMenuOpen(false)
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground transition hover:bg-accent"
+                    >
+                      <Upload className="h-3.5 w-3.5 text-muted-foreground" />
+                      导入 JSON
+                    </button>
+                  </div>
+              )}
+            </div>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept="application/json,.json"
+              onChange={handleImport}
+              className="hidden"
+            />
             <button
               type="button"
               onClick={() => navigate('/device-onboard')}
@@ -656,7 +740,7 @@ function DeviceManagement() {
       </header>
 
       {/* Tab 切换 */}
-      <div className="flex items-center gap-1 border-b border-border bg-card/30 px-6">
+      <div className="flex items-center gap-1 border-b border-border bg-card px-6">
         <button
           type="button"
           onClick={() => setActiveTab('devices')}
@@ -689,7 +773,7 @@ function DeviceManagement() {
         ) : (
           <div className="flex h-full flex-col overflow-hidden">
             {/* 工具栏：筛选器 + 视图切换 */}
-            <div className="border-b border-border bg-card/30 px-6 py-3">
+            <div className="border-b border-border bg-card px-6 py-3">
               <FilterBar
                 search={{
                   value: filters.search,
@@ -731,6 +815,60 @@ function DeviceManagement() {
                 ]}
                 actions={viewModeButtons}
               />
+              {/* 状态指标条：状态分布（点击快速筛选）+ 汇总指标 */}
+              {!loading && (
+                <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-3">
+                  {statChips.map((chip) => {
+                    const active = filters.status === chip.key
+                    const count = statusStats[chip.key] || 0
+                    return (
+                      <button
+                        key={chip.key}
+                        type="button"
+                        onClick={() => setFilters({ status: active ? '' : chip.key })}
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all duration-200 ${
+                          active
+                            ? `border-transparent ring-1 ${chip.active}`
+                            : 'border-border bg-secondary text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                        }`}
+                        title={active ? '点击取消该状态筛选' : `点击筛选「${STATUS_META[chip.key].label}」设备`}
+                      >
+                        <span
+                          className={`h-1.5 w-1.5 rounded-full ${chip.dot} ${
+                            chip.key === 'online' && count > 0 ? 'animate-pulse' : ''
+                          }`}
+                        />
+                        {STATUS_META[chip.key].label}
+                        <span className={`tabular-nums ${count > 0 ? '' : 'text-muted-foreground'}`}>{count}</span>
+                      </button>
+                    )
+                  })}
+                  <div className="ml-auto flex items-center gap-4 text-xs text-muted-foreground">
+                    <span className="inline-flex items-center gap-1.5" title="全部设备的动作总数">
+                      <Zap className="h-3.5 w-3.5 text-primary/80" />
+                      动作
+                      <span
+                        className={`font-semibold tabular-nums ${
+                          statusStats.totalActions > 0 ? 'text-foreground' : 'text-muted-foreground'
+                        }`}
+                      >
+                        {fmtNum(statusStats.totalActions) ?? '--'}
+                      </span>
+                    </span>
+                    <span className="inline-flex items-center gap-1.5" title="全部设备今日 API 调用总次数">
+                      <Activity className="h-3.5 w-3.5 text-primary/80" />
+                      今日调用
+                      <span
+                        className={`font-semibold tabular-nums ${
+                          statusStats.todayCalls > 0 ? 'text-foreground' : 'text-muted-foreground'
+                        }`}
+                      >
+                        {fmtNum(statusStats.todayCalls) ?? '--'}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* 内容区 */}
@@ -742,18 +880,59 @@ function DeviceManagement() {
               )}
 
               {loading ? (
-                <div className="flex h-40 items-center justify-center text-sm text-muted-foreground/70">
-                  加载中...
-                </div>
+                // 骨架屏加载（按当前视图模式匹配）
+                viewMode === 'table' ? (
+                  <div className="h-full overflow-y-auto p-6">
+                    <DeviceTableSkeleton />
+                  </div>
+                ) : (
+                  <div className="h-full overflow-y-auto p-6">
+                    <div className="flex flex-col gap-3">
+                      {[0, 1, 2].map((i) => (
+                        <DeviceCardSkeleton key={i} />
+                      ))}
+                    </div>
+                  </div>
+                )
               ) : filteredDevices.length === 0 ? (
-                <div className="flex h-60 flex-col items-center justify-center gap-2 text-muted-foreground/70">
-                  <Shield className="h-10 w-10" />
-                  <div className="text-sm">暂无安全设备，点击右上角「新建设备」</div>
+                <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-border bg-card">
+                    <Shield className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <div className="text-sm">
+                    {devices.length === 0 ? '暂无安全设备，接入第一台设备开始自动化编排' : '没有符合筛选条件的设备'}
+                  </div>
+                  {devices.length === 0 ? (
+                    <div className="mt-1 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => navigate('/device-onboard')}
+                        className="btn-primary btn-sm"
+                      >
+                        <Plus className="mr-1 h-3.5 w-3.5" /> 新建设备
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleOpenTemplate}
+                        className="btn-secondary btn-sm"
+                      >
+                        <FilePlus2 className="mr-1 h-3.5 w-3.5" /> 从模板创建
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setFilters({ search: '', type: '', vendor: '', status: '', tag: '' })}
+                      className="btn-secondary btn-sm mt-1"
+                    >
+                      清除筛选条件
+                    </button>
+                  )}
                 </div>
               ) : viewMode === 'split' ? (
                 // 分栏视图：左设备列表 + 右详情
                 <div className="flex h-full">
-                  <div className="w-80 shrink-0 overflow-y-auto border-r border-border bg-card/30">
+                  <div className="w-80 shrink-0 overflow-y-auto border-r border-border bg-card">
                     {filteredDevices.map((dev) => (
                       <DeviceRow
                         key={dev.id}
@@ -771,7 +950,7 @@ function DeviceManagement() {
                     {selectedDevice ? (
                       <div className="flex flex-col gap-4">
                         {/* 设备详情 */}
-                        <div className="rounded-lg border border-border bg-card/40 p-4">
+                        <div className="rounded-lg border border-border bg-card p-4">
                           <div className="mb-3 flex items-center gap-3">
                             <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/15 text-primary">
                               <DeviceTypeIcon type={selectedDevice.type} className="h-5 w-5" />
@@ -788,7 +967,7 @@ function DeviceManagement() {
                                   }
                                 />
                               </div>
-                              <div className="mt-0.5 text-xs text-muted-foreground/70">
+                              <div className="mt-0.5 text-xs text-muted-foreground">
                                 #{selectedDevice.id} · {DEVICE_TYPE_LABELS[selectedDevice.type]} ·{' '}
                                 {selectedDevice.vendor || '未知厂商'}
                               </div>
@@ -821,18 +1000,18 @@ function DeviceManagement() {
                           </div>
                           <div className="grid grid-cols-2 gap-3 text-xs lg:grid-cols-5">
                             <div>
-                              <div className="text-muted-foreground/70">设备 IP</div>
+                              <div className="text-muted-foreground">设备 IP</div>
                               <div
                                 className="truncate text-foreground"
                                 title={selectedDevice.ip_address}
                               >
                                 {selectedDevice.ip_address || (
-                                  <span className="text-muted-foreground/50">—</span>
+                                  <span className="text-muted-foreground">—</span>
                                 )}
                               </div>
                             </div>
                             <div>
-                              <div className="text-muted-foreground/70">API 地址</div>
+                              <div className="text-muted-foreground">API 地址</div>
                               <div
                                 className="truncate text-foreground"
                                 title={selectedDevice.api_url}
@@ -843,19 +1022,19 @@ function DeviceManagement() {
                               </div>
                             </div>
                             <div>
-                              <div className="text-muted-foreground/70">动作数</div>
-                              <div className="text-foreground">
-                                {selectedDevice.action_count ?? '-'}
+                              <div className="text-muted-foreground">动作数</div>
+                              <div className="mt-0.5">
+                                <NumCell value={selectedDevice.action_count} title="未统计动作数" />
                               </div>
                             </div>
                             <div>
-                              <div className="text-muted-foreground/70">今日调用</div>
-                              <div className="text-foreground">
-                                {selectedDevice.today_call_count ?? 0}
+                              <div className="text-muted-foreground">今日调用</div>
+                              <div className="mt-0.5">
+                                <NumCell value={selectedDevice.today_call_count} title="今日暂无调用" />
                               </div>
                             </div>
                             <div>
-                              <div className="text-muted-foreground/70">最后心跳</div>
+                              <div className="text-muted-foreground">最后心跳</div>
                               <div
                                 className="text-foreground"
                                 title={fmtTime(selectedDevice.last_heartbeat)}
@@ -867,7 +1046,7 @@ function DeviceManagement() {
                         </div>
 
                         {/* 动作列表 */}
-                        <div className="rounded-lg border border-border bg-card/40 p-4">
+                        <div className="rounded-lg border border-border bg-card p-4">
                           <div className="mb-3 flex items-center justify-between">
                             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                               设备动作（{loadingActions ? '...' : (actionsMap[selectedDevice.id] || []).length} 个）
@@ -893,7 +1072,7 @@ function DeviceManagement() {
                         </div>
                       </div>
                     ) : (
-                      <div className="flex h-60 flex-col items-center justify-center gap-2 text-muted-foreground/70">
+                      <div className="flex h-60 flex-col items-center justify-center gap-2 text-muted-foreground">
                         <Columns className="h-10 w-10" />
                         <div className="text-sm">请从左侧选择一个设备查看详情</div>
                       </div>
@@ -904,7 +1083,7 @@ function DeviceManagement() {
                 // 列表视图
                 <div className="h-full overflow-y-auto p-6">
                   <div className="overflow-hidden rounded-lg border border-border">
-                    <table className="w-full min-w-[1000px] table-fixed border-collapse text-sm">
+                    <table className="table-stagger w-full min-w-[1000px] table-fixed border-collapse text-sm">
                       <thead className="bg-card text-muted-foreground">
                         <tr>
                           <th className="w-16 px-4 py-3 text-left font-medium">ID</th>
@@ -923,8 +1102,8 @@ function DeviceManagement() {
                         {filteredDevices.map((dev, idx) => (
                           <tr
                             key={dev.id}
-                            className={`border-t border-border hover:bg-primary/5 ${
-                              idx % 2 === 0 ? 'bg-card/30' : ''
+                            className={`table-row-hover border-t border-border hover:bg-accent ${
+                              idx % 2 === 0 ? 'bg-card' : ''
                             }`}
                           >
                             <td className="px-4 py-3 font-mono text-primary">#{dev.id}</td>
@@ -950,11 +1129,11 @@ function DeviceManagement() {
                                 status={dev.status || (dev.enabled ? 'unconfigured' : 'disabled')}
                               />
                             </td>
-                            <td className="px-4 py-3 text-right font-mono text-foreground">
-                              {dev.action_count ?? '-'}
+                            <td className="px-4 py-3 text-right">
+                              <NumCell value={dev.action_count} title="未统计动作数" />
                             </td>
-                            <td className="px-4 py-3 text-right font-mono text-foreground">
-                              {dev.today_call_count ?? 0}
+                            <td className="px-4 py-3 text-right">
+                              <NumCell value={dev.today_call_count} title="今日暂无调用" />
                             </td>
                             <td
                               className="px-4 py-3 text-[11px] text-muted-foreground"
@@ -1000,7 +1179,7 @@ function DeviceManagement() {
               ) : (
                 // 卡片视图（默认）
                 <div className="h-full overflow-y-auto p-6">
-                  <div className="flex flex-col gap-3">
+                  <div className="card-stagger flex flex-col gap-3">
                     {filteredDevices.map((dev) => (
                       <DeviceCard
                         key={dev.id}
@@ -1127,7 +1306,7 @@ function DeviceManagement() {
             </div>
             {testConnResult.error && (
               <div>
-                <div className="mb-1 text-xs text-muted-foreground/70">错误信息</div>
+                <div className="mb-1 text-xs text-muted-foreground">错误信息</div>
                 <pre className="overflow-auto rounded-md bg-background p-3 font-mono text-xs text-destructive ring-1 ring-border">
                   {testConnResult.error}
                 </pre>
@@ -1135,7 +1314,7 @@ function DeviceManagement() {
             )}
           </div>
         ) : (
-          <div className="text-sm text-muted-foreground/70">测试中...</div>
+          <div className="text-sm text-muted-foreground">测试中...</div>
         )}
       </Modal>
 

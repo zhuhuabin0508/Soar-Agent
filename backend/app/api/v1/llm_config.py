@@ -313,10 +313,16 @@ def trigger_health_check(request: Request, db: Session = Depends(get_db)) -> dic
     return {"ok": True, **result}
 
 
-@router.get("/{config_id}/api-key", summary="查看 API Key 明文（审计记录）", dependencies=[Depends(require_permission("llm_config", "view"))])
+@router.get(
+    "/{config_id}/api-key",
+    summary="查看 API Key 明文（审计记录）",
+    dependencies=[Depends(require_role("admin"))],
+)
 def reveal_api_key(config_id: int, request: Request, db: Session = Depends(get_db)) -> dict:
     """返回指定配置的完整 API Key（仅管理员）。
 
+    鉴权：明文密钥属最高敏感级别，仅 admin 角色可查看
+    （``llm_config:view`` 默认 viewer 也持有，不足以保护密钥）。
     每次调用都会记录审计日志（谁在何时从哪个 IP 查看了明文 Key）。
     """
     logger.info("查看 API Key 明文: config_id=%s", config_id)
@@ -346,6 +352,16 @@ def test_llm_config(config_id: int, db: Session = Depends(get_db)) -> dict:
     cfg = db.query(LLMConfig).filter(LLMConfig.id == config_id).first()
     if cfg is None:
         raise HTTPException(status_code=404, detail="配置不存在")
+    # SSRF 防护：自定义 base_url 需通过出站校验（协议白名单 + 云元数据黑名单）
+    if cfg.base_url:
+        try:
+            from app.core.security import validate_outbound_url
+
+            validate_outbound_url(cfg.base_url, field="base_url")
+        except ValueError as exc:
+            _update_health(db, config_id, "unhealthy", str(exc))
+            db.commit()
+            return {"success": False, "error": str(exc), "model": cfg.model_name}
     try:
         provider = (cfg.provider or "anthropic").lower()
         # 清理 api_key：去除首尾空白与换行（常见于复制粘贴引入）

@@ -1,40 +1,15 @@
-// 解析模板列表页：统计卡片 + 模板表格（启停开关 / 编辑 / 测试 / 删除）
+// 解析模板列表页：状态指标条 + 模板表格（启停开关 / 编辑 / 测试 / 删除）
 // 「今日解析量」为 0 时给出原因提示（暂无条目引用 / 模板已停用 / 今日暂无日志到达）
 // 「今日失败数」可点击打开错误抽屉，按模板过滤查看失败样本原文
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, FlaskConical, Pencil, Trash2, ShieldAlert, Activity, Layers, Inbox, FileJson, Download, Upload, X } from 'lucide-react'
+import { Plus, FlaskConical, Pencil, Trash2, ShieldAlert, Activity, Layers, Inbox, FileJson, Download, Upload, RefreshCw } from 'lucide-react'
 import { toast } from '../store/toastStore'
 import { confirm } from '../components/ConfirmDialog'
 import { Modal, Drawer } from '../components/Dialog'
-import { inputBaseCls } from '../components/property/FormControls'
-import { Button, PageContainer, PageHeader, Card, DataTable, Badge, EmptyState, Sparkline } from '../components/ui'
+import { Button, DataTable, Badge, EmptyState, Sparkline } from '../components/ui'
 import { hasPermission } from '../utils/permissions'
 import strategyApi from '../api/strategy'
-
-// 统计卡片（紧凑布局，数值 tabular-nums；clickable 点击下钻筛选列表；spark 24h 迷你趋势线）
-function StatCard({ icon: Icon, label, value, sub, onClick, clickable, title, active, spark }) {
-  return (
-    <div
-      className={`card flex items-center gap-3 px-5 py-4 ${clickable ? `cursor-pointer transition hover:border-primary/40 hover:shadow-md ${active ? 'border-primary/40 ring-1 ring-primary/20' : ''}` : ''}`}
-      onClick={clickable ? onClick : undefined}
-      role={clickable ? 'button' : undefined}
-      title={clickable ? (title || '点击查看') : undefined}
-    >
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-        <Icon className="h-[18px] w-[18px]" />
-      </div>
-      <div className="min-w-0">
-        <div className="truncate text-xs text-muted-foreground">{label}</div>
-        <div className="mt-0.5 flex items-baseline gap-1.5">
-          <span className="text-xl font-semibold tabular-nums text-foreground">{value}</span>
-          {sub && <span className="text-[11px] text-muted-foreground">{sub}</span>}
-        </div>
-      </div>
-      {spark && <Sparkline data={spark} className="ml-auto text-primary/60" />}
-    </div>
-  )
-}
 
 // 启停开关（仅点击开关本身生效）
 function StatusToggle({ checked, disabled, onChange }) {
@@ -46,7 +21,7 @@ function StatusToggle({ checked, disabled, onChange }) {
       disabled={disabled}
       onClick={(e) => { e.stopPropagation(); if (!disabled) onChange(!checked) }}
       className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-        checked ? 'bg-primary' : 'bg-muted-foreground/30'
+        checked ? 'bg-primary' : 'bg-input'
       } ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:opacity-80'}`}
       title={checked ? '点击停用' : '点击启用'}
     >
@@ -60,6 +35,13 @@ function StatusToggle({ checked, disabled, onChange }) {
 }
 
 const fmtTime = (t) => (t ? String(t).replace('T', ' ').slice(0, 19) : '-')
+
+// 状态指标 chips：圆点色 + 激活态配色（启用=绿 / 停用=灰 / 今日有解析=主题色）
+const STATUS_CHIPS = [
+  { key: 'enabled', label: '启用', dot: 'bg-success', active: 'bg-success/15 text-success ring-success/40' },
+  { key: 'disabled', label: '停用', dot: 'bg-zinc-500', active: 'bg-zinc-500/15 text-zinc-400 ring-zinc-500/40' },
+  { key: 'today_active', label: '今日有解析', dot: 'bg-primary', active: 'bg-primary/15 text-primary ring-primary/40' },
+]
 
 export default function StrategyList() {
   const navigate = useNavigate()
@@ -94,11 +76,17 @@ export default function StrategyList() {
   const [importing, setImporting] = useState(false)
   const fileInputRef = useRef(null)
 
-  // 统计卡片下钻筛选：''=全部 enabled=启用 today_active=今日有解析量
+  // 快捷筛选 chips：''=全部 enabled=启用 disabled=停用 today_active=今日有解析量
   const [cardFilter, setCardFilter] = useState('')
-  const CARD_FILTER_LABELS = { enabled: '启用模板', today_active: '今日有解析量' }
+  // 指标统计：从现有 list 派生（不新增 API 请求）
+  const listStats = useMemo(() => ({
+    enabled: list.filter((r) => r.status === 'enabled').length,
+    disabled: list.filter((r) => r.status !== 'enabled').length,
+    todayActive: list.filter((r) => (r.today_total ?? 0) > 0).length,
+  }), [list])
   const filteredList = useMemo(() => {
     if (cardFilter === 'enabled') return list.filter((r) => r.status === 'enabled')
+    if (cardFilter === 'disabled') return list.filter((r) => r.status !== 'enabled')
     if (cardFilter === 'today_active') return list.filter((r) => (r.today_total ?? 0) > 0)
     return list
   }, [list, cardFilter])
@@ -241,7 +229,7 @@ export default function StrategyList() {
       render: (r) => (
         <button
           className="flex items-center gap-2 text-left transition hover:text-primary"
-          onClick={() => navigate(`/strategies/${r.id}/edit`)}
+          onClick={(e) => { e.stopPropagation(); navigate(`/strategies/${r.id}/edit`) }}
           title={r.has_draft ? `${r.strategy_name}（存在未发布草稿）` : r.strategy_name}
         >
           <FileJson className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -279,9 +267,9 @@ export default function StrategyList() {
       key: 'entry_count', header: '引用条目数', width: '120px', numeric: true,
       render: (r) => (
         <div className="min-w-0">
-          <span className={`tabular-nums ${(r.entry_count ?? 0) > 0 ? '' : 'text-muted-foreground/50'}`}>{(r.entry_count ?? 0).toLocaleString()}</span>
+          <span className={`tabular-nums ${(r.entry_count ?? 0) > 0 ? '' : 'text-muted-foreground'}`}>{(r.entry_count ?? 0).toLocaleString()}</span>
           {(r.receiver_count ?? 0) > 0 && (
-            <div className="text-[10px] leading-tight text-muted-foreground/70" title={`另有 ${r.receiver_count} 个接收器将其设为默认模板`}>
+            <div className="text-[10px] leading-tight text-muted-foreground" title={`另有 ${r.receiver_count} 个接收器将其设为默认模板`}>
               另 {r.receiver_count} 接收器默认
             </div>
           )}
@@ -301,8 +289,8 @@ export default function StrategyList() {
             : '今日暂无日志到达'
         return (
           <div>
-            <span className="tabular-nums text-muted-foreground/50">0</span>
-            <div className="text-[10px] leading-tight text-muted-foreground/70" title={reason}>{reason}</div>
+            <span className="tabular-nums text-muted-foreground">0</span>
+            <div className="text-[10px] leading-tight text-muted-foreground" title={reason}>{reason}</div>
           </div>
         )
       },
@@ -324,7 +312,7 @@ export default function StrategyList() {
             </button>
           )
         }
-        return <span className="tabular-nums text-muted-foreground/50">0</span>
+        return <span className="tabular-nums text-muted-foreground">0</span>
       },
     },
     {
@@ -345,40 +333,44 @@ export default function StrategyList() {
     },
     { key: 'updated_at', header: '更新时间', width: '150px', render: (r) => <span className="tabular-nums text-muted-foreground">{fmtTime(r.updated_at)}</span> },
     {
-      key: 'actions', header: '操作', width: '190px',
+      key: 'actions', header: '操作', width: '215px',
       render: (r) => (
         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
           <button
-            className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-primary"
+            type="button"
+            className="btn-secondary btn-sm"
             title="测试解析"
             onClick={() => navigate(`/strategies/${r.id}/edit?tab=test`)}
           >
-            <FlaskConical className="h-4 w-4" />
+            <FlaskConical className="h-3.5 w-3.5" />
           </button>
           <button
-            className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-primary"
+            type="button"
+            className="btn-secondary btn-sm"
             title="导出为 JSON 文件"
             onClick={() => handleExport(r)}
           >
-            <Download className="h-4 w-4" />
+            <Download className="h-3.5 w-3.5" />
           </button>
           {canEdit && (
             <button
-              className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-primary"
+              type="button"
+              className="btn-secondary btn-sm"
               title="编辑"
               onClick={() => navigate(`/strategies/${r.id}/edit`)}
             >
-              <Pencil className="h-4 w-4" />
+              <Pencil className="h-3.5 w-3.5" />
             </button>
           )}
           {canDelete && (
             <button
-              className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-destructive"
+              type="button"
+              className="btn-danger btn-sm"
               title="删除"
               disabled={deletingId === r.id}
               onClick={() => handleDelete(r)}
             >
-              <Trash2 className="h-4 w-4" />
+              <Trash2 className="h-3.5 w-3.5" />
             </button>
           )}
         </div>
@@ -387,85 +379,144 @@ export default function StrategyList() {
   ]
 
   return (
-    <PageContainer>
-      <PageHeader
-        title="解析模板"
-        description="管理解析模板：路由匹配、字段映射、枚举翻译与校验规则，由数据源条目或接收器引用后生效，配置即接入无需改代码"
-        actions={canEdit && (
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" onClick={() => { setImportOpen(true); setImportParsed(null) }}>
-              <Upload className="h-4 w-4" /> 导入模板
-            </Button>
-            <Button variant="primary" onClick={() => navigate('/strategies/new')}>
-              <Plus className="h-4 w-4" /> 新建模板
-            </Button>
-          </div>
-        )}
-      />
-
-      {/* 顶部统计卡片（可点击下钻：筛选列表 / 打开错误队列） */}
-      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard
-          icon={Layers}
-          label="启用模板数"
-          value={stats?.enabled_count ?? 0}
-          sub={`/ 共 ${stats?.strategy_count ?? 0} 个`}
-          clickable
-          active={cardFilter === 'enabled'}
-          title="筛选启用中的模板（点击查看）"
-          onClick={() => setCardFilter((v) => (v === 'enabled' ? '' : 'enabled'))}
-        />
-        <StatCard icon={Activity} label="接入设备类型数" value={stats?.device_type_count ?? 0} />
-        <StatCard
-          icon={FileJson}
-          label="今日总解析量"
-          value={stats?.today_total ?? 0}
-          spark={stats?.trend_24h}
-          clickable
-          active={cardFilter === 'today_active'}
-          title="筛选今日有解析量的模板（点击查看）"
-          onClick={() => setCardFilter((v) => (v === 'today_active' ? '' : 'today_active'))}
-        />
-        <StatCard
-          icon={ShieldAlert}
-          label="今日无匹配模板告警"
-          value={stats?.today_no_match ?? 0}
-          clickable
-          title="查看无匹配模板的错误队列（点击查看）"
-          onClick={() => openErrorDrawer('no_strategy_matched')}
-        />
-      </div>
-
-      {/* 模板表格 */}
-      <Card className="p-0" bodyClassName="p-0">
-        {cardFilter && (
-          <div className="flex items-center justify-end border-b border-border px-4 py-2">
-            <button
-              type="button"
-              onClick={() => setCardFilter('')}
-              title="清除筛选，显示全部模板"
-              className="flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs text-primary transition hover:bg-primary/20"
-            >
-              筛选：{CARD_FILTER_LABELS[cardFilter]} · {filteredList.length}/{list.length}
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-        )}
-        <DataTable
-          columns={columns}
-          data={filteredList}
-          loading={loading}
-          rowKey="id"
-          emptyText="暂无解析模板"
-          emptyDescription="新建模板后，数据源条目或接收器即可引用，设备日志按模板解析入库"
-          emptyIcon={FileJson}
-          emptyAction={canEdit && (
-            <Button variant="primary" size="sm" onClick={() => navigate('/strategies/new')}>
-              <Plus className="h-4 w-4" /> 新建模板
-            </Button>
+    <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
+      <header className="flex items-center justify-between gap-4 border-b border-border bg-card px-6 py-4">
+        <div className="flex min-w-0 items-baseline gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">解析模板</h1>
+          {!loading && (
+            <span className="text-xs text-muted-foreground">
+              共 <span className="font-medium tabular-nums text-foreground">{filteredList.length}</span> 个模板
+            </span>
           )}
-        />
-      </Card>
+          <span className="hidden text-xs text-muted-foreground xl:inline">路由匹配 · 字段映射 · 枚举翻译 · 校验规则</span>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <button type="button" onClick={load} className="btn-secondary btn-sm" title="刷新模板列表">
+            <RefreshCw className={`mr-1 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> 刷新
+          </button>
+          {canEdit && (
+            <>
+              <button
+                type="button"
+                onClick={() => { setImportOpen(true); setImportParsed(null) }}
+                className="btn-secondary btn-sm"
+                title="从 JSON 文件导入模板"
+              >
+                <Upload className="mr-1 h-3.5 w-3.5" /> 导入模板
+              </button>
+              <button type="button" onClick={() => navigate('/strategies/new')} className="btn-primary btn-sm">
+                <Plus className="mr-1 h-3.5 w-3.5" /> 新建模板
+              </button>
+            </>
+          )}
+        </div>
+      </header>
+
+      <div className="flex-1 overflow-y-auto p-6">
+        {/* 状态指标条：启停分布（点击快速筛选，再点取消）+ 汇总指标 */}
+        {!loading && list.length > 0 && (
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            {STATUS_CHIPS.map((chip) => {
+              const active = cardFilter === chip.key
+              const count = listStats[chip.key] || 0
+              return (
+                <button
+                  key={chip.key} type="button"
+                  onClick={() => setCardFilter(active ? '' : chip.key)}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all duration-200 ${
+                    active
+                      ? `border-transparent ring-1 ${chip.active}`
+                      : 'border-border bg-secondary text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                  }`}
+                  title={active ? '点击取消该筛选' : `点击筛选「${chip.label}」的模板`}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${chip.dot} ${
+                      chip.key === 'enabled' && count > 0 ? 'animate-pulse' : ''
+                    }`}
+                  />
+                  {chip.label}
+                  <span className={`tabular-nums ${count > 0 ? '' : 'text-muted-foreground'}`}>{count.toLocaleString()}</span>
+                </button>
+              )
+            })}
+            <div className="ml-auto flex items-center gap-4 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5" title="已接入的设备类型数量">
+                <Layers className="h-3.5 w-3.5 text-primary/80" />
+                设备类型
+                <span
+                  className={`font-semibold tabular-nums ${
+                    (stats?.device_type_count ?? 0) > 0 ? 'text-foreground' : 'text-muted-foreground'
+                  }`}
+                >
+                  {(stats?.device_type_count ?? 0) > 0 ? stats.device_type_count.toLocaleString() : '--'}
+                </span>
+              </span>
+              <span className="inline-flex items-center gap-1.5" title="全部模板今日解析总量（含近 24 小时趋势）">
+                <Activity className="h-3.5 w-3.5 text-primary/80" />
+                今日解析
+                <span
+                  className={`font-semibold tabular-nums ${
+                    (stats?.today_total ?? 0) > 0 ? 'text-foreground' : 'text-muted-foreground'
+                  }`}
+                >
+                  {(stats?.today_total ?? 0) > 0 ? stats.today_total.toLocaleString() : '--'}
+                </span>
+                {(stats?.trend_24h?.length || 0) > 0 && (
+                  <Sparkline data={stats.trend_24h} className="text-primary/60" />
+                )}
+              </span>
+              <button
+                type="button"
+                onClick={() => openErrorDrawer('no_strategy_matched')}
+                className="inline-flex items-center gap-1.5 transition hover:text-foreground"
+                title="查看无匹配模板的错误队列"
+              >
+                <ShieldAlert className={`h-3.5 w-3.5 ${(stats?.today_no_match ?? 0) > 0 ? 'text-destructive/80' : 'text-primary/80'}`} />
+                无匹配告警
+                <span
+                  className={`font-semibold tabular-nums ${
+                    (stats?.today_no_match ?? 0) > 0 ? 'text-destructive' : 'text-muted-foreground'
+                  }`}
+                >
+                  {(stats?.today_no_match ?? 0) > 0 ? stats.today_no_match.toLocaleString() : '--'}
+                </span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 模板表格 */}
+        <div className="overflow-hidden rounded-lg border border-border">
+          <DataTable
+            className="table-stagger"
+            columns={columns}
+            data={filteredList}
+            loading={loading}
+            rowKey="id"
+            onRowClick={(r) => navigate(`/strategies/${r.id}/edit`)}
+            rowClickHint="点击编辑"
+            emptyText={list.length === 0 ? '暂无解析模板' : '未找到匹配的解析模板'}
+            emptyDescription={
+              list.length === 0
+                ? '新建模板后，数据源条目或接收器即可引用，设备日志按模板解析入库'
+                : '点击上方指标重新筛选，或清除筛选查看全部模板'
+            }
+            emptyIcon={FileJson}
+            emptyAction={list.length === 0 ? (
+              canEdit && (
+                <button type="button" onClick={() => navigate('/strategies/new')} className="btn-primary btn-sm">
+                  <Plus className="mr-1 h-3.5 w-3.5" /> 新建模板
+                </button>
+              )
+            ) : (
+              <button type="button" onClick={() => setCardFilter('')} className="btn-secondary btn-sm">
+                清除筛选
+              </button>
+            )}
+          />
+        </div>
+      </div>
 
       {/* 模板导入弹窗：选择 JSON 文件 → 结构预览 → 确认导入（后端校验 + 冲突自动重命名） */}
       <Modal
@@ -497,7 +548,7 @@ export default function StrategyList() {
             />
           </label>
           {importParsed && (
-            <div className="rounded-lg border border-border bg-card/60 px-4 py-3">
+            <div className="rounded-lg border border-border bg-card px-4 py-3">
               <div className="text-xs text-muted-foreground">
                 已识别 <span className="font-medium text-foreground">{importParsed.count}</span> 个模板：
               </div>
@@ -509,7 +560,7 @@ export default function StrategyList() {
                   </li>
                 ))}
               </ul>
-              <div className="mt-2 text-xs text-muted-foreground/70">与现有模板同名时将自动重命名（追加「(导入N)」后缀）；结构非法将整体拒绝。</div>
+              <div className="mt-2 text-xs text-muted-foreground">与现有模板同名时将自动重命名（追加「(导入N)」后缀）；结构非法将整体拒绝。</div>
             </div>
           )}
         </div>
@@ -541,6 +592,8 @@ export default function StrategyList() {
           <DataTable
             rowKey="id"
             data={errors}
+            onRowClick={(r) => setSampleView(r)}
+            rowClickHint="点击查看样例"
             columns={[
               { key: 'uuid', header: 'UUID', width: '170px', render: (r) => <span className="truncate text-muted-foreground">{r.uuid || '-'}</span> },
               { key: 'error_type', header: '错误类型', width: '150px', render: (r) => <Badge variant="danger">{r.error_type}</Badge> },
@@ -604,7 +657,7 @@ export default function StrategyList() {
                     onClick={() => applyDrillReason(k)}
                   >
                     {drillData.reason_labels?.[k] || k}
-                    <span className={`ml-1.5 tabular-nums ${n > 0 ? (k === 'no_template' || k === 'other' ? 'text-destructive' : 'text-warning') : 'text-muted-foreground/50'}`}>
+                    <span className={`ml-1.5 tabular-nums ${n > 0 ? (k === 'no_template' || k === 'other' ? 'text-destructive' : 'text-warning') : 'text-muted-foreground'}`}>
                       {n.toLocaleString()}
                     </span>
                   </button>
@@ -619,7 +672,7 @@ export default function StrategyList() {
               <div className="overflow-hidden rounded-lg border border-border">
                 <table className="w-full border-collapse text-xs">
                   <thead>
-                    <tr className="border-b border-border bg-muted/50 text-left text-muted-foreground">
+                    <tr className="border-b border-border bg-muted text-left text-muted-foreground">
                       <th className="px-2 py-2 font-semibold">失败原因</th>
                       <th className="px-2 py-2 font-semibold">错误类型</th>
                       <th className="px-2 py-2 font-semibold">错误信息</th>
@@ -629,7 +682,7 @@ export default function StrategyList() {
                   </thead>
                   <tbody>
                     {drillData.items.map((it) => (
-                      <tr key={it.id} className="border-b border-border/40 transition last:border-0 hover:bg-accent/30">
+                      <tr key={it.id} className="border-b border-border transition last:border-0 hover:bg-accent">
                         <td className="px-2 py-2"><Badge variant="danger">{it.reason_label}</Badge></td>
                         <td className="px-2 py-2 font-mono text-muted-foreground">{it.error_type || '-'}</td>
                         <td className="max-w-[260px] truncate px-2 py-2 text-muted-foreground" title={it.error_msg}>{it.error_msg || '-'}</td>
@@ -666,11 +719,11 @@ export default function StrategyList() {
             <Badge variant="danger">{sampleView?.error_type}</Badge>
             <span className="min-w-0 flex-1 break-all">{sampleView?.error_msg}</span>
           </div>
-          <pre className="max-h-[420px] overflow-auto rounded-md border border-border bg-muted/40 p-3 font-mono text-xs leading-relaxed break-all whitespace-pre-wrap">
+          <pre className="max-h-[420px] overflow-auto rounded-md border border-border bg-muted p-3 font-mono text-xs leading-relaxed break-all whitespace-pre-wrap">
             {sampleView?.raw_data || '（无原始数据）'}
           </pre>
         </div>
       </Modal>
-    </PageContainer>
+    </div>
   )
 }

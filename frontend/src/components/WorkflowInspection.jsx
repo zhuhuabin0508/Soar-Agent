@@ -91,11 +91,11 @@ function logLevelClass(level) {
 // 紧凑统计卡片（适配窄面板）
 function StatCard({ label, value, suffix, accent }) {
   return (
-    <div className="rounded-lg border border-border bg-card/60 p-2.5">
+    <div className="rounded-lg border border-border bg-card p-2.5">
       <div className="text-[10px] text-muted-foreground">{label}</div>
       <div className="mt-1 flex items-baseline gap-0.5">
         <span className={`text-lg font-bold ${accent || 'text-foreground'}`}>{value}</span>
-        {suffix && <span className="text-[10px] text-muted-foreground/70">{suffix}</span>}
+        {suffix && <span className="text-[10px] text-muted-foreground">{suffix}</span>}
       </div>
     </div>
   )
@@ -173,11 +173,11 @@ function PerformanceAnalysis({ nodeBottleneck, totalAvgDuration }) {
 
   if (sorted.length === 0) {
     return (
-      <div className="rounded-lg border border-border bg-card/40 p-2">
+      <div className="rounded-lg border border-border bg-card p-2">
         <div className="mb-1 text-[11px] font-medium text-muted-foreground">
           性能分析
         </div>
-        <div className="py-6 text-center text-[11px] text-muted-foreground/60">
+        <div className="py-6 text-center text-[11px] text-muted-foreground">
           暂无节点性能数据
         </div>
       </div>
@@ -185,11 +185,11 @@ function PerformanceAnalysis({ nodeBottleneck, totalAvgDuration }) {
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card/40 p-2">
+    <div className="rounded-lg border border-border bg-card p-2">
       {/* 顶部：总平均耗时 + 最慢节点 */}
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="text-[11px] font-medium text-muted-foreground">性能分析</div>
-        <div className="flex items-center gap-3 text-[10px] text-muted-foreground/80">
+        <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
           <span>
             总平均耗时：
             <span className="font-semibold text-primary">
@@ -206,7 +206,7 @@ function PerformanceAnalysis({ nodeBottleneck, totalAvgDuration }) {
               >
                 {slowest.node_type}
               </span>
-              <span className="text-muted-foreground/60">
+              <span className="text-muted-foreground">
                 （{(slowest.avg_duration_seconds || 0).toFixed(2)}s）
               </span>
             </span>
@@ -319,10 +319,10 @@ function MonitorTab({ executions, nodeBottleneck, totalAvgDuration }) {
       </div>
 
       {/* 按天趋势折线图 */}
-      <div className="rounded-lg border border-border bg-card/40 p-2">
+      <div className="rounded-lg border border-border bg-card p-2">
         <div className="mb-1 text-[11px] font-medium text-muted-foreground">按天执行趋势</div>
         {stats.byDay.length === 0 ? (
-          <div className="py-6 text-center text-[11px] text-muted-foreground/60">暂无数据</div>
+          <div className="py-6 text-center text-[11px] text-muted-foreground">暂无数据</div>
         ) : (
           <ReactECharts option={trendOption} style={{ height: 180, width: '100%' }} />
         )}
@@ -378,7 +378,7 @@ function LogsTab({ executions, loading }) {
 
   if (executions.length === 0) {
     return (
-      <div className="py-8 text-center text-[11px] text-muted-foreground/60">
+      <div className="py-8 text-center text-[11px] text-muted-foreground">
         {loading ? '加载中…' : '暂无执行记录'}
       </div>
     )
@@ -392,7 +392,7 @@ function LogsTab({ executions, loading }) {
         const isLoading = loadingIds[ex.id]
         const err = detailErr[ex.id]
         return (
-          <div key={ex.id} className="rounded-md border border-border bg-card/40">
+          <div key={ex.id} className="rounded-md border border-border bg-card">
             {/* 行：点击展开/折叠，展示 ID/状态/触发类型/创建时间/耗时 */}
             <button
               type="button"
@@ -401,7 +401,7 @@ function LogsTab({ executions, loading }) {
             >
               <div className="flex items-center gap-2">
                 <ChevronRight
-                  className={`shrink-0 h-3 w-3 text-muted-foreground/70 transition-transform ${
+                  className={`shrink-0 h-3 w-3 text-muted-foreground transition-transform ${
                     expanded ? 'rotate-90' : ''
                   }`}
                 />
@@ -420,9 +420,9 @@ function LogsTab({ executions, loading }) {
                 </span>
               </div>
               {/* 第二行：触发类型 + 创建时间 */}
-              <div className="flex items-center gap-2 pl-4 text-[10px] text-muted-foreground/70">
+              <div className="flex items-center gap-2 pl-4 text-[10px] text-muted-foreground">
                 <span>触发：{ex.trigger_type || '-'}</span>
-                <span className="text-muted-foreground/60">·</span>
+                <span className="text-muted-foreground">·</span>
                 <span className="truncate">{fmtTime(ex.created_at)}</span>
               </div>
             </button>
@@ -431,7 +431,7 @@ function LogsTab({ executions, loading }) {
             {expanded && (
               <div className="border-t border-border p-2.5">
                 {isLoading && (
-                  <div className="py-3 text-center text-[11px] text-muted-foreground/70">加载详情…</div>
+                  <div className="py-3 text-center text-[11px] text-muted-foreground">加载详情…</div>
                 )}
                 {err && (
                   <div className="rounded border border-danger-700/40 bg-danger-900/20 p-2 text-[11px] text-destructive">
@@ -446,7 +446,7 @@ function LogsTab({ executions, loading }) {
                         节点轨迹（{detail.traces.length}）
                       </div>
                       {detail.traces.length === 0 ? (
-                        <div className="text-[11px] text-muted-foreground/60">暂无轨迹</div>
+                        <div className="text-[11px] text-muted-foreground">暂无轨迹</div>
                       ) : (
                         <div className="flex flex-col gap-1">
                           {detail.traces.map((tr, idx) => {
@@ -462,7 +462,7 @@ function LogsTab({ executions, loading }) {
                             return (
                               <div
                                 key={idx}
-                                className="flex items-center gap-1.5 rounded bg-background/40 px-1.5 py-1 text-[10px]"
+                                className="flex items-center gap-1.5 rounded bg-background px-1.5 py-1 text-[10px]"
                               >
                                 <span
                                   className={`shrink-0 rounded px-1 py-0.5 ${traceStatusClass(
@@ -479,7 +479,7 @@ function LogsTab({ executions, loading }) {
                                     {tr.node_type}
                                   </span>
                                 )}
-                                <span className="shrink-0 text-muted-foreground/70">
+                                <span className="shrink-0 text-muted-foreground">
                                   {tdur.toFixed(1)}s
                                 </span>
                               </div>
@@ -495,7 +495,7 @@ function LogsTab({ executions, loading }) {
                         日志（{detail.logs.length}）
                       </div>
                       {detail.logs.length === 0 ? (
-                        <div className="text-[11px] text-muted-foreground/60">暂无日志</div>
+                        <div className="text-[11px] text-muted-foreground">暂无日志</div>
                       ) : (
                         <div className="flex max-h-48 flex-col gap-0.5 overflow-y-auto">
                           {detail.logs.map((log, idx) => (
@@ -517,7 +517,7 @@ function LogsTab({ executions, loading }) {
                                 {log.message}
                               </span>
                               {log.timestamp && (
-                                <span className="shrink-0 text-muted-foreground/60">
+                                <span className="shrink-0 text-muted-foreground">
                                   {fmtTime(log.timestamp)}
                                 </span>
                               )}
@@ -598,7 +598,7 @@ function WorkflowInspection({ workflowId, initialTab = 'monitor' }) {
   if (!workflowId) {
     return (
       <div className="flex h-full items-center justify-center p-6">
-        <p className="text-center text-sm text-muted-foreground/70">请先保存工作流</p>
+        <p className="text-center text-sm text-muted-foreground">请先保存工作流</p>
       </div>
     )
   }

@@ -1,11 +1,18 @@
-"""工单发起时自动研判：源/目的 IP 资产匹配 + 威胁情报查询。
+"""工单发起时自动研判：源/目的 IP 资产匹配 + 威胁情报查询 + 智能体研判。
 
-发起工单时对首节点 ``src_ip`` / ``dst_ip`` 字段自动执行：
-1. 资产匹配：复用告警资产富化（AssetLibEnricher）的资产索引
-   （单 IP 精确 + CIDR/起止范围包含，内存缓存 TTL 600s，
-   资产写接口 commit 后主动失效），与告警「关联资产」同一套口径；
-2. 威胁情报：复用工具 ``get_threat_intel``（app.tools.context_tools），
-   与智能体工具 API 调用一致。
+发起工单时对首节点 ``src_ip`` / ``dst_ip`` 字段自动执行（按字段开关）：
+1. 资产匹配（``auto_enrich``，默认开启）：复用告警资产富化
+   （AssetLibEnricher）的资产索引（单 IP 精确 + CIDR/起止范围包含，
+   内存缓存 TTL 600s，资产写接口 commit 后主动失效），
+   与告警「关联资产」同一套口径；
+2. 威胁情报（``auto_enrich``，默认开启）：复用工具 ``get_threat_intel``
+   （app.tools.context_tools），与智能体工具 API 调用一致；
+3. 智能体研判（``auto_agent``，默认关闭）：调用 IP 风险研判智能体
+   （``agent_client.analyze_ip_risk``，即「IP风险智能研判与封禁决策」，
+   经 ``BAN_ANALYST_AGENT_ID`` 指定，输出模式 ban_risk_analyze）。
+   结果仅保留 risk_level / action / monitoring_advice / reasons
+   （风险等级 / 处置建议 / 决策依据），处置结果
+   （is_banned / ban_plan / need_confirm）不落库不展示。
 
 结果写入 ``Ticket.enrichment_data``（JSON），随工单全程流转，
 各节点处理人只读可见。结构::
@@ -18,8 +25,17 @@
           "ip": "10.144.1.2",
           "asset": {"matched": true, "asset_id": 4665,
                     "asset_name": "坪山新区内部网",
-                    "asset_ip": "10.144.1.2"},   # 命中时字段；未命中 {"matched": false}
-          "threat": {...get_threat_intel 原样返回...}
+                    "asset_ip": "10.144.1.2",
+                    "fields": {...资产全字段（同资产详情口径）+ tags...}},
+                                                # 命中时字段；未命中 {"matched": false}
+          "threat": {...get_threat_intel 原样返回...},
+          "agent": {"risk_level": "高危", "action": "ban",
+                    "monitoring_advice": "封禁后持续观察该网段",
+                    "reasons": ["境外恶意 IP", ...]}
+                                                # auto_agent 开启时字段；发起时为
+                                                # {"pending": true}（后台研判中），
+                                                # 完成后回写研判结果 / 失败为 null；
+                                                # 未开启时无该键
         }
       ],
       "enriched_at": "2026-10-20T22:30:00",
@@ -29,15 +45,21 @@
 设计要点：
 - 字段定位：首节点字段中 type=ip 且 key 为 src_ip / dst_ip
   （兜底 alert_field_mapping 为 src_ip / dst_ip）；
+- 开关：字段 ``auto_enrich`` 显式为 False 时跳过资产匹配与威胁情报
+  （默认开启）；``auto_agent`` 显式为 True 时追加智能体研判
+  （默认关闭），兼容存量流程模板无该键的情况；
 - 多值 IP（逗号/分号分隔）取第一个有效地址；
 - 单个来源研判失败仅记入 errors，不阻塞工单发起。
 """
 import asyncio
+import copy
 import ipaddress
 import logging
 import threading
 import time
 from typing import Optional
+
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.log_receiver_manager.pipeline.enricher_stage import (
     _ASSET_INDEX_TTL_S,
@@ -77,7 +99,9 @@ def _locate_ip_fields(field_defs: list, values: dict) -> list[dict]:
     """从首节点字段定义中定位 src_ip / dst_ip 字段并提取有效 IP。
 
     匹配规则：字段 key 为 src_ip / dst_ip（兜底 alert_field_mapping），
-    且字段值为有效 IP。返回 ``[{role, label, ip}]``。
+    且字段值为有效 IP。返回 ``[{role, label, ip, enrich, agent}]``，
+    其中 ``enrich``（资产匹配+威胁情报）默认 True，
+    ``agent``（智能体研判）默认 False。
     """
     found: list[dict] = []
     for f in field_defs or []:
@@ -91,12 +115,26 @@ def _locate_ip_fields(field_defs: list, values: dict) -> list[dict]:
         ip = _extract_ip(values.get(key))
         if not ip:
             continue
-        found.append({"role": role, "label": f.get("label") or key, "ip": ip})
+        found.append({
+            "role": role,
+            "label": f.get("label") or key,
+            "ip": ip,
+            "enrich": f.get("auto_enrich") is not False,
+            "agent": f.get("auto_agent") is True,
+        })
     return found
 
 
 def _match_asset(db, ip: str) -> dict:
-    """单 IP 匹配资产库（复用告警富化索引：单 IP 精确 + CIDR/范围包含）。"""
+    """单 IP 匹配资产库（复用告警富化索引：单 IP 精确 + CIDR/范围包含）。
+
+    命中时附带资产全字段（``fields``，与资产详情接口同口径：所有列 + 标签，
+    排除 raw_content 溯源长文本），供工单安全上下文完整展示资产信息；
+    保留 asset_id/asset_name/asset_ip 冗余键供前端兼容与跳转。
+    """
+    from app.models.asset import Asset
+    from app.schemas.common import to_dict
+
     with _asset_index_lock:
         if time.time() - _asset_index_cache["built_at"] > _ASSET_INDEX_TTL_S:
             _build_asset_index(db)
@@ -105,14 +143,24 @@ def _match_asset(db, ip: str) -> dict:
             "nets": _asset_index_cache["nets"],
         }
     hit = _match_asset_ip(ip, index)
-    if hit:
-        return {
-            "matched": True,
-            "asset_id": hit[0],
-            "asset_name": hit[1] or "",
-            "asset_ip": ip,
-        }
-    return {"matched": False}
+    if not hit:
+        return {"matched": False}
+    result = {
+        "matched": True,
+        "asset_id": hit[0],
+        "asset_name": hit[1] or "",
+        "asset_ip": ip,
+    }
+    record = db.query(Asset).filter(Asset.id == hit[0]).first()
+    if record is not None:
+        d = to_dict(record)
+        d.pop("raw_content", None)
+        d["tags"] = [
+            {"id": t.id, "name": t.name, "color": t.color}
+            for t in (record.tags or [])
+        ]
+        result["fields"] = d
+    return result
 
 
 def _query_threat_intel_batch(ips: list[str]) -> list[dict]:
@@ -135,41 +183,186 @@ def _query_threat_intel_batch(ips: list[str]) -> list[dict]:
     return asyncio.run(_gather())
 
 
-def build_ticket_enrichment(db, field_defs: list, values: dict) -> Optional[dict]:
+# 智能体研判结果仅保留的展示字段（风险等级 / 处置建议 / 决策依据）；
+# 处置结果（is_banned / ban_plan / need_confirm 等）不落库不展示
+_AGENT_FIELDS = ("risk_level", "action", "monitoring_advice", "reasons")
+
+# 未配置 BAN_ANALYST_AGENT_ID 时按名称兜底查找的智能体名
+_TICKET_AGENT_NAME = "IP风险智能研判与封禁决策"
+
+
+def _resolve_agent_id(db) -> Optional[int]:
+    """解析工单智能体研判使用的智能体 ID。
+
+    优先 ``BAN_ANALYST_AGENT_ID``（与封禁工作流一致）；
+    未配置时按名称查找「IP风险智能研判与封禁决策」
+    （published 状态，同名取最新）。找不到返回 None。
+    """
+    from app.config import settings
+    from app.models.agent import Agent
+
+    agent_id = int(getattr(settings, "BAN_ANALYST_AGENT_ID", 0) or 0)
+    if agent_id > 0:
+        return agent_id
+    agent = (
+        db.query(Agent)
+        .filter(Agent.name == _TICKET_AGENT_NAME, Agent.publish_status == "published")
+        .order_by(Agent.id.desc())
+        .first()
+    )
+    return agent.id if agent else None
+
+
+def _run_agent_analysis(db, ip: str, title: str) -> dict:
+    """调用 IP 风险研判智能体（「IP风险智能研判与封禁决策」）并过滤结果。
+
+    复用 ``agent_client.analyze_ip_risk``（输出模式 ban_risk_analyze，
+    含重试与调用审计日志；生产经 ``BAN_ANALYST_AGENT_ID`` 指定智能体，
+    未配置时按名称兜底查找；dev/staging 均不可用时回退 HTTP mock）。
+    失败向上抛出由调用方记入 errors。
+
+    Returns:
+        仅含 ``_AGENT_FIELDS`` 的 dict（处置结果字段已剔除）。
+    """
+    from app.workflow.agent_client import analyze_ip_risk
+
+    agent_id = _resolve_agent_id(db)
+    if agent_id is None:
+        raise ValueError(
+            f"未找到已发布的智能体「{_TICKET_AGENT_NAME}」，"
+            "请在平台创建该智能体或配置 BAN_ANALYST_AGENT_ID"
+        )
+    decision = analyze_ip_risk(
+        db, ip,
+        {"alert_name": title or ""},
+        instance_id=None,
+        node_key="ticket_enrichment",
+        agent_id=agent_id,
+    )
+    if not isinstance(decision, dict):
+        raise ValueError(f"智能体研判返回结构异常: {type(decision).__name__}")
+    return {f: decision.get(f) for f in _AGENT_FIELDS}
+
+
+def _agent_bg_worker(ticket_id: int, tasks: list[tuple[str, str, str]], title: str) -> None:
+    """后台线程：逐 IP 智能体研判并回写 ``enrichment_data``（不阻塞工单发起）。
+
+    研判与回写共用独立 ``SessionLocal``（请求 Session 随响应关闭，不可跨线程）。
+    前端轮询 ``agent.pending`` 占位消失即视为完成；本进程重启会丢失
+    进行中的任务（占位将停留，dev 可接受）。
+    """
+    from app.database import SessionLocal
+    from app.models.ticket import Ticket
+
+    session = SessionLocal()
+    try:
+        results: dict[str, dict] = {}
+        errors: list[str] = []
+        for role, label, ip in tasks:
+            try:
+                results[role] = _run_agent_analysis(session, ip, title)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("工单智能体研判失败, ip=%s: %s", ip, exc)
+                results[role] = None
+                errors.append(f"{label} 智能体研判失败: {exc}")
+        ticket = session.query(Ticket).filter(Ticket.id == ticket_id).first()
+        if ticket is None or not isinstance(ticket.enrichment_data, dict):
+            logger.warning("工单智能体研判回写跳过: ticket=%s 不存在或无研判数据", ticket_id)
+            return
+        # 必须在深拷贝副本上修改：直接原地改旧对象会污染属性历史快照，
+        # 导致 SQLAlchemy 判定"新旧值相等"而不生成 UPDATE（回写静默丢失）
+        data = copy.deepcopy(ticket.enrichment_data)
+        for s in data.get("sources") or []:
+            agent = s.get("agent")
+            if s.get("role") in results and isinstance(agent, dict) and agent.get("pending"):
+                s["agent"] = results[s["role"]]
+        data.setdefault("errors", []).extend(errors)
+        ticket.enrichment_data = data
+        # JSON 列强制标记已修改，双保险绕过值相等性折叠
+        flag_modified(ticket, "enrichment_data")
+        session.commit()
+        logger.info(
+            "工单智能体研判回写完成: ticket=%s, ip数=%d, 失败=%d",
+            ticket_id, len(tasks), len(errors),
+        )
+    except Exception:  # noqa: BLE001
+        session.rollback()
+        logger.exception("工单智能体研判后台任务异常: ticket=%s", ticket_id)
+    finally:
+        session.close()
+
+
+def start_agent_analysis_bg(ticket_id: int, tasks: list[tuple[str, str, str]], title: str) -> None:
+    """启动后台线程执行智能体研判（发起工单后调用，立即返回不阻塞）。
+
+    Args:
+        ticket_id: 已落库的工单 ID。
+        tasks: ``[(role, label, ip)]`` 待研判列表（auto_agent 开启的 IP）。
+        title: 工单标题（智能体告警上下文）。
+    """
+    if not tasks:
+        return
+    threading.Thread(
+        target=_agent_bg_worker,
+        args=(ticket_id, tasks, title),
+        daemon=True,
+        name=f"ticket-agent-{ticket_id}",
+    ).start()
+
+
+def build_ticket_enrichment(db, field_defs: list, values: dict, title: str = "") -> Optional[dict]:
     """构建工单自动研判结果（发起时调用一次）。
 
-    无有效 src_ip / dst_ip 时返回 None（不留空结构）。
+    Args:
+        title: 工单标题，作为智能体研判的告警上下文（alert_name）。
+
+    资产匹配与威胁情报同步执行（毫秒级）；智能体研判仅写入
+    ``{"pending": true}`` 占位，由 ``start_agent_analysis_bg`` 后台
+    线程异步完成并回写（LLM 耗时较长，不阻塞工单发起与流转）。
+    无有效 src_ip / dst_ip，或全部开关关闭时返回 None（不留空结构）。
     任何整体异常均向上抛出由调用方兜底；单来源失败记入 errors。
     """
     located = _locate_ip_fields(field_defs, values)
     if not located:
         return None
+    # 全部开关关闭：无需研判
+    if not any(item["enrich"] or item["agent"] for item in located):
+        return None
 
-    # 威胁情报批量并发查询（Mock 0.3-0.8s 延迟，并发后仅一次等待）
-    threats = _query_threat_intel_batch([item["ip"] for item in located])
+    # 威胁情报批量并发查询（Mock 0.3-0.8s 延迟，并发后仅一次等待）；
+    # 未开启基础研判（auto_enrich=False）的 IP 以 None 占位跳过
+    enrich_ips = [item["ip"] if item["enrich"] else None for item in located]
+    threats = _query_threat_intel_batch([ip for ip in enrich_ips if ip])
+    threat_iter = iter(threats)
 
     sources: list[dict] = []
     errors: list[str] = []
-    for item, threat in zip(located, threats):
+    for item in located:
         entry = {"role": item["role"], "label": item["label"], "ip": item["ip"]}
-        try:
-            entry["asset"] = _match_asset(db, item["ip"])
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("工单资产匹配失败, ip=%s: %s", item["ip"], exc)
-            entry["asset"] = {"matched": False}
-            errors.append(f"{item['label']} 资产匹配失败: {exc}")
-        if isinstance(threat, dict) and not threat.get("error"):
-            entry["threat"] = threat
-        else:
-            entry["threat"] = None
-            errors.append(f"{item['label']} 威胁情报查询失败: {threat.get('error') if threat else '未知错误'}")
+        if item["enrich"]:
+            threat = next(threat_iter)
+            try:
+                entry["asset"] = _match_asset(db, item["ip"])
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("工单资产匹配失败, ip=%s: %s", item["ip"], exc)
+                entry["asset"] = {"matched": False}
+                errors.append(f"{item['label']} 资产匹配失败: {exc}")
+            if isinstance(threat, dict) and not threat.get("error"):
+                entry["threat"] = threat
+            else:
+                entry["threat"] = None
+                errors.append(f"{item['label']} 威胁情报查询失败: {threat.get('error') if threat else '未知错误'}")
+        if item["agent"]:
+            # 智能体研判：仅写占位，由 start_agent_analysis_bg 后台异步完成
+            entry["agent"] = {"pending": True}
         sources.append(entry)
 
     logger.info(
-        "工单自动研判完成: roles=%s, 资产命中=%s/%d, 错误=%d",
+        "工单自动研判完成: roles=%s, 资产命中=%s/%d, 智能体研判=%d, 错误=%d",
         [item["role"] for item in located],
-        sum(1 for s in sources if s["asset"].get("matched")),
+        sum(1 for s in sources if s.get("asset", {}).get("matched")),
         len(sources),
+        sum(1 for s in sources if s.get("agent")),
         len(errors),
     )
     return {

@@ -22,9 +22,8 @@ from fastapi.responses import FileResponse
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app.core.notification_dispatch import dispatch_notification
 from app.core.sanitizer import sanitize_text
-from app.core.ticket_enrichment import build_ticket_enrichment
+from app.core.ticket_enrichment import build_ticket_enrichment, start_agent_analysis_bg
 from app.core.ticket_sla import evaluate_ticket_sla, get_sla_config
 from app.core.ticket_flow import (
     get_node,
@@ -38,9 +37,12 @@ from datetime import timedelta
 from app.core.timezone import beijing_now
 from app.database import get_db
 from app.dependencies import get_current_user, is_admin, require_permission
-from app.models.ticket import Ticket, TicketFlow, TicketGroup, TicketGroupMember, TicketNodeRecord
+from app.models.notification import Notification
+from app.models.ticket import (
+    Ticket, TicketCc, TicketFlow, TicketGroup, TicketGroupMember, TicketNodeRecord,
+)
 from app.models.user import User
-from app.schemas.ticket import TicketAdvance, TicketCancel, TicketCreate
+from app.schemas.ticket import TicketAdvance, TicketCancel, TicketCcAdd, TicketCreate, TicketRollback
 from app.workflow.audit import write_audit
 
 logger = logging.getLogger(__name__)
@@ -150,22 +152,168 @@ def _resolve_route(
 
 
 def _notify_next_group(db: Session, ticket: Ticket, node_name: str, group_id: int | None) -> None:
-    """流转成功后通知下一分组（事件类型 ticket，通知规则未配置时回退广播）。"""
+    """流转成功后精确通知下一分组成员。
+
+    直接投递给分组成员（不走通知规则路由），避免未配置规则时回退全员广播、
+    把节点待处理提醒发给无关人员（如其他分组的成员）。
+    """
     if not group_id:
         return
     group = db.query(TicketGroup).filter(TicketGroup.id == group_id).first()
     group_label = group.name if group else f"分组{group_id}"
-    dispatch_notification(
-        db,
-        event_type="ticket",
+    user_ids = sorted({
+        uid for (uid,) in db.query(TicketGroupMember.user_id)
+        .filter(TicketGroupMember.group_id == group_id)
+        .all()
+        if uid
+    })
+    if not user_ids:
+        logger.warning("流转通知无收件人（分组无成员）: ticket=%s group=%s", ticket.id, group_id)
+        return
+    _notify_user_ids(
+        db, ticket, user_ids,
         title=f"工单待处理：{ticket.ticket_no}",
         content=(
             f"工单「{ticket.title}」已流转至节点「{node_name}」，"
             f"请【{group_label}】跟进处理（组内任一成员提交即代表全组）"
         ),
-        related_type="ticket",
-        related_id=ticket.id,
-        created_by="system",
+    )
+
+
+# ============ 抄送（CC）辅助 ============
+
+def _normalize_cc_targets(raw) -> list[dict]:
+    """清洗抄送对象列表：仅保留合法元素 [{type: user|group, id, name}]。"""
+    out = []
+    seen = set()
+    for t in raw or []:
+        if not isinstance(t, dict) or t.get("type") not in ("user", "group"):
+            continue
+        tid = t.get("id")
+        if isinstance(tid, bool) or not isinstance(tid, int):
+            continue
+        key = (t["type"], tid)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"type": t["type"], "id": tid, "name": str(t.get("name") or "").strip()})
+    return out
+
+
+def _fill_cc_names(db: Session, targets: list[dict]) -> list[dict]:
+    """补全/校验抄送对象名称与存在性：user 须为启用账号，group 须为启用分组。"""
+    user_ids = [t["id"] for t in targets if t["type"] == "user"]
+    group_ids = [t["id"] for t in targets if t["type"] == "group"]
+    users = {
+        uid: (name or f"用户{uid}")
+        for uid, name in db.query(User.id, User.display_name)
+        .filter(User.id.in_(user_ids), User.is_active.is_(True)).all()
+    } if user_ids else {}
+    groups = {
+        gid: name
+        for gid, name in db.query(TicketGroup.id, TicketGroup.name)
+        .filter(TicketGroup.id.in_(group_ids), TicketGroup.enabled.is_(True)).all()
+    } if group_ids else {}
+    out = []
+    for t in targets:
+        if t["type"] == "user" and t["id"] in users:
+            out.append({**t, "name": t["name"] or users[t["id"]]})
+        elif t["type"] == "group" and t["id"] in groups:
+            out.append({**t, "name": t["name"] or groups[t["id"]]})
+    return out
+
+
+def _cc_rows(db: Session, ticket_id: int) -> list[TicketCc]:
+    """取工单的全部抄送行（按加入顺序）。"""
+    return (
+        db.query(TicketCc)
+        .filter(TicketCc.ticket_id == ticket_id)
+        .order_by(TicketCc.id.asc())
+        .all()
+    )
+
+
+def _resolve_cc_user_ids(db: Session, rows: list[TicketCc], exclude_id: int | None = None) -> list[int]:
+    """把抄送行展开为实际用户 ID 集合：user 直取，group 展开组内启用成员。"""
+    ids: set[int] = set()
+    group_ids = []
+    for r in rows:
+        if r.target_type == "user":
+            ids.add(r.target_id)
+        else:
+            group_ids.append(r.target_id)
+    if group_ids:
+        for (uid,) in (
+            db.query(TicketGroupMember.user_id)
+            .join(User, User.id == TicketGroupMember.user_id)
+            .filter(TicketGroupMember.group_id.in_(group_ids), User.is_active.is_(True))
+            .all()
+        ):
+            ids.add(uid)
+    # 仅保留真实存在的启用账号（组直存、防脏数据）
+    if ids:
+        ids = {
+            uid for (uid,) in db.query(User.id)
+            .filter(User.id.in_(ids), User.is_active.is_(True)).all()
+        }
+    if exclude_id:
+        ids.discard(exclude_id)
+    return sorted(ids)
+
+
+def _notify_user_ids(db: Session, ticket: Ticket, user_ids: list[int], title: str, content: str) -> None:
+    """精确投递通知给指定用户（不走通知规则路由，抄送场景必须送达本人）。"""
+    for uid in user_ids:
+        db.add(Notification(
+            user_id=uid,
+            type="ticket",
+            title=title,
+            content=content,
+            related_type="ticket",
+            related_id=ticket.id,
+            created_by="system",
+        ))
+
+
+def _notify_cc_added(db: Session, ticket: Ticket, rows: list[TicketCc], operator: User, *, finished: bool = False) -> None:
+    """抄送通知：发起/被加入抄送时通知（发起直通完结时合并为完结通知）。"""
+    if not rows:
+        return
+    user_ids = _resolve_cc_user_ids(db, rows, exclude_id=operator.id)
+    if not user_ids:
+        return
+    if finished:
+        _notify_user_ids(
+            db, ticket, user_ids,
+            title=f"工单已完成：{ticket.ticket_no}",
+            content=f"您被抄送的工单「{ticket.title}」已完成，请知悉结果（发起人：{ticket.created_by_name}）",
+        )
+    else:
+        _notify_user_ids(
+            db, ticket, user_ids,
+            title=f"工单抄送：{ticket.ticket_no}",
+            content=(
+                f"工单「{ticket.title}」已抄送给您（发起人：{ticket.created_by_name}，"
+                f"当前节点：{ticket.current_node_name or ticket.current_node_key or '已完结'}），请知悉"
+            ),
+        )
+
+
+def _notify_cc_finished(db: Session, ticket: Ticket, result_label: str, reason: str | None = None) -> None:
+    """完结通知：工单完成/取消时把最终结果通知全部抄送人。"""
+    rows = _cc_rows(db, ticket.id)
+    if not rows:
+        return
+    user_ids = _resolve_cc_user_ids(db, rows)
+    if not user_ids:
+        return
+    content = f"您被抄送的工单「{ticket.title}」已{result_label}，请知悉结果"
+    if reason:
+        content += f"（原因：{reason}）"
+    _notify_user_ids(
+        db, ticket, user_ids,
+        title=f"工单已{result_label}：{ticket.ticket_no}",
+        content=content,
     )
 
 
@@ -201,6 +349,12 @@ def _ticket_detail(db: Session, ticket: Ticket, current_user: User) -> dict:
     my_groups = set(_my_group_ids(db, current_user.id))
     admin = is_admin(current_user, db)
 
+    can_handle = (
+        ticket.status == "processing"
+        and bool(current_node)
+        and (admin or (current_node.get("group_id") in my_groups))
+    )
+
     data = _ticket_list_item(ticket, group_names)
     data.update({
         "flow_snapshot": snapshot,
@@ -209,14 +363,16 @@ def _ticket_detail(db: Session, ticket: Ticket, current_user: User) -> dict:
         "enrichment_data": ticket.enrichment_data,
         "group_names": {str(k): v for k, v in group_names.items()},
         "current_node": current_node,
-        "can_handle": (
-            ticket.status == "processing"
-            and bool(current_node)
-            and (admin or (current_node.get("group_id") in my_groups))
-        ),
+        "can_handle": can_handle,
         "can_cancel": (
             ticket.status == "processing"
             and (admin or ticket.created_by_id == current_user.id)
+        ),
+        # 抄送：列表 + 管理权限（发起人 / 当前处理人 / admin；仅进行中可增减）
+        "cc_targets": [r.to_dict() for r in _cc_rows(db, ticket.id)],
+        "can_manage_cc": (
+            ticket.status == "processing"
+            and (admin or ticket.created_by_id == current_user.id or can_handle)
         ),
     })
     return data
@@ -252,6 +408,7 @@ def flow_options(
             "version": f.version,
             "node_count": len(nodes.get("nodes") or []),
             "start_groups": sorted(start_groups),
+            "cc_targets": _normalize_cc_targets(nodes.get("cc_targets")),
             "first_node": {
                 "key": start_node.get("key"),
                 "name": start_node.get("name"),
@@ -261,6 +418,38 @@ def flow_options(
             "can_initiate": admin or bool(start_groups & my_groups),
         })
     return {"items": items}
+
+
+@router.get("/cc-options")
+def ticket_cc_options(
+    db: Session = Depends(get_db),
+) -> dict:
+    """抄送候选数据源：启用用户 + 启用工单分组（精简字段，ticket:view 即可调用）。
+
+    发起/追加抄送弹窗的人员与分组选项来自本接口，避免依赖 user:view
+    / ticket_config:view 导致普通工单用户「权限不足」无法选择抄送对象。
+    """
+    users = (
+        db.query(User.id, User.display_name, User.username, User.is_active)
+        .order_by(User.id.asc())
+        .all()
+    )
+    groups = db.query(TicketGroup).order_by(TicketGroup.id.asc()).all()
+    return {
+        "users": [
+            {
+                "id": u.id,
+                "display_name": u.display_name,
+                "username": u.username,
+                "is_active": bool(u.is_active),
+            }
+            for u in users
+        ],
+        "groups": [
+            {"id": g.id, "name": g.name, "enabled": bool(g.enabled)}
+            for g in groups
+        ],
+    }
 
 
 # ============ 发起 ============
@@ -319,10 +508,11 @@ def create_ticket(
     }
 
     end = is_end_node(target)
-    # 自动研判：对 src_ip/dst_ip 做资产匹配 + 威胁情报查询（失败不阻塞发起）
+    # 自动研判：对 src_ip/dst_ip 做资产匹配 + 威胁情报查询 + 智能体研判
+    #（按字段开关，失败不阻塞发起）
     try:
         enrichment = build_ticket_enrichment(
-            db, start_node.get("fields") or [], values
+            db, start_node.get("fields") or [], values, title=body.title
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("工单自动研判失败（忽略，不阻塞发起）: %s", exc)
@@ -362,10 +552,46 @@ def create_ticket(
         route_to=route_to,
         comment=sanitize_text(body.comment) if body.comment else None,
     ))
+    # 抄送：模板固定抄送（发起时快照）+ 请求手动追加，去重后落库
+    tpl_cc = _fill_cc_names(db, _normalize_cc_targets(nodes_json.get("cc_targets")))
+    manual_cc = _fill_cc_names(db, _normalize_cc_targets(
+        [t.model_dump() for t in body.cc_targets]
+    ))
+    seen_keys = set()
+    cc_rows_added = []
+    operator_name = current_user.display_name or current_user.username
+    for t in tpl_cc + manual_cc:
+        key = (t["type"], t["id"])
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        row = TicketCc(
+            ticket_id=ticket.id,
+            target_type=t["type"],
+            target_id=t["id"],
+            target_name=t["name"],
+            source="manual" if t in manual_cc and t not in tpl_cc else "template",
+            created_by_id=current_user.id,
+            created_by_name=operator_name,
+        )
+        db.add(row)
+        cc_rows_added.append(row)
+    db.flush()
+    # 抄送通知：发起即完结（直通 end）时直接发完结通知；否则发抄送知会
+    _notify_cc_added(db, ticket, cc_rows_added, current_user, finished=end)
     if not end:
         _notify_next_group(db, ticket, target.get("name") or route_to, target.get("group_id"))
     db.commit()
     db.refresh(ticket)
+    # 智能体研判后台异步执行（LLM 耗时较长，不阻塞发起；完成后回写 enrichment_data）
+    if isinstance(enrichment, dict):
+        pending = [
+            (s.get("role"), s.get("label"), s.get("ip"))
+            for s in enrichment.get("sources") or []
+            if isinstance(s.get("agent"), dict) and s["agent"].get("pending")
+        ]
+        if pending:
+            start_agent_analysis_bg(ticket.id, pending, body.title)
     write_audit(
         db, action="ticket_create", resource_type="ticket", resource_id=ticket.id,
         detail={
@@ -383,7 +609,7 @@ def create_ticket(
 
 @router.get("")
 def list_tickets(
-    view: str = Query(default="my_pending", pattern="^(my_pending|created|handled|all)$"),
+    view: str = Query(default="my_pending", pattern="^(my_pending|created|handled|cc|all)$"),
     status: str | None = Query(default=None, pattern="^(processing|completed|cancelled)$"),
     flow_id: int | None = Query(default=None),
     priority: str | None = Query(default=None, pattern="^(low|medium|high|critical)$"),
@@ -418,6 +644,18 @@ def list_tickets(
             .subquery()
         )
         query = query.filter(Ticket.id.in_(handled_ids))
+    elif view == "cc":
+        # 抄送我的：直接抄送本人 + 抄送我所在分组（组内成员均可见）
+        my_groups = _my_group_ids(db, current_user.id)
+        cc_cond = (
+            (TicketCc.target_type == "user") & (TicketCc.target_id == current_user.id)
+        ) | (
+            (TicketCc.target_type == "group") & TicketCc.target_id.in_(my_groups or [-1])
+        )
+        cc_ids = (
+            db.query(TicketCc.ticket_id).filter(cc_cond).distinct().subquery()
+        )
+        query = query.filter(Ticket.id.in_(cc_ids))
 
     # 归档过滤（应用于所有视图）
     if archived == "only":
@@ -452,6 +690,7 @@ def list_tickets(
 
 @router.get("/monitor")
 def ticket_monitor_stats(
+    flow_id: int | None = Query(default=None, description="指定流程模板 ID；缺省时自动选取进行中工单最多的流程"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("ticket_monitor", "view")),
 ):
@@ -459,6 +698,9 @@ def ticket_monitor_stats(
 
     数据均来自真实工单（排除归档），按大屏七个分区一次返回，前端 60s 轮询。
     需要独立权限 ticket_monitor:view（叠加 router 级 ticket:view）。
+    处置状态流转：``flow_id`` 可指定展示的流程模板；节点序列始终读取模板**当前定义**，
+    修改并重新发布模板后大屏在下次轮询自动更新。响应附 ``flows``（可选流程列表）与
+    ``flow``（当前生效流程及是否自动选取）。
     注意：本路由必须注册在 ``GET /{ticket_id}`` 之前，避免 "monitor" 被路径参数吞掉。
     """
     now = beijing_now()
@@ -610,26 +852,28 @@ def ticket_monitor_stats(
         for gid in sorted(set(handled_count) | set(pending_count))
     ]
 
-    # —— 处置状态流转：进行中工单最多的流程节点序列 + 各节点当前数量 ——
+    # —— 处置状态流转：可指定流程（?flow_id=）或自动选取（进行中工单最多 / 最新）——
+    # 节点序列始终读取流程模板当前定义（而非工单发起时的旧快照），模板修改重新发布后自动生效
     flow_count: dict[int, int] = {}
     for t in processing:
         flow_count[t.flow_id] = flow_count.get(t.flow_id, 0) + 1
-    flow_nodes: list[dict] = []
-    if flow_count:
-        main_flow_id = max(flow_count, key=flow_count.get)
-        snap = next(
-            (t.flow_snapshot for t in processing if t.flow_id == main_flow_id), {}
-        ) or {}
-    else:
-        latest_flow = db.query(TicketFlow).order_by(TicketFlow.id.desc()).first()
-        snap = (latest_flow.nodes if latest_flow else None) or {}
-        main_flow_id = latest_flow.id if latest_flow else None
+    all_flows = db.query(TicketFlow).order_by(TicketFlow.id).all()
+    flow_by_id = {f.id: f for f in all_flows}
+    auto_flow_id = (
+        max(flow_count, key=flow_count.get)
+        if flow_count
+        else (all_flows[-1].id if all_flows else None)
+    )
+    # 指定的流程不存在（如已删除）时回退自动选取
+    selected_flow_id = flow_id if flow_id in flow_by_id else auto_flow_id
+    selected_flow = flow_by_id.get(selected_flow_id)
     node_counts: dict[str, int] = {}
     for t in processing:
-        if t.flow_id == main_flow_id and t.current_node_key:
+        if t.flow_id == selected_flow_id and t.current_node_key:
             node_counts[t.current_node_key] = node_counts.get(t.current_node_key, 0) + 1
-    if snap:
-        for n in snap.get("nodes", []):
+    flow_nodes: list[dict] = []
+    if selected_flow:
+        for n in (selected_flow.nodes or {}).get("nodes", []):
             if n.get("type") == "end":
                 continue
             flow_nodes.append({
@@ -638,11 +882,13 @@ def ticket_monitor_stats(
                 "group": group_map.get(n.get("group_id"), ""),
                 "current": node_counts.get(n.get("key"), 0),
             })
+    # 已完结计数限定所选流程，避免多流程混算
+    flow_finished = sum(1 for t in finished if t.flow_id == selected_flow_id) if selected_flow_id else 0
     flow_nodes.append({
         "key": "_finished",
         "name": "已完结",
         "group": "",
-        "current": len(completed) + len(cancelled),
+        "current": flow_finished,
     })
 
     # —— 最新工单（中央实时列表 + 底部跑马灯）——
@@ -669,6 +915,23 @@ def ticket_monitor_stats(
         "severity_status": severity_status,
         "sla": sla,
         "groups": groups_stats,
+        # 大屏流程切换器数据：全部流程模板（含草稿/停用标记）
+        "flows": [
+            {
+                "id": f.id,
+                "name": f.name,
+                "is_draft": f.is_draft,
+                "enabled": f.enabled,
+                "version": f.version,
+            }
+            for f in all_flows
+        ],
+        # 当前生效流程（前端据此同步切换器显示；auto=是否自动选取）
+        "flow": {
+            "id": selected_flow_id,
+            "name": selected_flow.name if selected_flow else "",
+            "auto": selected_flow_id == auto_flow_id,
+        },
         "flow_nodes": flow_nodes,
         "latest": latest,
         "generated_at": now.isoformat(),
@@ -756,6 +1019,8 @@ def advance_ticket(
     if end:
         ticket.status = "completed"
         ticket.closed_at = beijing_now()
+        # 完结通知：把最终结果通知全部抄送人
+        _notify_cc_finished(db, ticket, "完成")
     else:
         _notify_next_group(db, ticket, target.get("name") or route_to, target.get("group_id"))
     db.commit()
@@ -768,6 +1033,122 @@ def advance_ticket(
     )
     logger.info("工单流转: id=%s no=%s %s → %s, operator=%s",
                 ticket.id, ticket.ticket_no, current_node.get("key"), route_to, current_user.username)
+    return _ticket_detail(db, ticket, current_user)
+
+
+# ============ 回退 ============
+
+@router.post("/{ticket_id}/rollback")
+def rollback_ticket(
+    ticket_id: int,
+    body: TicketRollback,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("ticket", "edit")),
+) -> dict:
+    """回退工单：当前节点退回上一处理节点，必须填写回退原因。
+
+    - 权限与流转一致：admin 或当前节点处理分组成员（先到先得）
+    - 上一节点 = 最近一次把工单送入当前节点的记录（submit/create）的来源节点；
+      当前节点即首处理节点时无可回退上家，返回 400
+    - 回退后工单停留到上一节点重新处理，停留计时重置、超时提醒进度清零
+    - 回退写入时间线（action=rollback）并精确通知上一节点分组成员（含回退原因）
+    """
+    ticket = _get_ticket_or_404(db, ticket_id)
+    if ticket.status != "processing":
+        raise HTTPException(status_code=400, detail="工单已完结，不能再回退")
+
+    snapshot = ticket.flow_snapshot if isinstance(ticket.flow_snapshot, dict) else {}
+    current_node = get_node(snapshot, ticket.current_node_key) if ticket.current_node_key else None
+    if not current_node:
+        raise HTTPException(status_code=400, detail="当前节点定义缺失（快照损坏）")
+
+    # 处理权限：admin 或属于当前节点分组（与流转一致）
+    admin = is_admin(current_user, db)
+    my_groups = set(_my_group_ids(db, current_user.id))
+    if not admin and current_node.get("group_id") not in my_groups:
+        raise HTTPException(status_code=403, detail="您不属于当前节点的处理分组，不能回退")
+
+    # 回退原因必填（schema 已校验 min_length，此处防御性兜底）
+    reason = sanitize_text(body.comment).strip()
+    if not reason:
+        raise HTTPException(status_code=400, detail="回退原因不能为空")
+
+    # 找上一节点：最近一条把工单送入当前节点的记录（submit 流转 / create 发起）
+    prev = (
+        db.query(TicketNodeRecord)
+        .filter(
+            TicketNodeRecord.ticket_id == ticket.id,
+            TicketNodeRecord.route_to == ticket.current_node_key,
+            TicketNodeRecord.action.in_(("create", "submit")),
+        )
+        .order_by(TicketNodeRecord.id.desc())
+        .first()
+    )
+    if not prev or not prev.node_key or prev.node_key == ticket.current_node_key:
+        raise HTTPException(status_code=400, detail="当前节点为首节点，无上一步可回退")
+
+    target = get_node(snapshot, prev.node_key)
+    if target is None or is_end_node(target):
+        raise HTTPException(status_code=400, detail="上一节点定义缺失或不合法，不能回退")
+
+    # 时间线记录：node=当前节点，route_to=上一节点，comment=回退原因
+    db.add(TicketNodeRecord(
+        ticket_id=ticket.id,
+        node_key=current_node.get("key") or "",
+        node_name=current_node.get("name") or "",
+        group_id=current_node.get("group_id"),
+        handler_id=current_user.id,
+        handler_name=current_user.display_name or current_user.username,
+        action="rollback",
+        field_values={},
+        route_to=target.get("key"),
+        comment=reason,
+    ))
+
+    # 工单停留回上一节点：计时重置、提醒进度清零
+    ticket.current_node_key = target.get("key")
+    ticket.current_node_name = target.get("name") or target.get("key")
+    ticket.current_group_id = target.get("group_id")
+    ticket.arrived_at = beijing_now()
+    ticket.first_reminded_at = None
+    ticket.last_reminded_at = None
+    ticket.remind_count = 0
+
+    # 通知上一节点分组成员：工单被退回，需重新处理（含回退原因）
+    if target.get("group_id"):
+        group = db.query(TicketGroup).filter(TicketGroup.id == target["group_id"]).first()
+        group_label = group.name if group else f"分组{target['group_id']}"
+        user_ids = sorted({
+            uid for (uid,) in db.query(TicketGroupMember.user_id)
+            .filter(TicketGroupMember.group_id == target["group_id"])
+            .all()
+            if uid
+        })
+        if user_ids:
+            _notify_user_ids(
+                db, ticket, user_ids,
+                title=f"工单退回：{ticket.ticket_no}",
+                content=(
+                    f"工单「{ticket.title}」已由「{current_node.get('name') or '当前节点'}」"
+                    f"退回至「{target.get('name') or target.get('key')}」，"
+                    f"回退原因：{reason}。请【{group_label}】重新跟进处理"
+                ),
+            )
+        else:
+            logger.warning("回退通知无收件人（分组无成员）: ticket=%s group=%s",
+                           ticket.id, target.get("group_id"))
+
+    db.commit()
+    db.refresh(ticket)
+    write_audit(
+        db, action="ticket_rollback", resource_type="ticket", resource_id=ticket.id,
+        detail={"ticket_no": ticket.ticket_no, "from": current_node.get("key"),
+                "to": target.get("key"), "reason": reason},
+        operator=current_user.username, user_id=current_user.id,
+    )
+    logger.info("工单回退: id=%s no=%s %s → %s, operator=%s, reason=%s",
+                ticket.id, ticket.ticket_no, current_node.get("key"),
+                target.get("key"), current_user.username, reason)
     return _ticket_detail(db, ticket, current_user)
 
 
@@ -801,6 +1182,8 @@ def cancel_ticket(
     ))
     ticket.status = "cancelled"
     ticket.closed_at = beijing_now()
+    # 完结通知：把取消结果通知全部抄送人
+    _notify_cc_finished(db, ticket, "取消", reason=body.comment)
     db.commit()
     db.refresh(ticket)
     write_audit(
@@ -809,6 +1192,108 @@ def cancel_ticket(
         operator=current_user.username, user_id=current_user.id,
     )
     logger.info("取消工单: id=%s no=%s, operator=%s", ticket.id, ticket.ticket_no, current_user.username)
+    return _ticket_detail(db, ticket, current_user)
+
+
+# ============ 抄送（进行中工单：发起人/当前处理人/admin 可增减） ============
+
+def _require_cc_manage_permission(db: Session, ticket: Ticket, current_user: User) -> None:
+    """校验抄送管理权限：admin / 发起人 / 当前节点处理分组成员（仅进行中工单）。"""
+    if ticket.status != "processing":
+        raise HTTPException(status_code=400, detail="工单已完结，不能再变更抄送")
+    admin = is_admin(current_user, db)
+    if admin or ticket.created_by_id == current_user.id:
+        return
+    snapshot = ticket.flow_snapshot if isinstance(ticket.flow_snapshot, dict) else {}
+    current_node = get_node(snapshot, ticket.current_node_key) if ticket.current_node_key else None
+    my_groups = set(_my_group_ids(db, current_user.id))
+    if current_node and current_node.get("group_id") in my_groups:
+        return
+    raise HTTPException(status_code=403, detail="仅发起人、当前处理人或管理员可变更抄送")
+
+
+@router.post("/{ticket_id}/cc")
+def add_ticket_cc(
+    ticket_id: int,
+    body: TicketCcAdd,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("ticket", "edit")),
+) -> dict:
+    """追加抄送对象（人员或分组），被加入者立即收到抄送通知。"""
+    ticket = _get_ticket_or_404(db, ticket_id)
+    _require_cc_manage_permission(db, ticket, current_user)
+
+    targets = _fill_cc_names(db, _normalize_cc_targets([t.model_dump() for t in body.targets]))
+    if not targets:
+        raise HTTPException(status_code=400, detail="请选择有效的抄送对象（人员或分组）")
+
+    # 去重：已存在的抄送对象跳过
+    existing = {(r.target_type, r.target_id) for r in _cc_rows(db, ticket.id)}
+    operator_name = current_user.display_name or current_user.username
+    added = []
+    for t in targets:
+        if (t["type"], t["id"]) in existing:
+            continue
+        existing.add((t["type"], t["id"]))
+        row = TicketCc(
+            ticket_id=ticket.id,
+            target_type=t["type"],
+            target_id=t["id"],
+            target_name=t["name"],
+            source="manual",
+            created_by_id=current_user.id,
+            created_by_name=operator_name,
+        )
+        db.add(row)
+        added.append(row)
+    if not added:
+        raise HTTPException(status_code=400, detail="所选对象已在抄送列表中")
+    db.flush()
+    _notify_cc_added(db, ticket, added, current_user)
+    db.commit()
+    db.refresh(ticket)
+    write_audit(
+        db, action="ticket_cc_add", resource_type="ticket", resource_id=ticket.id,
+        detail={
+            "ticket_no": ticket.ticket_no,
+            "targets": [f"{'分组' if r.target_type == 'group' else '用户'}:{r.target_name}" for r in added],
+        },
+        operator=current_user.username, user_id=current_user.id,
+    )
+    logger.info("工单追加抄送: id=%s no=%s targets=%d, operator=%s",
+                ticket.id, ticket.ticket_no, len(added), current_user.username)
+    return _ticket_detail(db, ticket, current_user)
+
+
+@router.delete("/{ticket_id}/cc/{cc_id}")
+def remove_ticket_cc(
+    ticket_id: int,
+    cc_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("ticket", "edit")),
+) -> dict:
+    """移除抄送对象（仅限手动追加项；模板固定抄送由模板强制指定，不可移除）。"""
+    ticket = _get_ticket_or_404(db, ticket_id)
+    _require_cc_manage_permission(db, ticket, current_user)
+
+    row = db.query(TicketCc).filter(
+        TicketCc.id == cc_id, TicketCc.ticket_id == ticket.id
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="抄送记录不存在")
+    if row.source == "template":
+        raise HTTPException(status_code=400, detail="模板固定抄送不可移除（由流程模板强制指定，仅可移除手动追加的抄送）")
+    label = f"{'分组' if row.target_type == 'group' else '用户'}:{row.target_name}"
+    db.delete(row)
+    db.commit()
+    db.refresh(ticket)
+    write_audit(
+        db, action="ticket_cc_remove", resource_type="ticket", resource_id=ticket.id,
+        detail={"ticket_no": ticket.ticket_no, "target": label},
+        operator=current_user.username, user_id=current_user.id,
+    )
+    logger.info("工单移除抄送: id=%s no=%s target=%s, operator=%s",
+                ticket.id, ticket.ticket_no, label, current_user.username)
     return _ticket_detail(db, ticket, current_user)
 
 
@@ -858,6 +1343,33 @@ def unarchive_ticket(
     )
     logger.info("取消归档工单: id=%s no=%s, operator=%s", ticket.id, ticket.ticket_no, current_user.username)
     return _ticket_detail(db, ticket, current_user)
+
+
+@router.delete("/{ticket_id}")
+def delete_ticket(
+    ticket_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("ticket", "delete")),
+) -> dict:
+    """删除工单记录（物理删除）：同时删除节点处理记录与抄送行，不可恢复。
+
+    仅授予 ticket:delete 的角色（如 admin）可见入口；归档为软删除，
+    本接口为彻底清理入口。
+    """
+    ticket = _get_ticket_or_404(db, ticket_id)
+    ticket_no = ticket.ticket_no
+    ticket_title = ticket.title
+    db.query(TicketCc).filter(TicketCc.ticket_id == ticket_id).delete(synchronize_session=False)
+    db.query(TicketNodeRecord).filter(TicketNodeRecord.ticket_id == ticket_id).delete(synchronize_session=False)
+    db.delete(ticket)
+    db.commit()
+    write_audit(
+        db, action="ticket_delete", resource_type="ticket", resource_id=ticket_id,
+        detail={"ticket_no": ticket_no, "title": ticket_title, "status": ticket.status},
+        operator=current_user.username, user_id=current_user.id,
+    )
+    logger.info("删除工单: id=%s no=%s, operator=%s", ticket_id, ticket_no, current_user.username)
+    return {"deleted": ticket_id, "ticket_no": ticket_no}
 
 
 # ============ 附件（上传走主 router，下载走 query token router） ============

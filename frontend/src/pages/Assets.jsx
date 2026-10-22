@@ -6,6 +6,7 @@ import { Modal } from '../components/Dialog'
 import { confirm } from '../components/ConfirmDialog'
 import { toast } from '../store/toastStore'
 import { inputCls, inputBaseCls } from '../components/property/FormControls'
+import { CompactSelect } from '../components/ui'
 
 // 重要性配色
 const CRITICALITY_META = {
@@ -95,7 +96,7 @@ function DetailModal({ open, record, onClose, onEdit, onDelete, canManage, canDe
       <div className="grid grid-cols-2 gap-x-6 gap-y-3">
         {fields.map((f) => (
           <div key={f.label} className="flex flex-col">
-            <span className="text-xs text-muted-foreground/70">{f.label}</span>
+            <span className="text-xs text-muted-foreground">{f.label}</span>
             {f.badge ? (
               <span className={`mt-0.5 inline-flex w-fit rounded px-2 py-0.5 text-xs font-medium ${f.badge}`}>
                 {f.value}
@@ -110,14 +111,14 @@ function DetailModal({ open, record, onClose, onEdit, onDelete, canManage, canDe
       </div>
       {record.extra_fields && Object.keys(record.extra_fields).length > 0 && (
         <div className="mt-4 border-t border-border pt-3">
-          <div className="mb-2 text-xs text-muted-foreground/70">灵活字段（extra_fields）</div>
+          <div className="mb-2 text-xs text-muted-foreground">灵活字段（extra_fields）</div>
           <div className="flex flex-wrap gap-2">
             {Object.entries(record.extra_fields).map(([k, v]) => (
               <span
                 key={k}
                 className="inline-flex items-center gap-1 rounded border border-border bg-card px-2 py-1 text-xs"
               >
-                <span className="text-muted-foreground/70">{k}:</span>
+                <span className="text-muted-foreground">{k}:</span>
                 <span className="text-foreground">{String(v)}</span>
               </span>
             ))}
@@ -126,7 +127,7 @@ function DetailModal({ open, record, onClose, onEdit, onDelete, canManage, canDe
       )}
       {record.raw_content && (
         <div className="mt-4 border-t border-border pt-3">
-          <div className="mb-1 text-xs text-muted-foreground/70">原始 KB 片段（溯源）</div>
+          <div className="mb-1 text-xs text-muted-foreground">原始 KB 片段（溯源）</div>
           <pre className="max-h-40 overflow-auto rounded bg-card p-2 text-xs text-muted-foreground whitespace-pre-wrap">
             {record.raw_content}
           </pre>
@@ -157,7 +158,7 @@ function AssetFormModal({ open, form, setForm, onSubmit, onClose, submitting, is
     >
       <div className="grid grid-cols-2 gap-x-4 gap-y-3">
         <div className="flex flex-col">
-          <label className="mb-1 text-xs text-muted-foreground/70">IP 地址 * <span className="text-muted-foreground/50">（作为唯一标识）</span></label>
+          <label className="mb-1 text-xs text-muted-foreground">IP 地址 * <span className="text-muted-foreground">（作为唯一标识）</span></label>
           <input
             className={inputCls}
             value={form.ip || ''}
@@ -166,42 +167,42 @@ function AssetFormModal({ open, form, setForm, onSubmit, onClose, submitting, is
           />
         </div>
         <div className="flex flex-col">
-          <label className="mb-1 text-xs text-muted-foreground/70">资产名称</label>
+          <label className="mb-1 text-xs text-muted-foreground">资产名称</label>
           <input className={inputCls} value={form.name || ''}
             onChange={(e) => set('name', e.target.value)} placeholder="展示用名称" />
         </div>
         <div className="flex flex-col">
-          <label className="mb-1 text-xs text-muted-foreground/70">资产类型</label>
+          <label className="mb-1 text-xs text-muted-foreground">资产类型</label>
           <input className={inputCls} value={form.asset_type || ''}
             onChange={(e) => set('asset_type', e.target.value)} placeholder="服务器/工作站/网络设备..." />
         </div>
         <div className="flex flex-col">
-          <label className="mb-1 text-xs text-muted-foreground/70">重要性</label>
-          <select className={inputCls} value={form.criticality || 'medium'}
-            onChange={(e) => set('criticality', e.target.value)}>
+          <label className="mb-1 text-xs text-muted-foreground">重要性</label>
+          <CompactSelect value={form.criticality || 'medium'}
+            onChange={(e) => set('criticality', e.target.value)} size="lg" block>
             <option value="low">低</option>
             <option value="medium">中</option>
             <option value="high">高</option>
             <option value="critical">严重</option>
-          </select>
+          </CompactSelect>
         </div>
         <div className="flex flex-col">
-          <label className="mb-1 text-xs text-muted-foreground/70">归属部门</label>
+          <label className="mb-1 text-xs text-muted-foreground">归属部门</label>
           <input className={inputCls} value={form.department || ''}
             onChange={(e) => set('department', e.target.value)} />
         </div>
         <div className="flex flex-col">
-          <label className="mb-1 text-xs text-muted-foreground/70">负责人</label>
+          <label className="mb-1 text-xs text-muted-foreground">负责人</label>
           <input className={inputCls} value={form.owner || ''}
             onChange={(e) => set('owner', e.target.value)} />
         </div>
         <div className="flex flex-col">
-          <label className="mb-1 text-xs text-muted-foreground/70">物理位置</label>
+          <label className="mb-1 text-xs text-muted-foreground">物理位置</label>
           <input className={inputCls} value={form.location || ''}
             onChange={(e) => set('location', e.target.value)} />
         </div>
         <div className="col-span-2 flex flex-col">
-          <label className="mb-1 text-xs text-muted-foreground/70">灵活字段（JSON，可选）</label>
+          <label className="mb-1 text-xs text-muted-foreground">灵活字段（JSON，可选）</label>
           <textarea
             className={`${inputCls} h-20 font-mono`}
             value={form.extra_fields_text || ''}
@@ -522,10 +523,10 @@ function Assets() {
   return (
     <div className="flex h-full flex-col">
       {/* 页头 */}
-      <header className="flex items-center justify-between border-b border-border bg-card/60 px-6 py-4">
+      <header className="flex items-center justify-between border-b border-border bg-card px-6 py-4">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-semibold text-foreground">资产管理</h1>
-          <span className="text-xs text-muted-foreground/70">
+          <span className="text-xs text-muted-foreground">
             共 {total} 条 / 第 {page}/{totalPages || 1} 页
           </span>
         </div>
@@ -562,9 +563,9 @@ function Assets() {
       {/* 统计卡片 */}
       <div className="grid grid-cols-2 gap-3 px-6 pt-4 md:grid-cols-4">
         {statCards.map((c) => (
-          <div key={c.key} className="w-full rounded-lg border border-border bg-card/40 px-4 py-3">
+          <div key={c.key} className="w-full rounded-lg border border-border bg-card px-4 py-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground/70">{c.label}</span>
+              <span className="text-xs text-muted-foreground">{c.label}</span>
               <span className={`${c.cls}`}>{c.icon}</span>
             </div>
             <div className={`mt-1 text-2xl font-semibold ${c.cls}`}>{c.value}</div>
@@ -573,25 +574,25 @@ function Assets() {
       </div>
 
       {/* 过滤栏 */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-border bg-card/30 px-6 py-3">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border bg-card px-6 py-3">
         <input
           className={`${inputBaseCls} max-w-xs`}
           placeholder="搜索名称/IP/负责人..."
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
         />
-        <select className={inputCls} value={criticalityFilter}
-          onChange={(e) => setCriticalityFilter(e.target.value)}>
+        <CompactSelect value={criticalityFilter}
+          onChange={(e) => setCriticalityFilter(e.target.value)} size="lg" block>
           {CRITICALITY_OPTIONS.map((c) => (
             <option key={c.value} value={c.value}>{c.label}</option>
           ))}
-        </select>
-        <select className={inputCls} value={sourceFilter}
-          onChange={(e) => setSourceFilter(e.target.value)}>
+        </CompactSelect>
+        <CompactSelect value={sourceFilter}
+          onChange={(e) => setSourceFilter(e.target.value)} size="lg" block>
           {SOURCE_OPTIONS.map((s) => (
             <option key={s.value} value={s.value}>{s.label}</option>
           ))}
-        </select>
+        </CompactSelect>
       </div>
 
       {/* 列表区 */}
@@ -603,9 +604,9 @@ function Assets() {
         )}
 
         {loading ? (
-          <div className="flex h-40 items-center justify-center text-sm text-muted-foreground/70">加载中...</div>
+          <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">加载中...</div>
         ) : records.length === 0 ? (
-          <div className="flex h-60 flex-col items-center justify-center gap-2 text-muted-foreground/70">
+          <div className="flex h-60 flex-col items-center justify-center gap-2 text-muted-foreground">
             <ClipboardList className="h-10 w-10" />
             <div className="text-sm">
               {keyword || criticalityFilter || sourceFilter
@@ -632,7 +633,7 @@ function Assets() {
                   const critMeta = CRITICALITY_META[r.criticality] || { label: r.criticality, cls: 'bg-secondary text-muted-foreground' }
                   const srcMeta = SOURCE_META[r.source] || { label: r.source || '-', cls: 'bg-secondary text-muted-foreground' }
                   return (
-                    <tr key={r.id} className="border-t border-border hover:bg-card/50">
+                    <tr key={r.id} className="border-t border-border hover:bg-card">
                       <td className="px-4 py-3 font-mono text-foreground">{r.ip || r.identifier}</td>
                       <td className="px-4 py-3 text-foreground">{r.name || '-'}</td>
                       <td className="px-4 py-3 text-muted-foreground">{r.asset_type || '-'}</td>
@@ -746,7 +747,7 @@ function Assets() {
       >
         <div className="space-y-4">
           {/* 步骤说明 */}
-          <div className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+          <div className="rounded-md border border-border bg-muted p-3 text-xs text-muted-foreground">
             <p className="font-medium text-foreground">导入步骤：</p>
             <ol className="mt-1 list-inside list-decimal space-y-0.5">
               <li>点击「下载模板」获取 CSV 模板（含当前所有自定义字段列）</li>
@@ -776,15 +777,16 @@ function Assets() {
             <label className="mb-1 block text-sm font-medium text-foreground">
               冲突策略（IP 已存在时）
             </label>
-            <select
-              className={inputCls}
+            <CompactSelect
               value={importStrategy}
               onChange={(e) => setImportStrategy(e.target.value)}
+              size="lg"
+              block
             >
               <option value="skip">跳过（保留原数据）</option>
               <option value="overwrite">覆盖（更新已有记录）</option>
               <option value="error">报错中止</option>
-            </select>
+            </CompactSelect>
           </div>
 
           {/* 文件选择 */}
@@ -810,7 +812,7 @@ function Assets() {
             <div className="rounded-md border border-border bg-card p-3">
               <p className="mb-2 text-sm font-medium text-foreground">导入结果</p>
               <div className="grid grid-cols-4 gap-2 text-center">
-                <div className="rounded bg-muted/40 p-2">
+                <div className="rounded bg-muted p-2">
                   <div className="text-lg font-bold text-foreground">{importResult.total}</div>
                   <div className="text-xs text-muted-foreground">总计</div>
                 </div>
@@ -822,7 +824,7 @@ function Assets() {
                   <div className="text-lg font-bold text-warning">{importResult.updated}</div>
                   <div className="text-xs text-muted-foreground">更新</div>
                 </div>
-                <div className="rounded bg-muted/40 p-2">
+                <div className="rounded bg-muted p-2">
                   <div className="text-lg font-bold text-muted-foreground">{importResult.skipped}</div>
                   <div className="text-xs text-muted-foreground">跳过</div>
                 </div>
@@ -857,7 +859,7 @@ function Assets() {
       >
         <div className="space-y-4">
           {/* 说明 */}
-          <div className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+          <div className="rounded-md border border-border bg-muted p-3 text-xs text-muted-foreground">
             <p>自定义字段是全局共享的扩展字段，所有资产均可使用。</p>
             <p className="mt-1">字段值存储在资产的 extra_fields 中，导出/导入模板会自动包含这些字段列。</p>
           </div>
@@ -867,7 +869,7 @@ function Assets() {
             <p className="mb-3 text-sm font-medium text-foreground">新增字段</p>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-xs text-muted-foreground/70">字段键名（英文）*</label>
+                <label className="mb-1 block text-xs text-muted-foreground">字段键名（英文）*</label>
                 <input
                   className={inputCls}
                   value={cfForm.field_key}
@@ -876,7 +878,7 @@ function Assets() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-muted-foreground/70">显示标签（中文）*</label>
+                <label className="mb-1 block text-xs text-muted-foreground">显示标签（中文）*</label>
                 <input
                   className={inputCls}
                   value={cfForm.field_label}
@@ -885,21 +887,22 @@ function Assets() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-muted-foreground/70">字段类型</label>
-                <select
-                  className={inputCls}
+                <label className="mb-1 block text-xs text-muted-foreground">字段类型</label>
+                <CompactSelect
                   value={cfForm.field_type}
                   onChange={(e) => setCfForm({ ...cfForm, field_type: e.target.value })}
+                  size="lg"
+                  block
                 >
                   <option value="text">文本</option>
                   <option value="number">数字</option>
                   <option value="date">日期</option>
                   <option value="select">下拉选择</option>
-                </select>
+                </CompactSelect>
               </div>
               {cfForm.field_type === 'select' && (
                 <div>
-                  <label className="mb-1 block text-xs text-muted-foreground/70">选项（每行一个）*</label>
+                  <label className="mb-1 block text-xs text-muted-foreground">选项（每行一个）*</label>
                   <textarea
                     className={`${inputCls} h-20`}
                     value={cfForm.options}
@@ -937,14 +940,14 @@ function Assets() {
                   >
                     <div className="flex items-center gap-3">
                       <span className="text-sm font-medium text-foreground">{f.field_label}</span>
-                      <span className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
+                      <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
                         {f.field_key}
                       </span>
                       <span className="rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary">
                         {f.field_type === 'text' ? '文本' : f.field_type === 'number' ? '数字' : f.field_type === 'date' ? '日期' : '下拉选择'}
                       </span>
                       {f.options && f.options.length > 0 && (
-                        <span className="text-xs text-muted-foreground/70">
+                        <span className="text-xs text-muted-foreground">
                           选项：{f.options.join(' / ')}
                         </span>
                       )}

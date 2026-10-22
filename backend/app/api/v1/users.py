@@ -174,12 +174,20 @@ def reset_password(
     user_id: int,
     body: ResetPasswordRequest,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("user", "edit")),
+    current: User = Depends(require_permission("user", "edit")),
 ) -> User:
-    """管理员重置用户密码。"""
+    """管理员重置用户密码。
+
+    安全防护（防接管）：重置 admin 账号密码为高敏感操作，仅限 admin 执行，
+    防止仅持 ``user:edit`` 的自定义角色用户重置管理员密码后登录接管系统。
+    """
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
+
+    # 目标是管理员账号时仅 admin 可重置（防垂直越权接管）
+    if is_admin(user, db) and not is_admin(current, db):
+        raise HTTPException(status_code=403, detail="仅管理员可重置管理员账号的密码")
 
     # 等保密码复杂度校验（与系统设置中的密码策略一致）
     from app.core.security_policy import get_security_policy, validate_password_complexity
@@ -193,7 +201,10 @@ def reset_password(
     user.must_change_password = True
     db.commit()
     db.refresh(user)
-    logger.info("密码重置: user_id=%s", user_id)
+    logger.info(
+        "密码重置: user_id=%s, operator=%s, target_is_admin=%s",
+        user_id, current.username, is_admin(user, db),
+    )
     return user
 
 
@@ -203,7 +214,7 @@ def toggle_active(
     db: Session = Depends(get_db),
     current: User = Depends(require_permission("user", "edit")),
 ) -> User:
-    """启用/禁用用户（不可禁用自己）。"""
+    """启用/禁用用户（不可禁用自己；禁用管理员需 admin 且系统至少保留一个）。"""
     if current.id == user_id:
         raise HTTPException(status_code=400, detail="不可禁用当前登录账号")
 
@@ -211,10 +222,28 @@ def toggle_active(
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
 
+    # 禁用/启用管理员账号为高敏感操作：仅 admin 可执行
+    if is_admin(user, db) and not is_admin(current, db):
+        raise HTTPException(status_code=403, detail="仅管理员可启停管理员账号")
+    # 禁用（而非启用）admin 时校验最后一个管理员保护
+    if user.is_active and is_admin(user, db):
+        conds = [User.role == "admin"]
+        from app.models.role import Role as _Role
+        admin_role_ids = [
+            r.id for r in db.query(_Role.id).filter(_Role.name == "admin").all()
+        ]
+        if admin_role_ids:
+            from sqlalchemy import or_
+            conds.append(User.role_id.in_(admin_role_ids))
+        from sqlalchemy import or_ as _or
+        admin_count = db.query(User).filter(_or(*conds)).count()
+        if admin_count <= 1:
+            raise HTTPException(status_code=400, detail="系统至少保留一个管理员账号")
+
     user.is_active = not user.is_active
     db.commit()
     db.refresh(user)
-    logger.info("用户启停: user_id=%s, active=%s", user_id, user.is_active)
+    logger.info("用户启停: user_id=%s, active=%s, operator=%s", user_id, user.is_active, current.username)
     return user
 
 

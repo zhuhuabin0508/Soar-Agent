@@ -5,7 +5,7 @@ import {
   HelpCircle, ListChecks, Send, Package, Trash2,
   Code as CodeIcon, Globe, Puzzle,
   Power, Play, Pencil, Eye, Copy, Check, Share2, Loader2,
-  Radar, Bug, Zap, Network,
+  Radar, Bug, Zap, Network, Plus, RefreshCw,
 } from 'lucide-react'
 import { tools as toolsApi } from '../api/client'
 import { Modal } from '../components/Dialog'
@@ -16,7 +16,7 @@ import { TOOL_TUTORIAL } from '../components/tutorialContent'
 import { CATEGORY_META, UNCATEGORIZED } from '../constants/toolCategories'
 import { toast } from '../store/toastStore'
 import { confirm } from '../components/ConfirmDialog'
-import { DataTable, Pagination } from '../components/ui'
+import { DataTable, Pagination, CompactSelect } from '../components/ui'
 import FilterBar from '../components/FilterBar'
 import BatchActions from '../components/BatchActions'
 import { usePagination } from '../hooks/usePagination'
@@ -211,19 +211,20 @@ function ToolTestModal({ open, tool, onClose, onSubmit, running }) {
         </div>
       )}
       {(tool.parameters_schema || []).length === 0 ? (
-        <p className="text-sm text-muted-foreground/70">该工具没有参数，可直接点击「开始测试」。</p>
+        <p className="text-sm text-muted-foreground">该工具没有参数，可直接点击「开始测试」。</p>
       ) : (
         <div className="flex flex-col gap-4">
           {(tool.parameters_schema || []).map((p) => (
             <div key={p.name}>
               <label className="mb-1 block text-xs font-medium text-muted-foreground">
                 {p.name}
-                <span className="ml-1 text-[10px] text-muted-foreground/70">({p.type})</span>
+                <span className="ml-1 text-[10px] text-muted-foreground">({p.type})</span>
                 {p.required && <span className="ml-1 text-destructive">*</span>}
               </label>
               {p.type === 'Boolean' ? (
-                <select
-                  className={inputCls}
+                <CompactSelect
+                  size="lg"
+                  block
                   value={params[p.name] === true ? 'true' : 'false'}
                   onChange={(e) =>
                     setParams((prev) => ({ ...prev, [p.name]: e.target.value === 'true' }))
@@ -231,7 +232,7 @@ function ToolTestModal({ open, tool, onClose, onSubmit, running }) {
                 >
                   <option value="false">false</option>
                   <option value="true">true</option>
-                </select>
+                </CompactSelect>
               ) : p.type === 'Object' || p.type === 'Array' ? (
                 <textarea
                   className={`${inputCls} resize-y font-mono`}
@@ -253,7 +254,7 @@ function ToolTestModal({ open, tool, onClose, onSubmit, running }) {
                 />
               )}
               {p.description && (
-                <p className="mt-1 text-[11px] text-muted-foreground/70">{p.description}</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">{p.description}</p>
               )}
             </div>
           ))}
@@ -332,6 +333,32 @@ function ToolList() {
     return true
   })
   const { page, pageSize, paged, setPage, setPageSize } = usePagination(filteredRows, { pageSize: 20 })
+
+  // 状态/类型指标统计（指标条用：启用分布 + 类型分布 + 引用汇总）
+  const listStats = useMemo(() => {
+    const s = { enabled: 0, disabled: 0, code: 0, http: 0, framework: 0, totalRefs: 0 }
+    const cats = new Set()
+    rows.forEach((r) => {
+      if (r.enabled) s.enabled += 1
+      else s.disabled += 1
+      if (r.tool_type && s[r.tool_type] != null) s[r.tool_type] += 1
+      s.totalRefs += r.reference_count || 0
+      if (r.category) cats.add(r.category)
+    })
+    return { ...s, categories: cats.size }
+  }, [rows])
+
+  // 清除全部筛选（空态 CTA 用）
+  const clearAllFilters = () => {
+    setSearch('')
+    setCategoryFilter('')
+    setTypeFilter('')
+    setSourceFilter('')
+    setAgentFilter('')
+    setStatusFilter('')
+    setTabFilter('all')
+    setPage(1)
+  }
 
   const load = useCallback(async () => {
     try {
@@ -466,7 +493,7 @@ function ToolList() {
       render: (r) => (
         <div className="flex items-center gap-2">
           <span className="inline-block max-w-[180px] align-bottom truncate text-sm font-medium text-foreground" title={r.name || ''}>{r.name || '-'}</span>
-          <span className="shrink-0 font-mono text-[10px] text-muted-foreground/40">#{r.id}</span>
+          <span className="shrink-0 font-mono text-[10px] text-muted-foreground">#{r.id}</span>
         </div>
       ),
     },
@@ -517,7 +544,7 @@ function ToolList() {
                 {tag}
               </span>
             ))}
-            {tags.length > 2 && <span className="text-[10px] text-muted-foreground/50">+{tags.length - 2}</span>}
+            {tags.length > 2 && <span className="text-[10px] text-muted-foreground">+{tags.length - 2}</span>}
           </div>
         )
       },
@@ -527,7 +554,7 @@ function ToolList() {
       render: (r) => {
         const count = r.reference_count ?? 0
         const refs = r.referenced_by || []
-        if (count === 0) return <span className="text-muted-foreground/40">-</span>
+        if (count === 0) return <span className="text-muted-foreground">-</span>
         const tip = refs.length > 0
           ? (
             <div className="flex flex-col gap-0.5">
@@ -542,8 +569,8 @@ function ToolList() {
           <HoverTip text={tip} placement="right">
             <span className="inline-flex cursor-help items-center gap-1 text-[11px] text-muted-foreground">
               <ListChecks className="h-3 w-3 text-primary" />
-              <span className="font-medium text-primary">{count}</span>
-              <span className="text-muted-foreground/50">个</span>
+              <span className="font-medium tabular-nums text-primary">{count}</span>
+              <span className="text-muted-foreground">个</span>
             </span>
           </HoverTip>
         )
@@ -557,7 +584,7 @@ function ToolList() {
           disabled={togglingId === r.id}
           onClick={(e) => { e.stopPropagation(); handleToggleEnabled(r) }}
           className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
-            r.enabled ? 'bg-primary' : 'bg-muted-foreground/30'
+            r.enabled ? 'bg-primary' : 'bg-input'
           }`}
           title={r.enabled ? '点击禁用' : '点击启用'}
         >
@@ -567,7 +594,7 @@ function ToolList() {
     },
     { key: 'updated_at', header: '更新时间', width: '150px', render: (r) => <span className="whitespace-nowrap text-muted-foreground">{fmtTime(r.updated_at)}</span> },
     {
-      key: '__actions', header: '操作', width: '140px',
+      key: '__actions', header: '操作', width: '205px',
       render: (r) => {
         const canEdit = canEditResource(r)
         const canShare = canManageShare(r)
@@ -576,7 +603,7 @@ function ToolList() {
             <button
               type="button"
               onClick={() => navigate(`/tools/${r.id}/edit`)}
-              className="flex items-center gap-1 rounded border border-border bg-secondary px-2 py-1 text-[11px] text-muted-foreground transition hover:border-primary hover:text-primary"
+              className="btn-secondary btn-sm"
               title={canEdit ? '编辑' : '查看'}
             >
               {canEdit ? <Pencil className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
@@ -585,7 +612,7 @@ function ToolList() {
               <button
                 type="button"
                 onClick={() => { setShareResource(r); setShareOpen(true) }}
-                className="flex items-center gap-1 rounded border border-border bg-secondary px-2 py-1 text-[11px] text-muted-foreground transition hover:border-primary hover:text-primary"
+                className="btn-secondary btn-sm"
                 title="共享给其他用户"
               >
                 <Share2 className="h-3 w-3" />
@@ -596,7 +623,7 @@ function ToolList() {
                 type="button"
                 disabled={running && testTool?.id === r.id}
                 onClick={() => openTest(r)}
-                className="flex items-center gap-1 rounded border border-border bg-secondary px-2 py-1 text-[11px] text-muted-foreground transition hover:border-blue-500 hover:text-blue-500"
+                className="btn-secondary btn-sm hover:border-blue-500 hover:text-blue-500"
                 title="测试"
               >
                 <Play className="h-3 w-3" />
@@ -606,7 +633,7 @@ function ToolList() {
               <button
                 type="button"
                 onClick={() => handleDelete(r.id, r.name)}
-                className="flex items-center gap-1 rounded border border-destructive/40 bg-destructive/10 px-2 py-1 text-[11px] text-destructive transition hover:bg-destructive/20"
+                className="btn-danger btn-sm"
                 title="删除"
               >
                 <Trash2 className="h-3 w-3" />
@@ -620,27 +647,26 @@ function ToolList() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
-      <header className="flex items-center justify-between border-b border-border bg-card/60 px-6 py-4">
-        <div className="flex items-center gap-4">
-          <h1 className="text-xl font-semibold text-foreground">工具</h1>
-          <span className="text-xs text-muted-foreground/70">共 {filteredRows.length} 个</span>
+      <header className="flex items-center justify-between gap-4 border-b border-border bg-card px-6 py-4">
+        <div className="flex min-w-0 items-baseline gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">工具</h1>
+          {!loading && (
+            <span className="text-xs text-muted-foreground">
+              共 <span className="font-medium tabular-nums text-foreground">{filteredRows.length}</span> 个工具
+            </span>
+          )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <TutorialButton onClick={() => setTutorialOpen(true)} />
-          <button
-            type="button"
-            onClick={load}
-            className="btn-secondary btn-sm"
-          >
-            刷新
+          <button type="button" onClick={load} className="btn-secondary btn-sm" title="刷新工具列表">
+            <RefreshCw className="mr-1 h-3.5 w-3.5" /> 刷新
+          </button>
+          <button type="button" onClick={openTemplates} className="btn-secondary btn-sm" title="从模板快速创建工具">
+            <Package className="mr-1 h-3.5 w-3.5" /> 从模板新建
           </button>
           {canCreate && (
-            <button
-              type="button"
-              onClick={() => navigate('/tools/new')}
-              className="btn-primary btn-sm"
-            >
-              + 新建工具
+            <button type="button" onClick={() => navigate('/tools/new')} className="btn-primary btn-sm">
+              <Plus className="mr-1 h-3.5 w-3.5" /> 新建工具
             </button>
           )}
         </div>
@@ -653,25 +679,32 @@ function ToolList() {
           </div>
         )}
 
-        {/* Tab：全部 / 自定义 / 系统内置 */}
+        {/* Tab：全部 / 自定义 / 系统内置（带计数） */}
         <div className="mb-4 flex items-center gap-1 border-b border-border pb-3">
-          <div className="flex shrink-0 rounded-md border border-border bg-card/60 p-0.5">
+          <div className="flex shrink-0 rounded-md border border-border bg-card p-0.5">
             {[
-              { v: 'all', label: '全部工具' },
-              { v: 'custom', label: '自定义工具' },
-              { v: 'framework', label: '系统内置' },
+              { v: 'all', label: '全部工具', count: rows.length },
+              { v: 'custom', label: '自定义工具', count: rows.filter((r) => r.tool_type !== 'framework').length },
+              { v: 'framework', label: '系统内置', count: rows.filter((r) => r.tool_type === 'framework').length },
             ].map((t) => (
               <button
                 key={t.v}
                 type="button"
                 onClick={() => { setTabFilter(t.v); setPage(1) }}
-                className={`rounded px-3 py-1.5 text-xs font-medium transition ${
+                className={`flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition ${
                   tabFilter === t.v
                     ? 'bg-primary text-primary-foreground shadow-sm'
                     : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
                 }`}
               >
                 {t.label}
+                <span
+                  className={`rounded-full px-1.5 text-[10px] tabular-nums ${
+                    tabFilter === t.v ? 'bg-primary-foreground' : 'bg-secondary text-muted-foreground'
+                  }`}
+                >
+                  {t.count}
+                </span>
               </button>
             ))}
           </div>
@@ -691,8 +724,92 @@ function ToolList() {
             ] },
           ]}
         />
-        <div className="overflow-hidden rounded-lg border border-border">
+
+        {/* 状态指标条：启用分布 + 类型分布（点击快速筛选）+ 汇总指标 */}
+        {!loading && rows.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-3">
+            {[
+              { key: 'enabled', label: '已启用', dot: 'bg-success', active: 'bg-success/15 text-success ring-success/40', group: 'status' },
+              { key: 'disabled', label: '已禁用', dot: 'bg-zinc-500', active: 'bg-zinc-500/15 text-zinc-400 ring-zinc-500/40', group: 'status' },
+            ].map((chip) => {
+              const active = statusFilter === chip.key
+              const count = chip.key === 'enabled' ? listStats.enabled : listStats.disabled
+              return (
+                <button
+                  key={chip.key} type="button"
+                  onClick={() => { setStatusFilter(active ? '' : chip.key); setPage(1) }}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all duration-200 ${
+                    active
+                      ? `border-transparent ring-1 ${chip.active}`
+                      : 'border-border bg-secondary text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                  }`}
+                  title={active ? '点击取消该筛选' : `点击筛选「${chip.label}」的工具`}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${chip.dot} ${
+                      chip.key === 'enabled' && count > 0 ? 'animate-pulse' : ''
+                    }`}
+                  />
+                  {chip.label}
+                  <span className={`tabular-nums ${count > 0 ? '' : 'text-muted-foreground'}`}>{count}</span>
+                </button>
+              )
+            })}
+            <span className="mx-1 h-4 w-px bg-border" />
+            {[
+              { key: 'code', label: 'Code', dot: 'bg-muted-foreground', active: 'bg-secondary text-foreground ring-border' },
+              { key: 'http', label: 'HTTP', dot: 'bg-primary', active: 'bg-primary/15 text-primary ring-primary/40' },
+              { key: 'framework', label: '框架内置', dot: 'bg-purple-500', active: 'bg-purple-500/15 text-purple-400 ring-purple-500/40' },
+            ].map((chip) => {
+              const active = typeFilter === chip.key
+              const count = listStats[chip.key] || 0
+              return (
+                <button
+                  key={chip.key} type="button"
+                  onClick={() => { setTypeFilter(active ? '' : chip.key); setPage(1) }}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all duration-200 ${
+                    active
+                      ? `border-transparent ring-1 ${chip.active}`
+                      : 'border-border bg-secondary text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                  }`}
+                  title={active ? '点击取消该类型筛选' : `点击筛选「${chip.label}」类型工具`}
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full ${chip.dot}`} />
+                  {chip.label}
+                  <span className={`tabular-nums ${count > 0 ? '' : 'text-muted-foreground'}`}>{count}</span>
+                </button>
+              )
+            })}
+            <div className="ml-auto flex items-center gap-4 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5" title="全部工具被智能体引用的总次数">
+                <ListChecks className="h-3.5 w-3.5 text-primary/80" />
+                总引用
+                <span
+                  className={`font-semibold tabular-nums ${
+                    listStats.totalRefs > 0 ? 'text-foreground' : 'text-muted-foreground'
+                  }`}
+                >
+                  {listStats.totalRefs > 0 ? listStats.totalRefs.toLocaleString() : '--'}
+                </span>
+              </span>
+              <span className="inline-flex items-center gap-1.5" title="工具已覆盖的分类数量">
+                <Package className="h-3.5 w-3.5 text-primary/80" />
+                分类
+                <span
+                  className={`font-semibold tabular-nums ${
+                    listStats.categories > 0 ? 'text-foreground' : 'text-muted-foreground'
+                  }`}
+                >
+                  {listStats.categories > 0 ? listStats.categories : '--'}
+                </span>
+              </span>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-4 overflow-hidden rounded-lg border border-border">
           <DataTable
+            className="table-stagger"
             columns={columns}
             data={paged}
             loading={loading}
@@ -700,7 +817,33 @@ function ToolList() {
             selectedKeys={selectedKeys}
             onSelectChange={setSelectedKeys}
             rowKey="id"
-            emptyText="暂无工具"
+            onRowClick={(r) => navigate(`/tools/${r.id}/edit`)}
+            rowClickHint="点击编辑"
+            emptyIcon={Package}
+            emptyText={rows.length === 0 ? '暂无工具' : '未找到匹配的工具'}
+            emptyDescription={
+              rows.length === 0
+                ? '创建自定义工具或从模板快速新建，供智能体与工作流调用'
+                : '调整关键词或清除筛选条件后再试'
+            }
+            emptyAction={
+              rows.length === 0
+                ? canCreate && (
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={() => navigate('/tools/new')} className="btn-primary btn-sm">
+                        <Plus className="mr-1 h-3.5 w-3.5" /> 新建工具
+                      </button>
+                      <button type="button" onClick={openTemplates} className="btn-secondary btn-sm">
+                        <Package className="mr-1 h-3.5 w-3.5" /> 从模板新建
+                      </button>
+                    </div>
+                  )
+                : (
+                    <button type="button" onClick={clearAllFilters} className="btn-secondary btn-sm">
+                      清除筛选
+                    </button>
+                  )
+            }
           />
         </div>
         <Pagination
@@ -754,7 +897,7 @@ function ToolList() {
         ) : (
           <div className="flex flex-col gap-4">
             <div>
-              <div className="mb-1 text-xs text-muted-foreground/70">Result</div>
+              <div className="mb-1 text-xs text-muted-foreground">Result</div>
               <pre className="max-h-72 w-full overflow-auto rounded-md bg-background p-4 font-mono text-xs text-foreground ring-1 ring-border">
                 {result?.result == null
                   ? '(空)'
@@ -764,12 +907,12 @@ function ToolList() {
               </pre>
             </div>
             <div>
-              <div className="mb-1 text-xs text-muted-foreground/70">
+              <div className="mb-1 text-xs text-muted-foreground">
                 日志（{(result?.logs || []).length} 条）
               </div>
               <div className="max-h-48 w-full overflow-auto rounded-md bg-background p-4 ring-1 ring-border">
                 {(result?.logs || []).length === 0 ? (
-                  <div className="text-xs text-muted-foreground/60">暂无日志</div>
+                  <div className="text-xs text-muted-foreground">暂无日志</div>
                 ) : (
                   <div className="flex flex-col gap-1">
                     {result.logs.map((log, idx) => (
@@ -803,9 +946,9 @@ function ToolList() {
         }
       >
         {tplLoading ? (
-          <div className="text-sm text-muted-foreground/70">加载中...</div>
+          <div className="text-sm text-muted-foreground">加载中...</div>
         ) : templates.length === 0 ? (
-          <div className="text-sm text-muted-foreground/70">暂无模板</div>
+          <div className="text-sm text-muted-foreground">暂无模板</div>
         ) : (
           <div className="flex flex-col gap-2">
             {templates.map((tpl, idx) => (
@@ -813,7 +956,7 @@ function ToolList() {
                 key={idx}
                 type="button"
                 onClick={() => pickTemplate(tpl)}
-                className="w-full rounded-md border border-border bg-card/60 p-4 text-left transition hover:border-primary hover:bg-card"
+                className="w-full rounded-md border border-border bg-card p-4 text-left transition hover:border-primary hover:bg-card"
               >
                 <div className="text-sm font-medium text-foreground">{tpl.name}</div>
                 {tpl.description && (

@@ -35,6 +35,7 @@ import {
 } from '../components/property/FormControls'
 import { Modal } from '../components/Dialog'
 import { confirm } from '../components/ConfirmDialog'
+import { CompactSelect } from '../components/ui'
 import { toast } from '../store/toastStore'
 import { useUnsavedChanges } from '../hooks/useUnsavedChanges'
 import { canEditResource } from '../utils/permissions'
@@ -115,7 +116,7 @@ const METHOD_COLORS = {
 function Card({ title, icon, children, defaultOpen = true, hint, extra }) {
   const [open, setOpen] = useState(defaultOpen)
   return (
-    <div className="rounded-lg border border-border bg-card/40">
+    <div className="rounded-lg border border-border bg-card">
       <div className="flex w-full items-center justify-between px-4 py-2.5">
         <button
           type="button"
@@ -125,9 +126,9 @@ function Card({ title, icon, children, defaultOpen = true, hint, extra }) {
           <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
             <span>{icon}</span>
             {title}
-            {hint && <span className="text-[11px] font-normal text-muted-foreground/70">{hint}</span>}
+            {hint && <span className="text-[11px] font-normal text-muted-foreground">{hint}</span>}
           </span>
-          <span className="text-muted-foreground/60">{open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}</span>
+          <span className="text-muted-foreground">{open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}</span>
         </button>
         {extra && <div className="shrink-0">{extra}</div>}
       </div>
@@ -163,10 +164,10 @@ function ParamSchemaEditor({ value = [], onChange, showHttpFields = false }) {
     <div>
       <div className="flex flex-col gap-2">
         {safeValue.length === 0 && (
-          <p className="text-[11px] text-muted-foreground/60">暂无参数</p>
+          <p className="text-[11px] text-muted-foreground">暂无参数</p>
         )}
         {safeValue.map((item, idx) => (
-          <div key={idx} className="rounded-md border border-border bg-card/40 p-2.5">
+          <div key={idx} className="rounded-md border border-border bg-card p-2.5">
             {/* 第一行：参数名 + 类型 + 删除 */}
             <div className="flex items-center gap-1.5">
               <input
@@ -175,18 +176,20 @@ function ParamSchemaEditor({ value = [], onChange, showHttpFields = false }) {
                 value={item.name}
                 onChange={(e) => update(idx, { name: e.target.value })}
               />
-              <select
-                className={`${inputBaseCls} w-28 shrink-0`}
+              <CompactSelect
+                size="md"
+                className="w-28 shrink-0"
                 value={item.type}
                 onChange={(e) => update(idx, { type: e.target.value })}
               >
                 {typeOpts.map((t) => (
                   <option key={t} value={t}>{t}</option>
                 ))}
-              </select>
+              </CompactSelect>
               {showHttpFields && (
-                <select
-                  className={`${inputBaseCls} w-32 shrink-0`}
+                <CompactSelect
+                  size="md"
+                  className="w-32 shrink-0"
                   value={item.location || 'query'}
                   onChange={(e) => update(idx, { location: e.target.value })}
                   title="参数位置"
@@ -194,7 +197,7 @@ function ParamSchemaEditor({ value = [], onChange, showHttpFields = false }) {
                   {locationOpts.map((o) => (
                     <option key={o.value} value={o.value}>{o.label}</option>
                   ))}
-                </select>
+                </CompactSelect>
               )}
               <label className="flex shrink-0 cursor-pointer items-center gap-1 px-1 text-[11px] text-muted-foreground">
                 <input
@@ -264,13 +267,13 @@ function CodeEditor({ value, onChange }) {
   const lineCount = Math.max(lines.length, 1)
   return (
     <div className="flex w-full overflow-hidden rounded-md border border-border bg-card">
-      <div className="shrink-0 select-none bg-background px-2 py-2 text-right font-mono text-[12px] leading-6 text-muted-foreground/60">
+      <div className="shrink-0 select-none bg-background px-2 py-2 text-right font-mono text-[12px] leading-6 text-muted-foreground">
         {Array.from({ length: lineCount }, (_, i) => (
           <div key={i}>{i + 1}</div>
         ))}
       </div>
       <textarea
-        className="flex-1 resize-y bg-card px-3 py-2 font-mono text-[12px] leading-6 text-foreground outline-none placeholder:text-muted-foreground/70"
+        className="flex-1 resize-y bg-card px-3 py-2 font-mono text-[12px] leading-6 text-foreground outline-none placeholder:text-muted-foreground"
         rows={Math.max(lineCount, 12)}
         value={value}
         spellCheck={false}
@@ -402,8 +405,8 @@ function OpenAPIImportModal({ open, onClose, onPick }) {
         <div className="flex flex-col gap-3">
           <div className="text-sm text-muted-foreground">
             <span className="font-medium">{ops.title || 'OpenAPI'}</span>
-            {ops.version && <span className="ml-2 text-xs text-muted-foreground/70">v{ops.version}</span>}
-            <span className="ml-2 text-xs text-muted-foreground/70">共 {ops.operations.length} 个操作</span>
+            {ops.version && <span className="ml-2 text-xs text-muted-foreground">v{ops.version}</span>}
+            <span className="ml-2 text-xs text-muted-foreground">共 {ops.operations.length} 个操作</span>
           </div>
           <div className="flex max-h-[420px] flex-col gap-1.5 overflow-y-auto">
             {ops.operations.map((op, idx) => (
@@ -412,14 +415,14 @@ function OpenAPIImportModal({ open, onClose, onPick }) {
                 type="button"
                 onClick={() => handlePick(op)}
                 disabled={parsing}
-                className="flex items-center gap-3 rounded-md border border-border bg-card/60 p-3 text-left transition hover:border-primary hover:bg-card disabled:opacity-50"
+                className="flex items-center gap-3 rounded-md border border-border bg-card p-3 text-left transition hover:border-primary hover:bg-card disabled:opacity-50"
               >
                 <span className={`shrink-0 rounded border px-2 py-0.5 font-mono text-[11px] font-semibold ${METHOD_COLORS[op.method] || 'bg-secondary text-muted-foreground'}`}>
                   {op.method}
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-mono text-xs text-muted-foreground">{op.path}</div>
-                  <div className="truncate text-xs text-muted-foreground/70">{op.summary}</div>
+                  <div className="truncate text-xs text-muted-foreground">{op.summary}</div>
                 </div>
                 <span className="shrink-0 text-xs text-primary">导入 →</span>
               </button>
@@ -522,7 +525,7 @@ const DebugPanel = forwardRef(function DebugPanel({ toolId, parametersSchema, to
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card/40">
+    <div className="rounded-lg border border-border bg-card">
       {/* Tab 切换 */}
       <div className="flex border-b border-border">
         {[
@@ -547,30 +550,31 @@ const DebugPanel = forwardRef(function DebugPanel({ toolId, parametersSchema, to
         {tab === 'params' && (
           <div className="flex flex-col gap-3">
             {toolType === 'http' && httpConfig && (
-              <div className="rounded-md bg-background/60 px-3 py-2 text-xs text-muted-foreground">
+              <div className="rounded-md bg-background px-3 py-2 text-xs text-muted-foreground">
                 将向 <span className="font-mono text-muted-foreground">{httpConfig.method} {httpConfig.url}</span> 发起真实请求
               </div>
             )}
             {(parametersSchema || []).length === 0 ? (
-              <p className="text-sm text-muted-foreground/70">该工具没有参数，可直接点击「发送请求」。</p>
+              <p className="text-sm text-muted-foreground">该工具没有参数，可直接点击「发送请求」。</p>
             ) : (
               <div className="flex flex-col gap-2.5">
                 {parametersSchema.map((p) => (
                   <div key={p.name}>
                     <label className={labelCls}>
                       {p.name}
-                      <span className="ml-1 text-[10px] text-muted-foreground/70">({p.type}{p.location ? ` · ${p.location}` : ''})</span>
+                      <span className="ml-1 text-[10px] text-muted-foreground">({p.type}{p.location ? ` · ${p.location}` : ''})</span>
                       {p.required && <span className="ml-1 text-destructive">*</span>}
                     </label>
                     {p.type === 'Boolean' ? (
-                      <select
-                        className={inputCls}
+                      <CompactSelect
+                        size="lg"
+                        block
                         value={testParams[p.name] === true ? 'true' : 'false'}
                         onChange={(e) => setTestParams((prev) => ({ ...prev, [p.name]: e.target.value === 'true' }))}
                       >
                         <option value="false">false</option>
                         <option value="true">true</option>
-                      </select>
+                      </CompactSelect>
                     ) : p.type === 'Object' || p.type === 'Array' ? (
                       <textarea
                         className={`${inputCls} resize-y font-mono`}
@@ -608,7 +612,7 @@ const DebugPanel = forwardRef(function DebugPanel({ toolId, parametersSchema, to
             {testResult && (
               <div className="flex flex-col gap-3">
                 <div>
-                  <div className="mb-1 text-xs text-muted-foreground/70">返回结果</div>
+                  <div className="mb-1 text-xs text-muted-foreground">返回结果</div>
                   <pre className="max-h-72 w-full overflow-auto rounded-md bg-background p-3 font-mono text-xs text-foreground ring-1 ring-border">
                     {testResult.result == null
                       ? '(空)'
@@ -618,10 +622,10 @@ const DebugPanel = forwardRef(function DebugPanel({ toolId, parametersSchema, to
                   </pre>
                 </div>
                 <div>
-                  <div className="mb-1 text-xs text-muted-foreground/70">日志（{(testResult.logs || []).length} 条）</div>
+                  <div className="mb-1 text-xs text-muted-foreground">日志（{(testResult.logs || []).length} 条）</div>
                   <div className="max-h-48 w-full overflow-auto rounded-md bg-background p-3 ring-1 ring-border">
                     {(testResult.logs || []).length === 0 ? (
-                      <div className="text-xs text-muted-foreground/60">暂无日志</div>
+                      <div className="text-xs text-muted-foreground">暂无日志</div>
                     ) : (
                       <div className="flex flex-col gap-1">
                         {testResult.logs.map((log, i) => (
@@ -671,13 +675,13 @@ const DebugPanel = forwardRef(function DebugPanel({ toolId, parametersSchema, to
             {chatResult && (
               <div className="flex flex-col gap-3">
                 <div>
-                  <div className="mb-1 text-xs text-muted-foreground/70">最终回答</div>
+                  <div className="mb-1 text-xs text-muted-foreground">最终回答</div>
                   <div className="rounded-md border border-border bg-background p-3 text-sm text-foreground">
                     {chatResult.response || '(空)'}
                   </div>
                 </div>
                 <div>
-                  <div className="mb-1 text-xs text-muted-foreground/70">运行链路（{(chatResult.messages || []).length} 条消息）</div>
+                  <div className="mb-1 text-xs text-muted-foreground">运行链路（{(chatResult.messages || []).length} 条消息）</div>
                   <div className="flex max-h-80 flex-col gap-1.5 overflow-y-auto rounded-md bg-background p-3 ring-1 ring-border">
                     {(chatResult.messages || []).map((m, i) => {
                       const role = m.role || '?'
@@ -687,7 +691,7 @@ const DebugPanel = forwardRef(function DebugPanel({ toolId, parametersSchema, to
                         assistant: 'text-success',
                         ai: 'text-success',
                         tool: 'text-warning',
-                        system: 'text-muted-foreground/70',
+                        system: 'text-muted-foreground',
                       }[role] || 'text-muted-foreground'
                       return (
                         <div key={i} className="font-mono text-xs">
@@ -907,7 +911,7 @@ function ToolEditor() {
 
   if (loading) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-background text-sm text-muted-foreground/70">
+      <div className="flex h-full w-full items-center justify-center bg-background text-sm text-muted-foreground">
         加载中...
       </div>
     )
@@ -920,7 +924,7 @@ function ToolEditor() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
-      <header className="flex shrink-0 items-center justify-between border-b border-border bg-card/60 px-6 py-4">
+      <header className="flex shrink-0 items-center justify-between border-b border-border bg-card px-6 py-4">
         <div className="flex items-center gap-4">
           <button type="button" onClick={() => navigate('/tools')} className="btn-secondary btn-sm">
             ← 返回列表
@@ -976,12 +980,12 @@ function ToolEditor() {
                 type="button"
                 onClick={() => { setField('tool_type')('http'); setHttpField('method')('GET') }}
                 className={`flex flex-col items-start gap-1.5 rounded-lg border p-4 text-left transition ${
-                  isHttp ? 'border-primary bg-primary/10 shadow-sm' : 'border-border bg-card/40 hover:border-primary/40 hover:bg-muted/40'
+                  isHttp ? 'border-primary bg-primary/10 shadow-sm' : 'border-border bg-card hover:border-primary/40 hover:bg-muted'
                 }`}
               >
-                <Globe className={`h-6 w-6 ${isHttp ? 'text-primary' : 'text-muted-foreground/60'}`} />
+                <Globe className={`h-6 w-6 ${isHttp ? 'text-primary' : 'text-muted-foreground'}`} />
                 <div className="text-sm font-semibold text-foreground">HTTP 接口工具</div>
-                <div className="text-[11px] leading-relaxed text-muted-foreground/70">
+                <div className="text-[11px] leading-relaxed text-muted-foreground">
                   声明式配置，无需写代码。适合调用外部 RESTful API、查询威胁情报等。
                 </div>
                 <span className="mt-1 rounded bg-primary/15 px-1.5 py-0.5 text-[9px] font-medium text-primary">推荐</span>
@@ -990,12 +994,12 @@ function ToolEditor() {
                 type="button"
                 onClick={() => setField('tool_type')('code')}
                 className={`flex flex-col items-start gap-1.5 rounded-lg border p-4 text-left transition ${
-                  !isHttp && !isFramework ? 'border-primary bg-primary/10 shadow-sm' : 'border-border bg-card/40 hover:border-primary/40 hover:bg-muted/40'
+                  !isHttp && !isFramework ? 'border-primary bg-primary/10 shadow-sm' : 'border-border bg-card hover:border-primary/40 hover:bg-muted'
                 }`}
               >
-                <Code2 className={`h-6 w-6 ${!isHttp && !isFramework ? 'text-primary' : 'text-muted-foreground/60'}`} />
+                <Code2 className={`h-6 w-6 ${!isHttp && !isFramework ? 'text-primary' : 'text-muted-foreground'}`} />
                 <div className="text-sm font-semibold text-foreground">Python 代码工具</div>
-                <div className="text-[11px] leading-relaxed text-muted-foreground/70">
+                <div className="text-[11px] leading-relaxed text-muted-foreground">
                   在沙箱中运行 Python 代码，适合复杂逻辑、数据处理、算法实现等。
                 </div>
               </button>
@@ -1006,7 +1010,7 @@ function ToolEditor() {
               >
                 <Zap className="h-6 w-6 text-primary" />
                 <div className="text-sm font-semibold text-foreground">OpenAPI 导入</div>
-                <div className="text-[11px] leading-relaxed text-muted-foreground/70">
+                <div className="text-[11px] leading-relaxed text-muted-foreground">
                   从 Swagger/OpenAPI 规范批量导入已有接口，快速生成 HTTP 工具。
                 </div>
               </button>
@@ -1037,7 +1041,7 @@ function ToolEditor() {
             />
             <p className={hintCls}>建议清晰描述工具用途与调用时机，让 LLM 能准确决策。</p>
             {/* 描述提示模板 */}
-            <div className="mt-1.5 flex items-start gap-1 rounded border border-border bg-secondary/50 p-2 text-[11px] text-muted-foreground/70">
+            <div className="mt-1.5 flex items-start gap-1 rounded border border-border bg-secondary p-2 text-[11px] text-muted-foreground">
               <Lightbulb className="mt-0.5 h-3 w-3 shrink-0" />
               <span>推荐模板：<span className="font-mono">[做什么] + [适用场景] + [返回什么]</span>。如：查询 IP 是否命中内网白名单，返回布尔值。适用于判断外部 IP 是否为可信内网地址。</span>
             </div>
@@ -1047,8 +1051,9 @@ function ToolEditor() {
           <div>
             <label className={labelCls}>工具集分类</label>
             <div className="flex gap-1.5">
-              <select
-                className={`${inputBaseCls} w-40 shrink-0`}
+              <CompactSelect
+                size="md"
+                className="w-40 shrink-0"
                 value={form.category || ''}
                 onChange={(e) => setField('category')(e.target.value || null)}
               >
@@ -1062,7 +1067,7 @@ function ToolEditor() {
                 <option value="task_planning">任务规划</option>
                 <option value="task_delegation">任务委派</option>
                 <option value="_custom">自定义...</option>
-              </select>
+              </CompactSelect>
               <input
                 className={`${inputBaseCls} min-w-0 flex-1`}
                 placeholder={form.category === '_custom' ? '输入自定义分类名称' : '选择或自定义分类'}
@@ -1074,7 +1079,7 @@ function ToolEditor() {
 
           {/* 多标签编辑：支持自定义标签 */}
           <div>
-            <label className={labelCls}>标签 <span className="text-muted-foreground/50">(回车添加，多个标签便于检索)</span></label>
+            <label className={labelCls}>标签 <span className="text-muted-foreground">(回车添加，多个标签便于检索)</span></label>
             <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-secondary p-1.5">
               {(form.tags || []).map((tag, idx) => (
                 <span key={idx} className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[11px] text-primary">
@@ -1092,7 +1097,7 @@ function ToolEditor() {
                 </span>
               ))}
               <input
-                className="min-w-[100px] flex-1 bg-transparent px-1 py-0.5 text-xs text-foreground outline-none placeholder:text-muted-foreground/50"
+                className="min-w-[100px] flex-1 bg-transparent px-1 py-0.5 text-xs text-foreground outline-none placeholder:text-muted-foreground"
                 placeholder="输入标签后回车"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && e.target.value.trim()) {
@@ -1141,15 +1146,16 @@ function ToolEditor() {
             <div className="flex gap-2">
               <div className="w-32 shrink-0">
                 <label className={labelCls}>Method</label>
-                <select
-                  className={inputCls}
+                <CompactSelect
+                  size="lg"
+                  block
                   value={form.http_config.method}
                   onChange={(e) => setHttpField('method')(e.target.value)}
                 >
                   {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((m) => (
                     <option key={m} value={m}>{m}</option>
                   ))}
-                </select>
+                </CompactSelect>
               </div>
               <div className="min-w-0 flex-1">
                 <label className={labelCls}>URL</label>
@@ -1308,7 +1314,7 @@ function ToolEditor() {
                 <Lock className="h-3.5 w-3.5" />
                 框架内置工具使用 OpenAI 参数格式（JSON 对象），不支持可视化编辑。
               </p>
-              <pre className="max-h-60 overflow-auto rounded border border-border bg-card/50 p-2 text-[11px] leading-relaxed text-muted-foreground">
+              <pre className="max-h-60 overflow-auto rounded border border-border bg-card p-2 text-[11px] leading-relaxed text-muted-foreground">
                 {JSON.stringify(form.parameters_schema, null, 2)}
               </pre>
             </div>
@@ -1356,8 +1362,8 @@ function ToolEditor() {
               />
               {/* kwargs 提示同步：展示代码中可用的参数名 */}
               {!isHttp && !isFramework && form.parameters_schema.length > 0 && (
-                <div className="mt-2 rounded-md border border-border bg-muted/40 p-2">
-                  <div className="mb-0.5 text-[10px] font-semibold text-muted-foreground/70">代码中可通过 kwargs 获取：</div>
+                <div className="mt-2 rounded-md border border-border bg-muted p-2">
+                  <div className="mb-0.5 text-[10px] font-semibold text-muted-foreground">代码中可通过 kwargs 获取：</div>
                   <code className="text-[11px] text-primary">
                     {form.parameters_schema.map((p) => p.name).filter(Boolean).map((n) => `kwargs.get('${n}')`).join(',  ')}
                   </code>
@@ -1394,7 +1400,7 @@ function ToolEditor() {
             {/* 代码模板库 + 全屏按钮 */}
             <div className="mb-2 flex items-center justify-between">
               <div className="flex items-center gap-1.5">
-                <span className="text-[10px] text-muted-foreground/60">模板：</span>
+                <span className="text-[10px] text-muted-foreground">模板：</span>
                 {CODE_TEMPLATES.map((tpl) => (
                   <button
                     key={tpl.label}
@@ -1453,7 +1459,7 @@ function ToolEditor() {
 
       {/* 代码全屏编辑弹窗 */}
       {codeFullscreen && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-background/95 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex flex-col bg-background backdrop-blur-sm">
           <div className="flex items-center justify-between border-b border-border px-6 py-3">
             <div className="flex items-center gap-2 text-sm font-medium text-foreground">
               <Code2 className="h-4 w-4" />

@@ -1,18 +1,18 @@
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useSearchParams } from 'react-router-dom'
 import {
   Plus, Download, Upload, RefreshCw, Trash2, Pencil, Search,
   X, Tag as TagIcon, ChevronRight, ChevronDown, History, Server, Network, Globe, Boxes,
-  Loader2, CheckCircle2, XCircle, SlidersHorizontal, RotateCcw, Copy, Eye,
-  Save, Bookmark, MoreVertical,
+  Loader2, CheckCircle2, XCircle, SlidersHorizontal, RotateCcw, Copy, Eye, Database,
+  Save, Bookmark, MoreVertical, SearchX, MapPin,
 } from 'lucide-react'
 import { assetsApi } from '../api/assets'
 import { Modal } from '../components/Dialog'
 import { inputCls, inputBaseCls, labelCls } from '../components/property/FormControls'
 import {
   PageContainer, Card, DataTable, Pagination, Badge, StatusBadge,
-  LoadingState, ErrorState, EmptyState,
+  LoadingState, ErrorState, CompactSelect, DatePicker,
 } from '../components/ui'
 import { toast } from '../store/toastStore'
 import { confirm } from '../components/ConfirmDialog'
@@ -50,12 +50,12 @@ function FieldInput({ fdef, value, onChange, fieldOptions }) {
   }
   if (ftype === 'select') {
     return (
-      <select {...common}>
+      <CompactSelect value={value ?? ''} onChange={(e) => onChange(e.target.value)} size="lg" block>
         <option value="">{fdef.placeholder || '请选择'}</option>
         {(fdef.options || []).map((opt) => (
           <option key={opt} value={opt}>{opt}</option>
         ))}
-      </select>
+      </CompactSelect>
     )
   }
   if (ftype === 'textarea') {
@@ -65,7 +65,7 @@ function FieldInput({ fdef, value, onChange, fieldOptions }) {
     return <input type="number" {...common} />
   }
   if (ftype === 'date') {
-    return <input type="date" {...common} />
+    return <DatePicker value={value ?? ''} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} block />
   }
   // text / ip / cidr
   return <input type="text" {...common} />
@@ -260,7 +260,7 @@ function DetailDrawer({ open, record, template, templates, onClose, onEdit, onDe
                 const isCrit = f.mapped_to === 'standard:criticality'
                 return (
                   <div key={f.key} className="flex flex-col">
-                    <span className="text-[11px] text-muted-foreground/70">{f.label}</span>
+                    <span className="text-[11px] text-muted-foreground">{f.label}</span>
                     {isStatus ? (
                       <StatusBadge color={STATUS_COLORS[record.status] || 'neutral'} label={STATUS_LABELS[record.status] || record.status || '-'} />
                     ) : isCrit ? (
@@ -355,7 +355,7 @@ function TagChip({ tag }) {
   return (
     <span
       className="inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium"
-      style={style || { borderColor: 'rgb(var(--primary) / 0.3)', backgroundColor: 'rgb(var(--primary) / 0.1)', color: 'rgb(var(--primary))' }}
+      style={style || { borderColor: 'oklch(var(--primary) / 0.3)', backgroundColor: 'oklch(var(--primary) / 0.1)', color: 'oklch(var(--primary))' }}
     >
       {tag.name}
     </span>
@@ -392,7 +392,7 @@ function SkeletonRows({ rows = 8, cols = 8 }) {
   return (
     <div className="w-full">
       {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="flex border-b border-border/50 px-4 py-3" style={{ animationDelay: `${i * 60}ms` }}>
+        <div key={i} className="flex border-b border-border px-4 py-3" style={{ animationDelay: `${i * 60}ms` }}>
           {Array.from({ length: cols }).map((__, j) => (
             <div key={j} className="flex-1 px-2">
               <div className="h-3.5 animate-pulse rounded bg-muted" style={{ width: `${40 + Math.random() * 50}%` }} />
@@ -447,7 +447,7 @@ function ImportProgressBar({ progress, fileName }) {
     : 'bg-primary'
   const isProcessing = phase === 'processing'
   return (
-    <div className="rounded-md border border-border bg-muted/20 p-3">
+    <div className="rounded-md border border-border bg-muted p-3">
       <div className="mb-2 flex items-center justify-between gap-2 text-xs">
         <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
           {icon}
@@ -527,11 +527,11 @@ function ImportModal({ open, template, onClose, onDone }) {
         </div>
         <div>
           <label className={labelCls}>冲突策略</label>
-          <select className={inputCls} value={strategy} onChange={(e) => setStrategy(e.target.value)}>
+          <CompactSelect value={strategy} onChange={(e) => setStrategy(e.target.value)} size="lg" block>
             <option value="skip">跳过已存在</option>
             <option value="overwrite">覆盖已存在</option>
             <option value="error">遇冲突报错中止</option>
-          </select>
+          </CompactSelect>
         </div>
         <div className="flex items-center gap-2">
           <button type="button" onClick={() => assetsApi.downloadImportTemplate(template?.code)} className="btn-secondary btn-sm flex items-center gap-1">
@@ -548,7 +548,7 @@ function ImportModal({ open, template, onClose, onDone }) {
           <ImportProgressBar progress={progress} fileName={file?.name} />
         )}
         {result && (
-          <div className="rounded-md border border-border bg-muted/30 p-3 text-xs">
+          <div className="rounded-md border border-border bg-muted p-3 text-xs">
             <div className="mb-1 font-medium text-foreground">导入结果</div>
             <div className="grid grid-cols-2 gap-1 text-muted-foreground">
               <span>总计：{result.total}</span>
@@ -605,7 +605,7 @@ function AggregateTable({ columns, data, selected, onToggleRow, onToggleGroup, a
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-left">
         <thead>
-          <tr className="border-b border-border bg-muted/40 text-xs text-muted-foreground">
+          <tr className="border-b border-border bg-muted text-xs text-muted-foreground">
             {columns.map((col) => (
               <th key={col.key || col.header} className="whitespace-nowrap px-4 py-3 font-medium">
                 {col.header}
@@ -700,7 +700,7 @@ function FragmentGroup({
       {isOpen && group.records.map((row) => (
         <tr
           key={row.id}
-          className="border-b border-border/60 bg-background transition-colors hover:bg-muted/40"
+          className="border-b border-border bg-background transition-colors hover:bg-muted"
           onClick={() => onRowClick(row)}
         >
           {columns.map((col, idx) => {
@@ -748,6 +748,8 @@ export default function AssetList() {
   const [pageSize, setPageSize] = useState(20)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  // IP 精准匹配未命中时后端返回的最接近 IP 建议（{ip, asset_id, asset_name, stored_ip}）
+  const [suggestions, setSuggestions] = useState([])
 
   // 概览统计（用于 Tab 数量徽章）
   const [overview, setOverview] = useState(null)
@@ -770,6 +772,20 @@ export default function AssetList() {
   const resetFilters = () => {
     setKeywordInput(''); setKeyword(''); setFStatus(''); setFCrit(''); setFDept(''); setFTag(''); setPage(1)
   }
+
+  // 头部「数据」下拉菜单（ref + document 监听实现点击外部关闭，不用全屏遮罩避免拦截交互）
+  const [dataMenuOpen, setDataMenuOpen] = useState(false)
+  const dataMenuRef = useRef(null)
+  useEffect(() => {
+    if (!dataMenuOpen) return
+    const onDocMouseDown = (e) => {
+      if (dataMenuRef.current && !dataMenuRef.current.contains(e.target)) {
+        setDataMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDocMouseDown)
+    return () => document.removeEventListener('mousedown', onDocMouseDown)
+  }, [dataMenuOpen])
 
   // 搜索输入防抖：关键词搜索要跨 8 个字段做 %kw% 匹配（全表扫描），
   // 若每敲一个字都打一次接口会明显卡顿；停顿 350ms 后再查。
@@ -880,8 +896,10 @@ export default function AssetList() {
       })
       setItems(res.items || [])
       setTotal(res.total || 0)
+      setSuggestions(res.suggestions || [])
     } catch (e) {
       setError(e.message || '加载失败')
+      setSuggestions([])
     } finally { setLoading(false) }
   }, [activeTypeCode, keyword, fStatus, fCrit, fDept, fTag, page, pageSize])
 
@@ -891,6 +909,17 @@ export default function AssetList() {
   useEffect(() => {
     assetsApi.fieldOptions(activeTypeCode || undefined).then((r) => setDeptOptions(r.departments || [])).catch(() => {})
   }, [activeTypeCode])
+
+  // 状态指标条统计：状态 / 重要性分布（useMemo 从当前页数据派生，不新增 API 请求）
+  const pageStats = useMemo(() => {
+    const byStatus = {}
+    const byCrit = {}
+    for (const it of items) {
+      if (it.status) byStatus[it.status] = (byStatus[it.status] || 0) + 1
+      if (it.criticality) byCrit[it.criticality] = (byCrit[it.criticality] || 0) + 1
+    }
+    return { byStatus, byCrit }
+  }, [items])
 
   // 一键全选：先同步全选本页保证立即反馈；多页时再拉取全量 ID 升级为“全选所有匹配结果”
   const handleHeaderSelectAll = useCallback(async () => {
@@ -956,9 +985,11 @@ export default function AssetList() {
         .filter((f) => f.show_in_list)
         .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
       fieldCols.forEach((f) => {
+        const isNumericField = f.type === 'number'
         cols.push({
           key: f.key,
           header: f.label,
+          numeric: isNumericField,
           render: (row) => {
             const v = getFieldValue(row, f)
             if (f.key === activeTemplate.identifier_field) {
@@ -969,6 +1000,18 @@ export default function AssetList() {
             }
             if (f.mapped_to === 'standard:criticality') {
               return <StatusBadge color={CRIT_COLORS[row.criticality] || 'neutral'} label={CRIT_LABELS[row.criticality] || row.criticality || '-'} />
+            }
+            // 数值列：千位分隔；0 弱化、缺失显示 '--'
+            if (isNumericField) {
+              if (v == null || v === '') {
+                return <span className="text-muted-foreground" title="未统计">--</span>
+              }
+              const n = Number(v)
+              if (!Number.isFinite(n)) {
+                return <span className="text-muted-foreground" title="未统计">--</span>
+              }
+              if (n === 0) return <span className="text-muted-foreground">0</span>
+              return <span>{n.toLocaleString()}</span>
             }
             // 长文本截断 + hover 显示完整内容
             return <TruncateCell text={v} maxWidth={180} />
@@ -1000,22 +1043,22 @@ export default function AssetList() {
     })
     // 操作列（行操作显性化：详情/编辑/删除/复制 IP）
     cols.push({
-      key: '__actions', header: '操作', width: '200px',
+      key: '__actions', header: '操作', width: '270px',
       render: (row) => (
         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-          <button type="button" onClick={() => setDetail(row)} className="inline-flex items-center gap-1 rounded border border-border bg-secondary px-2 py-1 text-[11px] text-muted-foreground hover:bg-secondary/70" title="查看详情">
+          <button type="button" onClick={() => setDetail(row)} className="btn-secondary btn-sm" title="查看详情">
             <Eye className="h-3 w-3" /> 详情
           </button>
           {canManage && (
-            <button type="button" onClick={() => { setEditing(row); setFormOpen(true) }} className="inline-flex items-center gap-1 rounded border border-border bg-secondary px-2 py-1 text-[11px] text-muted-foreground hover:bg-secondary/70" title="编辑">
+            <button type="button" onClick={() => { setEditing(row); setFormOpen(true) }} className="btn-secondary btn-sm" title="编辑">
               <Pencil className="h-3 w-3" /> 编辑
             </button>
           )}
-          <button type="button" onClick={() => copyText(row.ip || row.identifier)} className="inline-flex h-7 w-7 items-center justify-center rounded border border-border bg-secondary text-muted-foreground hover:bg-secondary/70" title="复制 IP">
+          <button type="button" onClick={() => copyText(row.ip || row.identifier)} className="btn-secondary btn-sm" title="复制 IP">
             <Copy className="h-3 w-3" />
           </button>
           {canDelete && (
-            <button type="button" onClick={() => handleDelete(row)} className="inline-flex h-7 w-7 items-center justify-center rounded border border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/20" title="删除">
+            <button type="button" onClick={() => handleDelete(row)} className="btn-danger btn-sm" title="删除">
               <Trash2 className="h-3 w-3" />
             </button>
           )}
@@ -1072,12 +1115,88 @@ export default function AssetList() {
     toast.success('导出已开始')
   }
 
+  // 空态文案与操作（DataTable props；区分「无数据」与「筛选无结果」两种场景）
+  const hasActiveFilters = Boolean(keyword || fStatus || fCrit || fDept || fTag)
+  const emptyProps = {
+    emptyIcon: Boxes,
+    emptyText: hasActiveFilters
+      ? '未找到匹配的资产'
+      : activeTemplate ? `暂无${activeTemplate.name}` : '暂无资产',
+    emptyDescription: hasActiveFilters
+      ? '调整关键词或清除筛选条件后再试'
+      : activeTemplate ? '新增或导入第一批资产数据' : '请先在类型模板页创建资产类型',
+    emptyAction: hasActiveFilters ? (
+      <button type="button" onClick={resetFilters} className="btn-secondary btn-sm">清除筛选</button>
+    ) : activeTemplate && canManage ? (
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={() => { setEditing(null); setFormOpen(true) }} className="btn-primary btn-sm flex items-center gap-1">
+          <Plus className="h-3.5 w-3.5" /> 新增资产
+        </button>
+        <button type="button" onClick={() => setImportOpen(true)} className="btn-secondary btn-sm flex items-center gap-1">
+          <Upload className="h-3.5 w-3.5" /> 导入资产
+        </button>
+      </div>
+    ) : null,
+  }
+
   return (
     <PageContainer>
-      {/* 标题 */}
-      <div className="mb-3">
-        <h1 className="text-xl font-semibold text-foreground">资产清单</h1>
-        <p className="mt-1 text-sm text-muted-foreground">按类型多维度筛选、查询与管理资产</p>
+      {/* 标题 + 全局操作区 */}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">资产清单</h1>
+        {!loading && (
+          <span className="text-sm font-medium tabular-nums text-foreground">
+            共 {total.toLocaleString()} 个资产
+          </span>
+        )}
+        <span className="hidden text-xs text-muted-foreground xl:inline">按类型多维度筛选、查询与管理资产</span>
+        <div className="ml-auto flex items-center gap-2">
+          {/* 数据操作下拉：导入 / 导出（ref + document 监听点击外部关闭，不用全屏遮罩） */}
+          <div className="relative" ref={dataMenuRef}>
+            <button
+              type="button"
+              onClick={() => setDataMenuOpen((v) => !v)}
+              className={`btn-secondary btn-sm ${dataMenuOpen ? 'ring-1 ring-ring' : ''}`}
+              title="数据导入 / 导出"
+            >
+              <Database className="mr-1 h-3.5 w-3.5" /> 数据
+              <ChevronDown className={`ml-1 h-3 w-3 transition-transform ${dataMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {dataMenuOpen && (
+              <div className="absolute right-0 z-20 mt-1 w-44 rounded-md border border-border bg-popover p-1 shadow-lg">
+                <button
+                  type="button"
+                  disabled={!activeTemplate}
+                  onClick={() => { setImportOpen(true); setDataMenuOpen(false) }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+                  title={activeTemplate ? '从 CSV / Excel 导入资产' : '请先选择资产类型'}
+                >
+                  <Upload className="h-3.5 w-3.5 text-muted-foreground" />
+                  导入资产
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { handleExport(); setDataMenuOpen(false) }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground transition hover:bg-accent"
+                >
+                  <Download className="h-3.5 w-3.5 text-muted-foreground" />
+                  导出资产
+                </button>
+              </div>
+            )}
+          </div>
+          <button type="button" onClick={load} className="btn-secondary btn-sm flex items-center gap-1" title="刷新资产列表">
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> 刷新
+          </button>
+          <button
+            onClick={() => { setEditing(null); setFormOpen(true) }}
+            disabled={!activeTemplate}
+            className="btn-primary btn-sm flex items-center gap-1"
+            title={!activeTemplate ? '请先选择资产类型' : ''}
+          >
+            <Plus className="h-3.5 w-3.5" /> 新增资产
+          </button>
+        </div>
       </div>
 
       {/* 类型 Tab（含数量徽章） */}
@@ -1090,8 +1209,8 @@ export default function AssetList() {
         >
           全部
           {overview && (
-            <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-secondary px-1.5 text-[10px] font-medium text-muted-foreground">
-              {overview.total ?? 0}
+            <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-secondary px-1.5 text-[10px] font-medium tabular-nums text-muted-foreground">
+              {(overview.total ?? 0).toLocaleString()}
             </span>
           )}
           {!activeTypeCode && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded bg-primary" />}
@@ -1109,8 +1228,8 @@ export default function AssetList() {
               }`}
             >
               <Icon className="h-3.5 w-3.5" /> {t.name}
-              <span className={`inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-medium ${count > 0 ? 'bg-primary/15 text-primary' : 'bg-secondary text-muted-foreground/60'}`}>
-                {count}
+              <span className={`inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-medium tabular-nums ${count > 0 ? 'bg-primary/15 text-primary' : 'bg-secondary text-muted-foreground'}`}>
+                {count.toLocaleString()}
               </span>
               {active && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded bg-primary" />}
             </button>
@@ -1118,9 +1237,9 @@ export default function AssetList() {
         })}
       </div>
 
-      {/* 工具栏：搜索 + 筛选触发（左）与 新增/导入/导出/刷新（右）合并同一行 */}
+      {/* 工具栏：搜索 + 筛选触发（新增/导入/导出/刷新已上移至页面头部操作区） */}
       <Card className="mb-4">
-        <div className="flex flex-wrap items-center justify-between gap-2 p-2.5">
+        <div className="flex flex-wrap items-center gap-2 p-2.5">
           {/* 左：搜索框 + 高级筛选触发按钮 */}
           <div className="flex items-center gap-2">
             <div className="relative w-52">
@@ -1155,44 +1274,29 @@ export default function AssetList() {
               <ChevronDown className={`h-3.5 w-3.5 transition-transform ${filterOpen ? 'rotate-180' : ''}`} />
             </button>
           </div>
-          {/* 右：操作按钮 */}
-          <div className="flex items-center gap-2">
-            <button onClick={() => { setEditing(null); setFormOpen(true) }} disabled={!activeTemplate} className="btn-primary btn-sm flex items-center gap-1" title={!activeTemplate ? '请先选择资产类型' : ''}>
-              <Plus className="h-4 w-4" /> 新增
-            </button>
-            <button onClick={() => setImportOpen(true)} disabled={!activeTemplate} className="btn-secondary btn-sm flex items-center gap-1">
-              <Upload className="h-4 w-4" /> 导入
-            </button>
-            <button onClick={handleExport} className="btn-secondary btn-sm flex items-center gap-1">
-              <Download className="h-4 w-4" /> 导出
-            </button>
-            <button onClick={load} className="btn-secondary btn-sm flex items-center gap-1">
-              <RefreshCw className="h-4 w-4" /> 刷新
-            </button>
-          </div>
         </div>
         {/* 高级筛选面板（可折叠，默认收起；展开显示 4 个筛选项 + 一键重置） */}
         {filterOpen && (
-          <div className="flex flex-wrap items-center gap-2 border-t border-border bg-muted/20 p-2.5">
+          <div className="flex flex-wrap items-center gap-2 border-t border-border bg-muted p-2.5">
             <span className="mr-1 flex items-center gap-1 text-xs font-medium text-muted-foreground">
               <SlidersHorizontal className="h-3.5 w-3.5" /> 高级筛选
             </span>
-            <select className={`${inputBaseCls} w-[108px]`} value={fStatus} onChange={(e) => { setFStatus(e.target.value); setPage(1) }}>
+            <CompactSelect value={fStatus} onChange={(e) => { setFStatus(e.target.value); setPage(1) }} size="lg" className="w-[108px]">
               <option value="">全部状态</option>
               {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-            <select className={`${inputBaseCls} w-[116px]`} value={fCrit} onChange={(e) => { setFCrit(e.target.value); setPage(1) }}>
+            </CompactSelect>
+            <CompactSelect value={fCrit} onChange={(e) => { setFCrit(e.target.value); setPage(1) }} size="lg" className="w-[116px]">
               <option value="">全部重要性</option>
               {Object.entries(CRIT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-            <select className={`${inputBaseCls} w-[144px]`} value={fDept} onChange={(e) => { setFDept(e.target.value); setPage(1) }}>
+            </CompactSelect>
+            <CompactSelect value={fDept} onChange={(e) => { setFDept(e.target.value); setPage(1) }} size="lg" className="w-[144px]">
               <option value="">全部部门</option>
               {deptOptions.map((d) => <option key={d} value={d}>{d}</option>)}
-            </select>
-            <select className={`${inputBaseCls} w-[124px]`} value={fTag} onChange={(e) => { setFTag(e.target.value); setPage(1) }}>
+            </CompactSelect>
+            <CompactSelect value={fTag} onChange={(e) => { setFTag(e.target.value); setPage(1) }} size="lg" className="w-[124px]">
               <option value="">全部标签</option>
               {tags.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
+            </CompactSelect>
             <button
               type="button"
               onClick={resetFilters}
@@ -1230,7 +1334,7 @@ export default function AssetList() {
         )}
         {/* 已选筛选条件可视化（Tag 形式，支持单个删除和一键清空） */}
         {(keyword || fStatus || fCrit || fDept || fTag) && (
-          <div className="flex flex-wrap items-center gap-1.5 border-t border-border bg-muted/10 p-2.5">
+          <div className="flex flex-wrap items-center gap-1.5 border-t border-border bg-muted p-2.5">
             <span className="text-[11px] text-muted-foreground">当前筛选：</span>
             {keyword && (
               <FilterChip label={`关键词: ${keyword}`} onRemove={() => { setKeywordInput(''); setKeyword(''); setPage(1) }} />
@@ -1251,6 +1355,71 @@ export default function AssetList() {
           </div>
         )}
       </Card>
+
+      {/* 状态指标条：状态 / 重要性分布（点击快速筛选，联动高级筛选状态）+ 右侧汇总 */}
+      {!loading && total > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-xs" title="统计范围为当前页资产，点击可快速筛选">
+          {[
+            { key: 'in_use', label: STATUS_LABELS.in_use, dot: 'bg-success', active: 'bg-success/15 text-success ring-success/40' },
+            { key: 'idle', label: STATUS_LABELS.idle, dot: 'bg-zinc-500', active: 'bg-zinc-500/15 text-zinc-400 ring-zinc-500/40' },
+            { key: 'repair', label: STATUS_LABELS.repair, dot: 'bg-warning', active: 'bg-warning/15 text-warning ring-warning/40' },
+            { key: 'retired', label: STATUS_LABELS.retired, dot: 'bg-muted-foreground', active: 'bg-secondary text-foreground ring-border' },
+            { key: 'lost', label: STATUS_LABELS.lost, dot: 'bg-destructive', active: 'bg-destructive/15 text-destructive ring-destructive/40' },
+          ].map((chip) => {
+            const active = fStatus === chip.key
+            const count = pageStats.byStatus[chip.key] || 0
+            return (
+              <button
+                key={chip.key} type="button"
+                onClick={() => { setFStatus(active ? '' : chip.key); setPage(1) }}
+                className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 font-medium transition-all duration-200 ${
+                  active
+                    ? `border-transparent ring-1 ${chip.active}`
+                    : 'border-border bg-secondary text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                }`}
+                title={active ? '点击取消该状态筛选' : `点击筛选「${chip.label}」状态的资产`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${chip.dot} ${chip.key === 'in_use' && count > 0 ? 'animate-pulse' : ''}`} />
+                {chip.label}
+                <span className={`tabular-nums ${count > 0 ? '' : 'text-muted-foreground'}`}>{count}</span>
+              </button>
+            )
+          })}
+          <span className="mx-1 h-4 w-px bg-border" />
+          {[
+            { key: 'low', label: CRIT_LABELS.low, dot: 'bg-success', active: 'bg-success/15 text-success ring-success/40' },
+            { key: 'medium', label: CRIT_LABELS.medium, dot: 'bg-warning', active: 'bg-warning/15 text-warning ring-warning/40' },
+            { key: 'high', label: CRIT_LABELS.high, dot: 'bg-orange-500', active: 'bg-orange-500/15 text-orange-400 ring-orange-500/40' },
+            { key: 'critical', label: CRIT_LABELS.critical, dot: 'bg-destructive', active: 'bg-destructive/15 text-destructive ring-destructive/40' },
+          ].map((chip) => {
+            const active = fCrit === chip.key
+            const count = pageStats.byCrit[chip.key] || 0
+            return (
+              <button
+                key={chip.key} type="button"
+                onClick={() => { setFCrit(active ? '' : chip.key); setPage(1) }}
+                className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 font-medium transition-all duration-200 ${
+                  active
+                    ? `border-transparent ring-1 ${chip.active}`
+                    : 'border-border bg-secondary text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                }`}
+                title={active ? '点击取消该重要性筛选' : `点击筛选「${chip.label}」重要性的资产`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${chip.dot} ${chip.key === 'critical' && count > 0 ? 'animate-pulse' : ''}`} />
+                {chip.label}
+                <span className={`tabular-nums ${count > 0 ? '' : 'text-muted-foreground'}`}>{count}</span>
+              </button>
+            )
+          })}
+          <div className="ml-auto flex items-center gap-1.5 text-muted-foreground" title="当前筛选条件下匹配的资产总数">
+            <Boxes className="h-3.5 w-3.5 text-primary/80" />
+            资产总数
+            <span className={`font-semibold tabular-nums ${total > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+              {total > 0 ? total.toLocaleString() : '--'}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* 批量操作栏（有选中时显示） */}
       {selected.size > 0 && (
@@ -1286,48 +1455,69 @@ export default function AssetList() {
 
       {/* 表格 */}
       <Card bodyClassName="p-0">
-        {loading ? (
-          <SkeletonRows rows={8} cols={columns.length} />
-        ) : error ? (
+        {error ? (
           <ErrorState description={error} onRetry={load} />
-        ) : items.length === 0 ? (
-          <EmptyState
-            icon={Boxes}
-            title={activeTemplate ? `暂无${activeTemplate.name}` : '暂无资产'}
-            description={activeTemplate ? '点击「新增」或「导入」添加资产' : '请先在类型模板页创建资产类型'}
-            action={activeTemplate && canManage ? (
-              <button onClick={() => { setEditing(null); setFormOpen(true) }} className="btn-primary btn-sm flex items-center gap-1">
-                <Plus className="h-4 w-4" /> 新增资产
-              </button>
-            ) : null}
-          />
+        ) : !loading && items.length === 0 && suggestions.length > 0 ? (
+          <div className="flex flex-col items-center justify-center gap-4 px-6 py-12 text-center">
+            <SearchX className="h-10 w-10 text-muted-foreground" />
+            <div>
+              <div className="text-sm font-medium text-foreground">未找到与「{keyword}」精确匹配的资产</div>
+              <div className="mt-1 text-xs text-muted-foreground">以下是与该 IP 最接近的 {suggestions.length} 个 IP 信息，点击可按该 IP 重新检索</div>
+            </div>
+            <div className="flex w-full max-w-4xl flex-wrap items-stretch justify-center gap-2">
+              {suggestions.map((s) => (
+                <button
+                  key={`${s.asset_id}-${s.ip}`}
+                  type="button"
+                  onClick={() => { setKeywordInput(s.ip); setKeyword(s.ip); setPage(1) }}
+                  className="flex min-w-52 max-w-64 flex-1 flex-col items-start gap-0.5 rounded-lg border border-border bg-background px-4 py-3 text-left transition-colors hover:border-primary/50 hover:bg-primary/5"
+                  title={`按 ${s.ip} 重新检索（资产存储值：${s.stored_ip}）`}
+                >
+                  <span className="flex w-full items-center gap-1.5 font-mono text-sm font-medium text-foreground">
+                    <MapPin className="h-3.5 w-3.5 shrink-0 text-primary" />{s.ip}
+                  </span>
+                  <span className="w-full truncate text-xs text-muted-foreground">{s.asset_name || `资产 #${s.asset_id}`}</span>
+                  <span className="w-full truncate font-mono text-[11px] text-muted-foreground">存储值：{s.stored_ip}</span>
+                </button>
+              ))}
+            </div>
+          </div>
         ) : isAggregateMode ? (
-          <AggregateTable
-            columns={columns}
-            data={items}
-            selected={selected}
-            onToggleRow={(id) => setSelected((p) => {
-              const n = new Set(p)
-              if (n.has(id)) n.delete(id); else n.add(id)
-              return n
-            })}
-            onToggleGroup={(groupIds) => setSelected((p) => {
-              const n = new Set(p)
-              const allChecked = groupIds.every((id) => n.has(id))
-              if (allChecked) groupIds.forEach((id) => n.delete(id))
-              else groupIds.forEach((id) => n.add(id))
-              return n
-            })}
-            onRowClick={(row) => setDetail(row)}
-          />
+          loading ? (
+            <SkeletonRows rows={8} cols={columns.length} />
+          ) : items.length === 0 ? (
+            <DataTable columns={columns} data={[]} rowKey="id" className="table-stagger" {...emptyProps} />
+          ) : (
+            <AggregateTable
+              columns={columns}
+              data={items}
+              selected={selected}
+              onToggleRow={(id) => setSelected((p) => {
+                const n = new Set(p)
+                if (n.has(id)) n.delete(id); else n.add(id)
+                return n
+              })}
+              onToggleGroup={(groupIds) => setSelected((p) => {
+                const n = new Set(p)
+                const allChecked = groupIds.every((id) => n.has(id))
+                if (allChecked) groupIds.forEach((id) => n.delete(id))
+                else groupIds.forEach((id) => n.add(id))
+                return n
+              })}
+              onRowClick={(row) => setDetail(row)}
+            />
+          )
         ) : (
           <DataTable
             columns={columns}
             data={items}
+            loading={loading}
             onRowClick={(row) => setDetail(row)}
             rowKey="id"
             stickyHeader
             maxHeight="calc(100vh - 280px)"
+            className="table-stagger"
+            {...emptyProps}
           />
         )}
         {total > 0 && (
@@ -1512,10 +1702,10 @@ function BatchEditModal({ open, selectedCount, deptOptions, onClose, onConfirm }
         </div>
         <div>
           <label className={labelCls}>状态</label>
-          <select className={inputCls} value={status} onChange={(e) => setStatus(e.target.value)}>
+          <CompactSelect value={status} onChange={(e) => setStatus(e.target.value)} size="lg" block>
             <option value="">留空保持不变</option>
             {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+          </CompactSelect>
         </div>
       </div>
     </Modal>
@@ -1565,19 +1755,19 @@ function ExportModal({ open, template, selectedCount, totalCount, onClose, onCon
           <div className="grid grid-cols-2 gap-2">
             <button type="button" onClick={() => setScope('all')} className={`rounded-md border p-2 text-left text-xs transition ${scope === 'all' ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/50'}`}>
               <div className="font-medium">全部筛选结果</div>
-              <div className="text-[10px] text-muted-foreground/70">共 {totalCount} 条</div>
+              <div className="text-[10px] text-muted-foreground">共 {totalCount} 条</div>
             </button>
             <button type="button" onClick={() => setScope('selected')} disabled={selectedCount === 0} className={`rounded-md border p-2 text-left text-xs transition disabled:opacity-40 ${scope === 'selected' ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/50'}`}>
               <div className="font-medium">仅选中项</div>
-              <div className="text-[10px] text-muted-foreground/70">{selectedCount} 条</div>
+              <div className="text-[10px] text-muted-foreground">{selectedCount} 条</div>
             </button>
           </div>
         </div>
         {/* 字段选择 */}
         {template && fieldDefs.length > 0 && (
           <div>
-            <label className={labelCls}>导出字段 <span className="text-muted-foreground/50">(不选则导出全部)</span></label>
-            <div className="grid max-h-48 grid-cols-2 gap-1.5 overflow-y-auto rounded-md border border-border bg-secondary/40 p-2">
+            <label className={labelCls}>导出字段 <span className="text-muted-foreground">(不选则导出全部)</span></label>
+            <div className="grid max-h-48 grid-cols-2 gap-1.5 overflow-y-auto rounded-md border border-border bg-secondary p-2">
               {fieldDefs.map((f) => (
                 <label key={f.key} className="flex items-center gap-1.5 text-xs">
                   <input type="checkbox" checked={selectedFields.has(f.key)} onChange={() => toggleField(f.key)} className="accent-primary" />

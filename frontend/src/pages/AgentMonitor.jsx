@@ -38,10 +38,10 @@ function StatusBadge({ status }) {
 // 统计卡片
 function StatCard({ label, value, sub, color = 'text-foreground' }) {
   return (
-    <div className="rounded-lg border border-border bg-card/40 p-4">
-      <div className="text-xs text-muted-foreground/70">{label}</div>
+    <div className="rounded-lg border border-border bg-card p-4">
+      <div className="text-xs text-muted-foreground">{label}</div>
       <div className={`mt-1 text-2xl font-semibold ${color}`}>{value}</div>
-      {sub && <div className="mt-0.5 text-[11px] text-muted-foreground/60">{sub}</div>}
+      {sub && <div className="mt-0.5 text-[11px] text-muted-foreground">{sub}</div>}
     </div>
   )
 }
@@ -51,14 +51,14 @@ function TrendChart({ data }) {
   if (!data || data.length === 0) return null
   const maxCount = Math.max(...data.map((d) => d.count), 1)
   return (
-    <div className="rounded-lg border border-border bg-card/40 p-4">
+    <div className="rounded-lg border border-border bg-card p-4">
       <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         最近 7 天执行趋势
       </div>
       <div className="flex items-end justify-between gap-2" style={{ height: '120px' }}>
         {data.map((d, idx) => (
           <div key={idx} className="flex flex-1 flex-col items-center gap-1">
-            <div className="text-[10px] text-muted-foreground/70">{d.count}</div>
+            <div className="text-[10px] text-muted-foreground">{d.count}</div>
             <div
               className="w-full rounded-t bg-primary/60 transition-all hover:bg-primary"
               style={{
@@ -67,7 +67,7 @@ function TrendChart({ data }) {
               }}
               title={`${d.date}: ${d.count} 次`}
             />
-            <div className="text-[10px] text-muted-foreground/70">{d.date}</div>
+            <div className="text-[10px] text-muted-foreground">{d.date}</div>
           </div>
         ))}
       </div>
@@ -83,7 +83,7 @@ function ToolCallCard({ tc, idx }) {
   const isLong = (resultStr || '').length > 200
 
   return (
-    <div className="rounded-md border border-border bg-card/60 p-3">
+    <div className="rounded-md border border-border bg-card p-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-mono text-primary">
@@ -102,13 +102,13 @@ function ToolCallCard({ tc, idx }) {
           )}
         </div>
         {tc.duration_ms != null && (
-          <span className="text-[11px] text-muted-foreground/70">{fmtDuration(tc.duration_ms)}</span>
+          <span className="text-[11px] text-muted-foreground">{fmtDuration(tc.duration_ms)}</span>
         )}
       </div>
 
       {argsStr && (
         <div className="mt-2">
-          <div className="text-[10px] text-muted-foreground/70">参数</div>
+          <div className="text-[10px] text-muted-foreground">参数</div>
           <pre className="mt-1 max-h-24 overflow-auto rounded bg-background p-2 text-[11px] text-muted-foreground ring-1 ring-border">
             {argsStr}
           </pre>
@@ -118,7 +118,7 @@ function ToolCallCard({ tc, idx }) {
       {resultStr && (
         <div className="mt-2">
           <div className="flex items-center justify-between">
-            <div className="text-[10px] text-muted-foreground/70">结果</div>
+            <div className="text-[10px] text-muted-foreground">结果</div>
             {isLong && (
               <button
                 type="button"
@@ -179,7 +179,7 @@ function AgentMonitor() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
-      <header className="flex items-center justify-between border-b border-border bg-card/60 px-6 py-4">
+      <header className="flex items-center justify-between border-b border-border bg-card px-6 py-4">
         <div className="flex items-center gap-4">
           <button
             type="button"
@@ -218,14 +218,14 @@ function AgentMonitor() {
       )}
 
       {loading ? (
-        <div className="flex h-40 items-center justify-center text-sm text-muted-foreground/70">
+        <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
           加载中...
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto p-6">
           {/* 智能体信息 */}
           {agent && (
-            <div className="mb-4 rounded-lg border border-border bg-card/40 p-4">
+            <div className="mb-4 rounded-lg border border-border bg-card p-4">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/15 text-primary">
                   <Bot className="h-5 w-5" />
@@ -234,11 +234,11 @@ function AgentMonitor() {
                   <div className="text-sm font-semibold text-foreground">
                     {agent.name}
                   </div>
-                  <div className="truncate text-xs text-muted-foreground/70">
+                  <div className="truncate text-xs text-muted-foreground">
                     {agent.description || '无描述'}
                   </div>
                 </div>
-                <div className="flex gap-2 text-[11px] text-muted-foreground/70">
+                <div className="flex gap-2 text-[11px] text-muted-foreground">
                   <span>模型配置 #{agent.model_config_id ?? '-'}</span>
                   <span>·</span>
                   <span>迭代上限 {agent.max_iterations ?? '-'}</span>
@@ -280,7 +280,7 @@ function AgentMonitor() {
               </h2>
             </div>
             {executions.length === 0 ? (
-              <div className="flex h-32 items-center justify-center text-sm text-muted-foreground/60">
+              <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
                 暂无执行记录，点击列表页「测试」按钮执行智能体后将在此显示
               </div>
             ) : (
@@ -308,7 +308,7 @@ function AgentMonitor() {
                         <tr
                           key={e.id}
                           className={`cursor-pointer border-t border-border transition-colors hover:bg-primary/5 ${
-                            idx % 2 === 0 ? 'bg-card/40' : 'bg-card/20'
+                            idx % 2 === 0 ? 'bg-card' : 'bg-card'
                           }`}
                           onClick={() => {
                             setDetailExec(e)
@@ -342,16 +342,16 @@ function AgentMonitor() {
                                   </span>
                                 ))}
                                 {tools.length > 3 && (
-                                  <span className="text-[10px] text-muted-foreground/70">
+                                  <span className="text-[10px] text-muted-foreground">
                                     +{tools.length - 3}
                                   </span>
                                 )}
                               </div>
                             ) : (
-                              <span className="text-xs text-muted-foreground/60">-</span>
+                              <span className="text-xs text-muted-foreground">-</span>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-muted-foreground/70">
+                          <td className="px-4 py-3 text-muted-foreground">
                             {fmtTime(e.created_at)}
                           </td>
                           <td className="px-4 py-3">
@@ -403,32 +403,32 @@ function AgentMonitor() {
             <div className="flex flex-col gap-4">
               {/* 基本信息 */}
               <div className="grid grid-cols-4 gap-3">
-                <div className="rounded-md border border-border bg-card/60 p-3">
-                  <div className="text-xs text-muted-foreground/70">状态</div>
+                <div className="rounded-md border border-border bg-card p-3">
+                  <div className="text-xs text-muted-foreground">状态</div>
                   <div className="mt-1">
                     <StatusBadge status={detailExec.status} />
                   </div>
                 </div>
-                <div className="rounded-md border border-border bg-card/60 p-3">
-                  <div className="text-xs text-muted-foreground/70">模型</div>
+                <div className="rounded-md border border-border bg-card p-3">
+                  <div className="text-xs text-muted-foreground">模型</div>
                   <div className="mt-1 truncate text-sm text-foreground" title={model.name}>
                     {model.name || '-'}
                   </div>
-                  <div className="text-[10px] text-muted-foreground/60">{model.provider || ''}</div>
+                  <div className="text-[10px] text-muted-foreground">{model.provider || ''}</div>
                 </div>
-                <div className="rounded-md border border-border bg-card/60 p-3">
-                  <div className="text-xs text-muted-foreground/70">迭代次数</div>
+                <div className="rounded-md border border-border bg-card p-3">
+                  <div className="text-xs text-muted-foreground">迭代次数</div>
                   <div className="mt-1 text-sm font-mono text-primary">
                     {r.iterations ?? '-'}
                   </div>
                 </div>
-                <div className="rounded-md border border-border bg-card/60 p-3">
-                  <div className="text-xs text-muted-foreground/70">Token 消耗</div>
+                <div className="rounded-md border border-border bg-card p-3">
+                  <div className="text-xs text-muted-foreground">Token 消耗</div>
                   <div className="mt-1 text-sm font-mono text-foreground">
                     {tokens.total_tokens ? tokens.total_tokens.toLocaleString() : '-'}
                   </div>
                   {tokens.input_tokens != null && (
-                    <div className="text-[10px] text-muted-foreground/60">
+                    <div className="text-[10px] text-muted-foreground">
                       输入 {tokens.input_tokens?.toLocaleString()} · 输出 {tokens.output_tokens?.toLocaleString()}
                     </div>
                   )}
@@ -437,7 +437,7 @@ function AgentMonitor() {
 
               {/* 执行时间 */}
               <div>
-                <div className="mb-1 text-xs text-muted-foreground/70">执行时间</div>
+                <div className="mb-1 text-xs text-muted-foreground">执行时间</div>
                 <div className="text-sm text-muted-foreground">
                   {fmtTime(detailExec.created_at)}
                   {detailExec.finished_at &&
@@ -447,8 +447,8 @@ function AgentMonitor() {
 
               {/* 思维链信息 */}
               {r.thinking_chars > 0 && (
-                <div className="rounded-md border border-border bg-card/60 p-3">
-                  <div className="text-xs text-muted-foreground/70">思维链长度</div>
+                <div className="rounded-md border border-border bg-card p-3">
+                  <div className="text-xs text-muted-foreground">思维链长度</div>
                   <div className="mt-1 text-sm text-muted-foreground">
                     {r.thinking_chars.toLocaleString()} 字符
                   </div>
@@ -458,7 +458,7 @@ function AgentMonitor() {
               {/* 用户输入 */}
               {r.input && (
                 <div>
-                  <div className="mb-1 text-xs text-muted-foreground/70">用户输入</div>
+                  <div className="mb-1 text-xs text-muted-foreground">用户输入</div>
                   <pre className="max-h-32 w-full overflow-auto rounded-md bg-background p-3 font-mono text-xs text-muted-foreground ring-1 ring-border">
                     {typeof r.input === 'string' ? r.input : JSON.stringify(r.input, null, 2)}
                   </pre>
@@ -482,7 +482,7 @@ function AgentMonitor() {
               {/* AI 回复 */}
               {r.reply && (
                 <div>
-                  <div className="mb-1 text-xs text-muted-foreground/70">AI 回复</div>
+                  <div className="mb-1 text-xs text-muted-foreground">AI 回复</div>
                   <pre className="max-h-60 w-full overflow-auto rounded-md bg-background p-3 text-xs text-muted-foreground ring-1 ring-border whitespace-pre-wrap">
                     {r.reply}
                   </pre>

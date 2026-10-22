@@ -55,7 +55,7 @@ function CollapsibleJson({ label, data, accent = 'text-muted-foreground' }) {
     }
   })()
   return (
-    <div className="rounded border border-border bg-background/40">
+    <div className="rounded border border-border bg-background">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -79,7 +79,7 @@ function NodeCard({ card }) {
   const [expanded, setExpanded] = useState(false)
   return (
     <div
-      className={`rounded-md border bg-card/60 p-2.5 transition ${
+      className={`rounded-md border bg-card p-2.5 transition ${
         isFailed ? 'border-danger-700/60' : 'border-border'
       }`}
     >
@@ -97,7 +97,7 @@ function NodeCard({ card }) {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {card.duration != null && (
-            <span className="text-[10px] text-muted-foreground/70">
+            <span className="text-[10px] text-muted-foreground">
               {card.duration.toFixed(2)}s
             </span>
           )}
@@ -537,7 +537,7 @@ function TestRunDrawer({ open, onClose }) {
 
       {/* 实时日志（运行中显示） */}
       {liveLogs.length > 0 && (
-        <div className="mb-3 rounded-md border border-border bg-background/40 p-2">
+        <div className="mb-3 rounded-md border border-border bg-background p-2">
           <div className="mb-1 flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
             实时日志（{liveLogs.length}）
@@ -574,7 +574,7 @@ function TestRunDrawer({ open, onClose }) {
           执行过程
         </div>
         {cards.length === 0 ? (
-          <div className="rounded-md border border-dashed border-border py-8 text-center text-[11px] text-muted-foreground/60">
+          <div className="rounded-md border border-dashed border-border py-8 text-center text-[11px] text-muted-foreground">
             点击「一键运行」或「逐步执行」开始试运行
           </div>
         ) : (

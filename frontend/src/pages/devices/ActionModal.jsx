@@ -7,6 +7,7 @@ import { toast } from '../../store/toastStore'
 import { inputCls, textareaCls } from '../../components/property/FormControls'
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges'
 import useLockBackgroundScroll from '../../hooks/useLockBackgroundScroll'
+import { CompactSelect } from '../../components/ui'
 import { devices as devicesApi } from '../../api/client'
 import {
   ACTION_AUTH_TYPES,
@@ -139,45 +140,48 @@ export function ActionFormModal({ open, initial, onClose, onSubmit, saving }) {
             </label>
             <label>
               <div className="mb-1 text-xs font-medium text-muted-foreground">动作类型</div>
-              <select
-                className={inputCls}
+              <CompactSelect
                 value={form.action_type}
                 onChange={(e) => set('action_type')(e.target.value)}
+                size="lg"
+                block
               >
                 {ACTION_TYPES.map((t) => (
                   <option key={t.value} value={t.value}>
                     {t.label}
                   </option>
                 ))}
-              </select>
+              </CompactSelect>
             </label>
             <label>
               <div className="mb-1 text-xs font-medium text-muted-foreground">分类</div>
-              <select
-                className={inputCls}
+              <CompactSelect
                 value={form.category}
                 onChange={(e) => set('category')(e.target.value)}
+                size="lg"
+                block
               >
                 {Object.entries(ACTION_CATEGORIES).map(([k, v]) => (
                   <option key={k} value={k}>
                     {v.label}
                   </option>
                 ))}
-              </select>
+              </CompactSelect>
             </label>
             <label>
               <div className="mb-1 text-xs font-medium text-muted-foreground">风险等级</div>
-              <select
-                className={inputCls}
+              <CompactSelect
                 value={form.risk_level}
                 onChange={(e) => set('risk_level')(e.target.value)}
+                size="lg"
+                block
               >
                 {RISK_OPTIONS.map((r) => (
                   <option key={r.value} value={r.value}>
                     {r.label}
                   </option>
                 ))}
-              </select>
+              </CompactSelect>
             </label>
             <label className="col-span-2">
               <div className="mb-1 text-xs font-medium text-muted-foreground">动作描述</div>
@@ -196,17 +200,18 @@ export function ActionFormModal({ open, initial, onClose, onSubmit, saving }) {
           <div className="grid grid-cols-[110px_1fr_140px] gap-3">
             <label>
               <div className="mb-1 text-xs font-medium text-muted-foreground">HTTP 方法</div>
-              <select
-                className={inputCls}
+              <CompactSelect
                 value={form.http_method}
                 onChange={(e) => set('http_method')(e.target.value)}
+                size="sm"
+                block
               >
                 {HTTP_METHODS.map((m) => (
                   <option key={m} value={m}>
                     {m}
                   </option>
                 ))}
-              </select>
+              </CompactSelect>
             </label>
             <label>
               <div className="mb-1 text-xs font-medium text-muted-foreground">API 路径</div>
@@ -219,17 +224,18 @@ export function ActionFormModal({ open, initial, onClose, onSubmit, saving }) {
             </label>
             <label>
               <div className="mb-1 text-xs font-medium text-muted-foreground">认证方式</div>
-              <select
-                className={inputCls}
+              <CompactSelect
                 value={form.auth_type}
                 onChange={(e) => set('auth_type')(e.target.value)}
+                size="lg"
+                block
               >
                 {ACTION_AUTH_TYPES.map((a) => (
                   <option key={a.value} value={a.value}>
                     {a.label}
                   </option>
                 ))}
-              </select>
+              </CompactSelect>
             </label>
           </div>
         </Section>
@@ -255,7 +261,7 @@ export function ActionFormModal({ open, initial, onClose, onSubmit, saving }) {
                 请求体模板（支持 {`{{参数名}}`} 占位符）
               </span>
               {bodyPlaceholders.length > 0 && (
-                <div className="flex items-center gap-1 text-[10px] text-muted-foreground/70">
+                <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
                   <span>检测到变量：</span>
                   {bodyPlaceholders.map((p) => (
                     <code
@@ -309,7 +315,7 @@ export function ActionFormModal({ open, initial, onClose, onSubmit, saving }) {
             <span className="text-sm text-muted-foreground">启用此动作</span>
           </label>
           {initial && (
-            <div className="mt-2 text-[11px] text-muted-foreground/70">
+            <div className="mt-2 text-[11px] text-muted-foreground">
               当前版本：v{initial.version || 1}（保存后将升级为 v{(initial.version || 1) + 1}）
             </div>
           )}
@@ -335,11 +341,11 @@ export function TemplateModal({ open, templates, onClose, onSelect }) {
       }
     >
       {loading ? (
-        <div className="flex h-40 items-center justify-center text-sm text-muted-foreground/70">
+        <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
           加载中...
         </div>
       ) : !templates || templates.length === 0 ? (
-        <div className="flex h-40 flex-col items-center justify-center gap-2 text-muted-foreground/70">
+        <div className="flex h-40 flex-col items-center justify-center gap-2 text-muted-foreground">
           <Files className="h-8 w-8" />
           <div className="text-sm">暂无可用模板</div>
         </div>
@@ -350,7 +356,7 @@ export function TemplateModal({ open, templates, onClose, onSelect }) {
               key={tpl.id || idx}
               type="button"
               onClick={() => onSelect(tpl)}
-              className="flex flex-col gap-2 rounded-lg border border-border bg-card/40 p-3 text-left transition hover:border-primary hover:bg-primary/5"
+              className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3 text-left transition hover:border-primary hover:bg-primary/5"
             >
               <div className="flex items-center gap-2">
                 <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/15 text-primary">
@@ -358,13 +364,13 @@ export function TemplateModal({ open, templates, onClose, onSelect }) {
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-semibold text-foreground">{tpl.name}</div>
-                  <div className="truncate text-[11px] text-muted-foreground/70">
+                  <div className="truncate text-[11px] text-muted-foreground">
                     {tpl.vendor || '未知厂商'} · {DEVICE_TYPE_LABELS[tpl.type] || tpl.type}
                   </div>
                 </div>
               </div>
               {tpl.description && (
-                <div className="line-clamp-2 text-[11px] text-muted-foreground/70">
+                <div className="line-clamp-2 text-[11px] text-muted-foreground">
                   {tpl.description}
                 </div>
               )}
@@ -452,7 +458,7 @@ export function TemplateCreateModal({ open, template, onClose, onSubmit, saving 
             onChange={(e) => setForm((p) => ({ ...p, api_url: e.target.value }))}
             placeholder="https://203.0.113.1:8443/api"
           />
-          <div className="mt-1 text-xs text-muted-foreground/70">
+          <div className="mt-1 text-xs text-muted-foreground">
             可选。仅用于被动接收日志（syslog/kafka）的设备可留空，创建后到「日志接收」页配置接收方式。
           </div>
         </label>
@@ -525,14 +531,14 @@ export function ActionTestDrawer({ open, action, onClose, onRun, running, result
     }
     if (p.type === 'enum' && Array.isArray(p.options)) {
       return (
-        <select className={inputCls} value={val} onChange={(e) => setVal(e.target.value)}>
+        <CompactSelect value={val} onChange={(e) => setVal(e.target.value)} size="lg" block>
           <option value="">请选择</option>
           {p.options.map((o) => (
             <option key={o} value={o}>
               {o}
             </option>
           ))}
-        </select>
+        </CompactSelect>
       )
     }
     return (
@@ -578,7 +584,7 @@ export function ActionTestDrawer({ open, action, onClose, onRun, running, result
                 参数输入
               </h3>
               {schema.length === 0 ? (
-                <div className="rounded-md border border-dashed border-border bg-background/40 px-3 py-3 text-center text-xs text-muted-foreground/70">
+                <div className="rounded-md border border-dashed border-border bg-background px-3 py-3 text-center text-xs text-muted-foreground">
                   此动作未定义参数
                 </div>
               ) : (
@@ -587,12 +593,12 @@ export function ActionTestDrawer({ open, action, onClose, onRun, running, result
                     <label key={p.name}>
                       <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                         <span>{p.name}</span>
-                        <code className="rounded bg-secondary px-1 text-[10px] text-muted-foreground/70">
+                        <code className="rounded bg-secondary px-1 text-[10px] text-muted-foreground">
                           {p.type}
                         </code>
                         {p.required && <span className="text-destructive">*</span>}
                         {p.description && (
-                          <span className="text-muted-foreground/60">— {p.description}</span>
+                          <span className="text-muted-foreground">— {p.description}</span>
                         )}
                       </div>
                       {renderParamInput(p)}
@@ -726,11 +732,11 @@ export function ActionHistoryModal({ open, deviceId, actionId, actionName, onClo
       }
     >
       {loading ? (
-        <div className="flex h-32 items-center justify-center text-sm text-muted-foreground/70">
+        <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
           加载中...
         </div>
       ) : history.length === 0 ? (
-        <div className="flex h-32 items-center justify-center text-sm text-muted-foreground/70">
+        <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
           暂无执行记录
         </div>
       ) : (
@@ -752,7 +758,7 @@ export function ActionHistoryModal({ open, deviceId, actionId, actionName, onClo
                     h.status === 'failed' || h.success === false
                       ? 'bg-destructive/5'
                       : idx % 2 === 0
-                      ? 'bg-card/30'
+                      ? 'bg-card'
                       : ''
                   }`}
                 >

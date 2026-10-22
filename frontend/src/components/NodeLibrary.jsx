@@ -128,8 +128,8 @@ function NodeCard({ node, isFavorite, onToggleFavorite, onDragStart }) {
       }
       className={`group relative flex w-full items-center gap-2 rounded-md border border-transparent px-2 py-1.5 transition ${
         backendReady
-          ? 'cursor-grab bg-secondary/50 hover:border-border hover:bg-secondary active:cursor-grabbing'
-          : 'cursor-not-allowed bg-secondary/20 opacity-50'
+          ? 'cursor-grab bg-secondary hover:border-border hover:bg-secondary active:cursor-grabbing'
+          : 'cursor-not-allowed bg-secondary opacity-50'
       }`}
     >
       <div
@@ -149,7 +149,7 @@ function NodeCard({ node, isFavorite, onToggleFavorite, onDragStart }) {
         }}
         title={isFavorite ? '取消收藏' : '收藏'}
         aria-label={isFavorite ? '取消收藏' : '收藏'}
-        className={`shrink-0 rounded p-0.5 text-muted-foreground/50 transition hover:text-foreground ${
+        className={`shrink-0 rounded p-0.5 text-muted-foreground transition hover:text-foreground ${
           isFavorite ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
         }`}
       >
@@ -170,7 +170,7 @@ function ToolCard({ tool, onDragStart }) {
       draggable
       onDragStart={onDragStart}
       title={tool.description || tool.name}
-      className="flex w-full cursor-grab items-center gap-2 rounded-md border border-transparent bg-secondary/50 px-2 py-1.5 transition hover:border-border hover:bg-secondary active:cursor-grabbing"
+      className="flex w-full cursor-grab items-center gap-2 rounded-md border border-transparent bg-secondary px-2 py-1.5 transition hover:border-border hover:bg-secondary active:cursor-grabbing"
     >
       <div
         className="flex h-6 w-6 shrink-0 items-center justify-center rounded"
@@ -181,7 +181,7 @@ function ToolCard({ tool, onDragStart }) {
       <div className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
         {tool.name || `工具 ${tool.id}`}
         {tool.enabled === false && (
-          <span className="ml-1 text-[10px] text-muted-foreground/70">（已禁用）</span>
+          <span className="ml-1 text-[10px] text-muted-foreground">（已禁用）</span>
         )}
       </div>
     </div>
@@ -200,11 +200,11 @@ function CategoryHeader({ icon, label, count, isOpen, onToggle }) {
       <span className="flex-1 text-xs font-medium text-muted-foreground">
         {label}
       </span>
-      <span className="text-[11px] tabular-nums text-muted-foreground/60">
+      <span className="text-[11px] tabular-nums text-muted-foreground">
         {count}
       </span>
       <ChevronRight
-        className={`h-4 w-4 shrink-0 text-muted-foreground/60 transition-transform duration-200 ${
+        className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 ${
           isOpen ? 'rotate-90' : ''
         }`}
       />
@@ -325,7 +325,7 @@ function NodeLibrary() {
   return (
     <div className="flex flex-col gap-2 p-2">
       <div className="relative">
-        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <input
           className={`${inputCls} pl-8`}
           placeholder="搜索节点 / 工具…"
@@ -342,7 +342,7 @@ function NodeLibrary() {
             <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               收藏
             </span>
-            <span className="text-[11px] tabular-nums text-muted-foreground/60">
+            <span className="text-[11px] tabular-nums text-muted-foreground">
               {favoriteNodeDefs.length}
             </span>
           </div>
@@ -362,7 +362,7 @@ function NodeLibrary() {
         /* 搜索结果：忽略分组折叠，平铺显示匹配的节点与工具 */
         <div className="flex flex-col gap-2">
           {filteredNodes.length === 0 && filteredTools.length === 0 ? (
-            <p className="px-1 text-[11px] text-muted-foreground/60">无匹配的节点</p>
+            <p className="px-1 text-[11px] text-muted-foreground">无匹配的节点</p>
           ) : (
             <>
               {filteredNodes.map((n) => (
@@ -427,7 +427,7 @@ function NodeLibrary() {
             {expanded['custom_tools'] && (
               <div className="flex flex-col gap-2">
                 {loadingTools ? (
-                  <div className="rounded-md border border-border bg-muted p-3 text-center text-[11px] text-muted-foreground/70">
+                  <div className="rounded-md border border-border bg-muted p-3 text-center text-[11px] text-muted-foreground">
                     加载中…
                   </div>
                 ) : toolErr ? (
@@ -435,7 +435,7 @@ function NodeLibrary() {
                     {toolErr}
                   </div>
                 ) : toolList.length === 0 ? (
-                  <div className="rounded-md border border-border bg-muted p-3 text-center text-[11px] text-muted-foreground/60">
+                  <div className="rounded-md border border-border bg-muted p-3 text-center text-[11px] text-muted-foreground">
                     暂无已注册工具
                   </div>
                 ) : (
@@ -465,7 +465,7 @@ function NodeLibrary() {
           <PlusCircle className="h-4 w-4" />
           注册自定义节点
         </button>
-        <p className="mt-1.5 text-center text-[11px] leading-relaxed text-muted-foreground/70">
+        <p className="mt-1.5 text-center text-[11px] leading-relaxed text-muted-foreground">
           扩展节点能力，前往工具管理
         </p>
       </div>

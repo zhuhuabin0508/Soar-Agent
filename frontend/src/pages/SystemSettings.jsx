@@ -18,6 +18,8 @@ import InfoTip from '../components/InfoTip'
 import {
   Eye, Smartphone, Network, Bell, CheckSquare, Link2,
   X, Check, RotateCcw, ShieldCheck, AlertTriangle, Palette, Globe,
+  ChevronDown, ChevronRight, Type, SlidersHorizontal, Database, Monitor,
+  ExternalLink, KeyRound, Lock, ShieldAlert,
 } from 'lucide-react'
 
 // 安全策略默认值（与后端 DEFAULT_SECURITY_POLICY 对应）
@@ -109,7 +111,7 @@ function FieldLabel({ label, hint, required, badge }) {
       <label className={labelCls + ' mb-0'}>{label}{requiredMark}</label>
       {hint && <InfoTip text={hint} />}
       {badge && (
-        <span className="rounded bg-muted-foreground/15 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
           {badge}
         </span>
       )}
@@ -117,16 +119,37 @@ function FieldLabel({ label, hint, required, badge }) {
   )
 }
 
-// 分组容器：左侧主题色竖线 + 标题 + InfoTip，替代引入的 Section
-function SettingsSection({ title, children, hint, className = '' }) {
+// 分组容器：卡片分区（图标 + 标题 + 描述 + InfoTip + 可选折叠），替代引入的 Section
+// collapsible + defaultCollapsed：非核心分区默认折叠，点击标题行展开/收起；
+// 折叠仅隐藏子内容，表单值由父组件受控 state 持有，展开后不丢失
+function SettingsSection({ title, description, icon: Icon, hint, collapsible = false, defaultCollapsed = false, className = '', children }) {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed)
   return (
     <div className={`rounded-lg border border-border bg-card p-5 shadow-sm ${className}`}>
-      <div className="mb-3 flex items-center gap-2">
-        <span className="h-4 w-0.5 rounded-full bg-primary" />
-        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+      <div className={`flex items-center gap-2 ${collapsed ? 'mb-0' : 'mb-4'}`}>
+        {Icon && <Icon className="h-4 w-4 shrink-0 text-primary" />}
+        {collapsible ? (
+          <button
+            type="button"
+            onClick={() => setCollapsed((c) => !c)}
+            aria-expanded={!collapsed}
+            className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          >
+            <span className="truncate text-sm font-semibold text-foreground transition hover:text-primary">{title}</span>
+            {description && <span className="truncate text-xs text-muted-foreground">{description}</span>}
+            {collapsed
+              ? <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+              : <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />}
+          </button>
+        ) : (
+          <>
+            <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+            {description && <span className="text-xs text-muted-foreground">{description}</span>}
+          </>
+        )}
         {hint && <InfoTip text={hint} />}
       </div>
-      <div className="flex flex-col gap-3">{children}</div>
+      {!collapsed && <div className="flex flex-col gap-5">{children}</div>}
     </div>
   )
 }
@@ -610,23 +633,23 @@ function SystemSettings() {
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
       {/* ===== Header ===== */}
-      <header className="flex items-center justify-between border-b border-border bg-card/60 px-6 py-4">
+      <header className="flex items-center justify-between border-b border-border bg-card px-6 py-4">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold">系统设置</h1>
+          <h1 className="text-[22px] font-bold tracking-tight text-foreground">系统设置</h1>
           {dirty && (
             <span className="flex items-center gap-1.5 rounded-full bg-warning/15 px-2.5 py-0.5 text-xs font-medium text-warning">
               <span className="h-1.5 w-1.5 rounded-full bg-warning" />
               有未保存的更改
             </span>
           )}
-          <span className="text-xs text-muted-foreground/70">
+          <span className="text-xs text-muted-foreground">
             {activeTab === 'security' ? '等保安全策略配置' : `平台级配置（共 ${Object.keys(configs).length} 项）`}
           </span>
         </div>
         <div className="flex items-center gap-2">
           <button type="button" onClick={handleRefresh} className="btn-secondary btn-sm">刷新</button>
           {canEdit && (
-            <button type="button" onClick={handleRestoreDefault} className="btn-secondary btn-sm inline-flex items-center">
+            <button type="button" onClick={handleRestoreDefault} className="btn-secondary btn-sm inline-flex items-center hover:!border-destructive/40 hover:!text-destructive">
               <RotateCcw className="mr-1 h-3.5 w-3.5" />
               恢复默认
             </button>
@@ -645,7 +668,7 @@ function SystemSettings() {
       </header>
 
       {/* ===== Tab 栏 ===== */}
-      <div className="flex items-center gap-1 border-b border-border bg-card/30 px-6">
+      <div className="flex items-center gap-1 border-b border-border bg-card px-6">
         {tabs.map((t) => (
           <button key={t.key} type="button" onClick={() => handleTabChange(t.key)}
             className={`-mb-px border-b-2 px-3 py-2 text-sm transition ${activeTab === t.key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
@@ -662,13 +685,13 @@ function SystemSettings() {
 
         {/* ===== 基础配置 Tab ===== */}
         {activeTab === 'basic' && (loading ? (
-          <div className="flex h-40 items-center justify-center text-sm text-muted-foreground/70">加载中...</div>
+          <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">加载中...</div>
         ) : (
           <div className="mx-auto grid max-w-6xl grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
             {/* 左：表单区 */}
             <div className="flex flex-col gap-4">
               {/* 平台基础 */}
-              <SettingsSection title="平台基础" hint="控制顶栏品牌显示">
+              <SettingsSection title="平台基础" icon={Type} hint="控制顶栏品牌显示">
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <TextInput label="平台名称" value={configs.platform_name || ''} onChange={setField('platform_name')} placeholder="如：SOAR 平台" />
                   <TextInput label="Logo URL" value={configs.logo_url || ''} onChange={setField('logo_url')} placeholder="https://example.com/logo.png" hint="留空则使用默认文字 Logo" />
@@ -676,12 +699,12 @@ function SystemSettings() {
               </SettingsSection>
 
               {/* 主题色 */}
-              <SettingsSection title="主题色" hint="应用于按钮、链接等强调色">
+              <SettingsSection title="主题色" icon={Palette} hint="应用于按钮、链接等强调色">
                 <ColorPicker value={configs.primary_color || ''} onChange={setField('primary_color')} />
               </SettingsSection>
 
               {/* 常用基础项 */}
-              <SettingsSection title="常用基础项" hint="系统语言、时区、上传限制等">
+              <SettingsSection title="常用基础项" icon={SlidersHorizontal} hint="系统语言、时区、上传限制等">
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <SelectInput label="系统默认语言" value={configs['system.default_language'] || 'zh-CN'} onChange={setField('system.default_language')}
                     options={[{ value: 'zh-CN', label: '简体中文' }, { value: 'en-US', label: 'English' }]} />
@@ -696,7 +719,7 @@ function SystemSettings() {
               </SettingsSection>
 
               {/* 解析入库：模板成功率告警 */}
-              <SettingsSection title="解析入库" hint="解析模板成功率告警阈值">
+              <SettingsSection title="解析入库" icon={Database} description="解析模板成功率告警阈值" collapsible defaultCollapsed>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <NumberWithSuffix label="成功率告警阈值" value={configs['parse.success_rate_threshold'] || ''} onChange={setField('parse.success_rate_threshold')} min={1} max={100} suffix="%"
                     hint="模板解析成功率持续 24 小时低于该值时，生成告警并通过通知中心提醒" />
@@ -704,14 +727,14 @@ function SystemSettings() {
               </SettingsSection>
 
               {/* 安全配置（CORS / Webhook） + 测试连接 */}
-              <SettingsSection title="连接与限流" hint="CORS 白名单、Webhook 限流，可即时测试">
+              <SettingsSection title="连接与限流" icon={Network} description="CORS 白名单、Webhook 限流" hint="修改后需重启后端生效，支持即时测试" collapsible defaultCollapsed>
                 {/* CORS 白名单 - Tag 输入 */}
                 <div>
                   <FieldLabel label="CORS 白名单" hint="逗号分隔的源地址列表，修改后需重启后端生效" />
                   <TagInput value={configs.cors_origins || ''} onChange={setField('cors_origins')} placeholder="输入 Origin 后回车，如 http://localhost:5173" />
                 </div>
                 {/* CORS 即时测试 */}
-                <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/40 p-2">
+                <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted p-2">
                   <Globe className="h-3.5 w-3.5 text-primary" />
                   <input className="min-w-[200px] flex-1 rounded border border-border bg-background px-2 py-1 text-xs outline-none focus:border-primary"
                     value={corsTestOrigin} onChange={(e) => setCorsTestOrigin(e.target.value)} placeholder="输入 Origin 测试跨域，如 http://localhost:5173" />
@@ -735,7 +758,7 @@ function SystemSettings() {
                         value={configs.webhook_rate_limit || ''} onChange={(e) => setField('webhook_rate_limit')(e.target.value)} />
                       <span className="whitespace-nowrap text-xs text-muted-foreground">次/分钟</span>
                     </div>
-                    <p className="mt-1 text-[11px] text-muted-foreground/70">
+                    <p className="mt-1 text-[11px] text-muted-foreground">
                       {Number(configs.webhook_rate_limit) > 0 ? `每分钟最多 ${configs.webhook_rate_limit} 次调用` : '未设置'}
                     </p>
                   </div>
@@ -751,7 +774,7 @@ function SystemSettings() {
                 </div>
               </SettingsSection>
 
-              <SettingsSection title="盾立方W" hint="账号密码填下面两项，打开该大屏时自动登录，不再弹出对方登录页">
+              <SettingsSection title="盾立方W" icon={ExternalLink} description="免登嵌入配置" hint="账号密码填下面两项，打开该大屏时自动登录，不再弹出对方登录页" collapsible defaultCollapsed>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <TextInput
                     label="免登账号"
@@ -779,7 +802,7 @@ function SystemSettings() {
                   placeholder="https://xingtu.yunaq.com/#/Attack/"
                 />
               </SettingsSection>
-              <SettingsSection title="盾立方指挥大屏" hint="账号密码填下面两项；code / appid 是对方大屏编号，不是登录凭证">
+              <SettingsSection title="盾立方指挥大屏" icon={Monitor} description="免登与跳转配置" hint="账号密码填下面两项；code / appid 是对方大屏编号，不是登录凭证" collapsible defaultCollapsed>
                 <BigscreenDockFields prefix="bigscreen" configs={configs} setField={setField} />
               </SettingsSection>
             </div>
@@ -806,7 +829,7 @@ function SystemSettings() {
                 {/* 登录页标题预览 */}
                 <div className="mb-3">
                   <p className="mb-1 text-[10px] text-muted-foreground">登录页标题</p>
-                  <div className="rounded-md border border-border bg-gradient-to-br from-secondary/60 to-secondary/30 px-4 py-6 text-center">
+                  <div className="rounded-md border border-border bg-gradient-to-br from-secondary to-secondary px-4 py-6 text-center">
                     {configs.logo_url ? (
                       <img src={configs.logo_url} alt="logo" className="mx-auto mb-2 h-10 w-10 rounded object-cover" onError={(e) => { e.target.style.display = 'none' }} />
                     ) : (
@@ -839,7 +862,7 @@ function SystemSettings() {
         {activeTab === 'security' && (
           <div className="mx-auto flex max-w-5xl flex-col gap-4">
             {securityLoading ? (
-              <div className="flex h-40 items-center justify-center text-sm text-muted-foreground/70">加载中...</div>
+              <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">加载中...</div>
             ) : (
               <>
                 {/* 安全评分摘要卡片 */}
@@ -887,13 +910,13 @@ function SystemSettings() {
                 </div>
 
                 {/* 等保合规模板 */}
-                <SettingsSection title="等保合规模板" hint="选择模板自动填充推荐值">
+                <SettingsSection title="等保合规模板" icon={ShieldCheck} hint="选择模板自动填充推荐值">
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     {Object.entries(COMPLIANCE_TEMPLATES).map(([key, tmpl]) => {
                       const active = activeTemplate === key
                       return (
                         <button key={key} type="button" onClick={() => handleTemplateClick(key)}
-                          className={`relative flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition ${active ? 'border-primary bg-primary/5 ring-2 ring-primary/30' : 'border-border hover:border-primary/50 hover:bg-accent/50'}`}>
+                          className={`relative flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition ${active ? 'border-primary bg-primary/5 ring-2 ring-primary/30' : 'border-border hover:border-primary/50 hover:bg-accent'}`}>
                           {active && (
                             <span className="absolute left-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-primary">
                               <Check className="h-3 w-3 text-primary-foreground" />
@@ -901,7 +924,7 @@ function SystemSettings() {
                           )}
                           <span className={`text-sm font-semibold ${active ? 'pl-7' : ''}`}>{tmpl.label}</span>
                           <span className="text-[10px] text-muted-foreground">{tmpl.desc}</span>
-                          <span className="text-[10px] text-muted-foreground/70">{tmpl.summary}</span>
+                          <span className="text-[10px] text-muted-foreground">{tmpl.summary}</span>
                         </button>
                       )
                     })}
@@ -911,14 +934,14 @@ function SystemSettings() {
                       当前配置已符合「{COMPLIANCE_TEMPLATES[activeTemplate].label}」模板
                     </div>
                   ) : (
-                    <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                    <div className="rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
                       当前为自定义配置，未匹配任何预设模板
                     </div>
                   )}
                 </SettingsSection>
 
                 {/* 登录与会话 */}
-                <SettingsSection title="登录与会话" hint="控制登录失败锁定与 Session 超时">
+                <SettingsSection title="登录与会话" icon={KeyRound} hint="控制登录失败锁定与 Session 超时">
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <NumberWithSuffix label="Session 超时" value={security['security.session_timeout_minutes']} onChange={setSecurityField('security.session_timeout_minutes')} min={1} suffix="分钟" hint="无操作超过该时长后自动登出" />
                     <NumberInput label="最大登录失败次数" value={security['security.max_login_attempts']} onChange={setSecurityField('security.max_login_attempts')} min={1} hint="超过该次数后账户将被锁定" />
@@ -927,7 +950,7 @@ function SystemSettings() {
                       <label className="mb-1 block text-xs font-medium text-muted-foreground">锁定后解锁方式</label>
                       <div className="flex items-center gap-2 pt-1.5">
                         <button type="button" onClick={() => setSecurityField('security.lockout_auto_unlock')(!security['security.lockout_auto_unlock'])}
-                          className={`relative h-5 w-9 rounded-full transition ${security['security.lockout_auto_unlock'] ? 'bg-primary' : 'bg-muted-foreground/40'}`}>
+                          className={`relative h-5 w-9 cursor-pointer rounded-full transition-all hover:ring-2 hover:ring-primary/30 ${security['security.lockout_auto_unlock'] ? 'bg-primary' : 'bg-input'}`}>
                           <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${security['security.lockout_auto_unlock'] ? 'left-[18px]' : 'left-0.5'}`} />
                         </button>
                         <span className="text-xs text-muted-foreground">{security['security.lockout_auto_unlock'] ? '自动解锁' : '需人工解锁'}</span>
@@ -937,13 +960,13 @@ function SystemSettings() {
                 </SettingsSection>
 
                 {/* 密码策略（可视化） */}
-                <SettingsSection title="密码策略" hint="控制新密码与修改密码时的复杂度要求">
+                <SettingsSection title="密码策略" icon={Lock} hint="控制新密码与修改密码时的复杂度要求">
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <NumberInput label="密码最小长度" value={security['security.password_min_length']} onChange={setSecurityField('security.password_min_length')} min={1} />
                     <NumberWithSuffix label="密码有效期" value={security['security.password_expiry_days']} onChange={setSecurityField('security.password_expiry_days')} min={0} suffix="天" hint="超过该天数后密码强制更换；0 表示永不过期" badge={security['security.password_expiry_days'] === 0 ? '永不过期' : null} />
                     <NumberWithSuffix label="历史密码不可重复次数" value={security['security.password_history_count']} onChange={setSecurityField('security.password_history_count')} min={0} suffix="次" hint="新密码不能与最近 N 次旧密码相同；0 表示不检查" badge={security['security.password_history_count'] === 0 ? '不检查历史' : null} />
                   </div>
-                  <div className="mt-1 rounded-md border border-border bg-muted/40 p-2.5">
+                  <div className="mt-1 rounded-md border border-border bg-muted p-2.5">
                     <div className="mb-1.5 block text-xs font-medium text-muted-foreground">密码复杂度要求</div>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                       <CheckRow label="必须包含大写字母" checked={security['security.password_require_uppercase']} onChange={setSecurityField('security.password_require_uppercase')} />
@@ -953,7 +976,7 @@ function SystemSettings() {
                     </div>
                   </div>
                   {/* 强度可视化 */}
-                  <div className="mt-1 rounded-md border border-border bg-secondary/40 p-3">
+                  <div className="mt-1 rounded-md border border-border bg-secondary p-3">
                     <div className="mb-2 flex items-center justify-between">
                       <span className="text-xs font-medium text-muted-foreground">当前策略强度</span>
                       <span className={`rounded px-2 py-0.5 text-[11px] font-bold ${passwordStrength.level === '弱' ? 'bg-destructive/20 text-destructive' : passwordStrength.level === '中' ? 'bg-warning/20 text-warning' : 'bg-success/20 text-success'}`}>
@@ -968,7 +991,7 @@ function SystemSettings() {
                 </SettingsSection>
 
                 {/* 高级安全功能 */}
-                <SettingsSection title="高级安全功能" hint="登录二次验证、IP 白名单、审计日志、敏感操作、单点登录">
+                <SettingsSection title="高级安全功能" icon={ShieldAlert} description="MFA、IP 白名单、审计与 SSO" hint="登录二次验证、IP 白名单、审计日志、敏感操作、单点登录" collapsible defaultCollapsed>
                   <div className="flex flex-col gap-3">
                     {/* MFA */}
                     <SecurityToggleRow icon={Smartphone} label="登录二次验证（MFA）" desc="管理员强制开启 OTP 验证" checked={security['security.mfa_enabled']} onChange={setSecurityField('security.mfa_enabled')}>
@@ -986,7 +1009,7 @@ function SystemSettings() {
                     </SecurityToggleRow>
 
                     {/* 登录 IP 白名单 - TagInput */}
-                    <div className="rounded-md border border-border bg-muted/40 p-2.5">
+                    <div className="rounded-md border border-border bg-muted p-2.5">
                       <div className="mb-1.5 flex items-center gap-2">
                         <Network className="h-3.5 w-3.5 text-primary" />
                         <span className="text-xs font-medium text-muted-foreground">登录 IP 白名单</span>
@@ -1048,7 +1071,7 @@ function SystemSettings() {
 // 安全开关行（带图标 + 描述 + 可展开子内容）
 function SecurityToggleRow({ icon: Icon, label, desc, checked, onChange, children }) {
   return (
-    <div className="rounded-md border border-border bg-muted/40 p-2.5">
+    <div className="rounded-md border border-border bg-muted p-2.5">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Icon className="h-3.5 w-3.5 text-primary" />
@@ -1058,7 +1081,7 @@ function SecurityToggleRow({ icon: Icon, label, desc, checked, onChange, childre
           </div>
         </div>
         <button type="button" onClick={() => onChange(!checked)}
-          className={`relative h-5 w-9 rounded-full transition ${checked ? 'bg-primary' : 'bg-muted-foreground/40'}`}>
+          className={`relative h-5 w-9 cursor-pointer rounded-full transition-all hover:ring-2 hover:ring-primary/30 ${checked ? 'bg-primary' : 'bg-input'}`}>
           <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${checked ? 'left-[18px]' : 'left-0.5'}`} />
         </button>
       </div>

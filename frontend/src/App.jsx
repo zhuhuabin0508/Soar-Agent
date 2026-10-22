@@ -1,5 +1,8 @@
 import { createBrowserRouter, RouterProvider, Navigate, Outlet } from 'react-router-dom'
-import AppShell from './components/AppShell'
+import { useEffect, useRef } from 'react'
+import AppShell, { getFirstPermittedPath } from './components/AppShell'
+import { hasPermission } from './utils/permissions'
+import { toast } from './store/toastStore'
 import { GlobalLoadingProvider } from './components/GlobalLoading'
 import ToastContainer from './components/ToastContainer'
 import { ConfirmDialogHost } from './components/ConfirmDialog'
@@ -79,6 +82,32 @@ function ProtectedRoute() {
   return <Outlet />
 }
 
+// 权限感知首页：按导航菜单顺序重定向到当前用户第一个有权限访问的页面。
+// 替代原先固定跳 /dashboard（无大屏权限的账户不应落到运营大屏）。
+function HomeRedirect() {
+  return <Navigate to={getFirstPermittedPath()} replace />
+}
+
+// 页面级权限守卫：无权限时 toast 提示并回首页（再由 HomeRedirect 落到有权限的页面）。
+// 菜单已隐藏对应入口，此处防止直接输入 URL 或页面内跨模块链接绕过。
+// perm: [module, action] 单一要求；permAny: [[module, action], ...] 任一满足即放行。
+function RequirePermission({ perm, permAny, label, children }) {
+  const notifiedRef = useRef(false)
+  const allowed = perm
+    ? hasPermission(perm[0], perm[1])
+    : (permAny || []).some(([m, a]) => hasPermission(m, a))
+  useEffect(() => {
+    if (!allowed && !notifiedRef.current) {
+      notifiedRef.current = true
+      toast.error(`权限不足：没有「${label || '该功能'}」访问权限，请联系管理员在角色管理中授权`)
+    }
+  }, [allowed, label])
+  if (!allowed) {
+    return <Navigate to="/" replace />
+  }
+  return children
+}
+
 // 使用 createBrowserRouter 创建 data router。
 // ⚠️ useBlocker / useFetcher 等 hook 必须在 data router 上下文中使用，
 // 旧的 <BrowserRouter> 不提供 data router 上下文，会导致编辑页面的
@@ -96,96 +125,97 @@ const router = createBrowserRouter([
     errorElement: <RouteErrorFallback />,
     children: [
       // 工单监控大屏：独立全屏路由（不嵌 AppShell 侧边栏，供投屏使用）
-      { path: '/ticket-monitor', element: <TicketMonitorScreen /> },
+      { path: '/ticket-monitor', element: <RequirePermission perm={['ticket_monitor', 'view']} label="工单监控大屏"><TicketMonitorScreen /></RequirePermission> },
       {
         element: <AppShell />,
         errorElement: <RouteErrorFallback />,
         children: [
-          { path: '/', element: <Navigate to="/dashboard" replace /> },
-          { path: '/chat', element: <ChatPage /> },
-          { path: '/studio', element: <Studio /> },
-          { path: '/editor', element: <WorkflowEditor /> },
-          { path: '/workflows/new', element: <WorkflowQuickCreate /> },
+          { path: '/', element: <HomeRedirect /> },
+          { path: '/chat', element: <RequirePermission perm={['chat', 'view']} label="对话"><ChatPage /></RequirePermission> },
+          { path: '/studio', element: <RequirePermission permAny={[['agent', 'view'], ['workflow_list', 'view'], ['workflow_editor', 'view']]} label="应用"><Studio /></RequirePermission> },
+          { path: '/editor', element: <RequirePermission perm={['workflow_editor', 'view']} label="工作流编排"><WorkflowEditor /></RequirePermission> },
+          { path: '/workflows/new', element: <RequirePermission perm={['workflow_list', 'view']} label="工作流"><WorkflowQuickCreate /></RequirePermission> },
           { path: '/workflows', element: <Navigate to="/studio?tab=workflow" replace /> },
-          { path: '/workflows/:id/monitor', element: <WorkflowMonitor /> },
+          { path: '/workflows/:id/monitor', element: <RequirePermission perm={['workflow_list', 'view']} label="工作流"><WorkflowMonitor /></RequirePermission> },
           { path: '/agents', element: <Navigate to="/studio?tab=agent" replace /> },
           { path: '/agents/quick', element: <Navigate to="/agents/new" replace /> },
-          { path: '/agents/new', element: <AgentWorkspace /> },
-          { path: '/agents/:id/edit', element: <AgentWorkspace /> },
-          { path: '/agents/:id/advanced', element: <AgentEditor /> },
-          { path: '/agents/:id/monitor', element: <AgentMonitor /> },
+          { path: '/agents/new', element: <RequirePermission perm={['agent', 'view']} label="智能体"><AgentWorkspace /></RequirePermission> },
+          { path: '/agents/:id/edit', element: <RequirePermission perm={['agent', 'view']} label="智能体"><AgentWorkspace /></RequirePermission> },
+          { path: '/agents/:id/advanced', element: <RequirePermission perm={['agent', 'view']} label="智能体"><AgentEditor /></RequirePermission> },
+          { path: '/agents/:id/monitor', element: <RequirePermission perm={['agent', 'view']} label="智能体"><AgentMonitor /></RequirePermission> },
           { path: '/agent-tutorial', element: <AgentTutorial /> },
-          { path: '/tools', element: <ToolList /> },
-          { path: '/tools/new', element: <ToolEditor /> },
-          { path: '/tools/:id/edit', element: <ToolEditor /> },
-          { path: '/knowledge-base', element: <KnowledgeBase /> },
-          { path: '/skills', element: <SkillList /> },
-          { path: '/llm-configs', element: <LLMConfig /> },
-          { path: '/devices', element: <DeviceManagement /> },
-          { path: '/device-onboard', element: <DeviceOnboard /> },
-          { path: '/approvals', element: <ApprovalCenter /> },
-          { path: '/executions', element: <LogCenter /> },
-          { path: '/executions/:id', element: <ExecutionDetail /> },
-          { path: '/logs', element: <LogCenter /> },
-          { path: '/banned-ips', element: <Navigate to="/dashboard" replace /> },
-          { path: '/assets', element: <AssetOverview /> },
-          { path: '/assets/list', element: <AssetList /> },
-          { path: '/assets/templates', element: <AssetTemplates /> },
-          { path: '/assets/discovery', element: <GovCloudAssets /> },
-          { path: '/assets/legacy', element: <Assets /> },
-          { path: '/dashboard', element: <Dashboard /> },
-          { path: '/bigscreen', element: <BigScreen /> },
-          { path: '/bigscreen2', element: <BigScreen2 /> },
+          { path: '/tools', element: <RequirePermission perm={['tool', 'view']} label="工具"><ToolList /></RequirePermission> },
+          { path: '/tools/new', element: <RequirePermission perm={['tool', 'view']} label="工具"><ToolEditor /></RequirePermission> },
+          { path: '/tools/:id/edit', element: <RequirePermission perm={['tool', 'view']} label="工具"><ToolEditor /></RequirePermission> },
+          { path: '/knowledge-base', element: <RequirePermission perm={['knowledge_base', 'view']} label="知识库"><KnowledgeBase /></RequirePermission> },
+          { path: '/skills', element: <RequirePermission perm={['skill', 'view']} label="技能库"><SkillList /></RequirePermission> },
+          { path: '/llm-configs', element: <RequirePermission perm={['llm_config', 'view']} label="模型设置"><LLMConfig /></RequirePermission> },
+          { path: '/devices', element: <RequirePermission perm={['device', 'view']} label="设备对接"><DeviceManagement /></RequirePermission> },
+          { path: '/device-onboard', element: <RequirePermission perm={['device', 'view']} label="设备对接"><DeviceOnboard /></RequirePermission> },
+          { path: '/approvals', element: <RequirePermission perm={['approval', 'view']} label="工作台"><ApprovalCenter /></RequirePermission> },
+          { path: '/executions', element: <RequirePermission perm={['execution', 'view']} label="日志中心"><LogCenter /></RequirePermission> },
+          { path: '/executions/:id', element: <RequirePermission perm={['execution', 'view']} label="日志中心"><ExecutionDetail /></RequirePermission> },
+          { path: '/logs', element: <RequirePermission perm={['execution', 'view']} label="日志中心"><LogCenter /></RequirePermission> },
+          { path: '/banned-ips', element: <HomeRedirect /> },
+          { path: '/assets', element: <RequirePermission perm={['asset_overview', 'view']} label="资产总览"><AssetOverview /></RequirePermission> },
+          { path: '/assets/list', element: <RequirePermission perm={['asset_list', 'view']} label="资产清单"><AssetList /></RequirePermission> },
+          { path: '/assets/templates', element: <RequirePermission perm={['asset_templates', 'view']} label="类型模板"><AssetTemplates /></RequirePermission> },
+          { path: '/assets/discovery', element: <RequirePermission perm={['asset_discovery', 'view']} label="资产发现"><GovCloudAssets /></RequirePermission> },
+          { path: '/assets/legacy', element: <RequirePermission perm={['asset_list', 'view']} label="资产清单"><Assets /></RequirePermission> },
+          // 大屏路由：菜单隐藏之外再加页面级守卫，无 view 权限时回首页
+          { path: '/dashboard', element: <RequirePermission perm={['dashboard', 'view']} label="运营大屏"><Dashboard /></RequirePermission> },
+          { path: '/bigscreen', element: <RequirePermission perm={['bigscreen', 'view']} label="盾立方W"><BigScreen /></RequirePermission> },
+          { path: '/bigscreen2', element: <RequirePermission perm={['bigscreen2', 'view']} label="盾立方指挥大屏"><BigScreen2 /></RequirePermission> },
           // 系统配置
-          { path: '/users', element: <UserManagement /> },
-          { path: '/roles', element: <RoleManagement /> },
-          { path: '/system-settings', element: <SystemSettings /> },
-          { path: '/system-monitor', element: <SystemMonitor /> },
-          { path: '/audit-logs', element: <AuditLogs /> },
-          { path: '/notifications', element: <NotificationCenter /> },
-          { path: '/backup', element: <BackupManagement /> },
-          { path: '/about', element: <About /> },
+          { path: '/users', element: <RequirePermission perm={['user', 'view']} label="用户管理"><UserManagement /></RequirePermission> },
+          { path: '/roles', element: <RequirePermission perm={['role', 'view']} label="角色管理"><RoleManagement /></RequirePermission> },
+          { path: '/system-settings', element: <RequirePermission perm={['system_config', 'view']} label="系统设置"><SystemSettings /></RequirePermission> },
+          { path: '/system-monitor', element: <RequirePermission perm={['system_monitor', 'view']} label="系统监控"><SystemMonitor /></RequirePermission> },
+          { path: '/audit-logs', element: <RequirePermission perm={['audit_log', 'view']} label="审计日志"><AuditLogs /></RequirePermission> },
+          { path: '/notifications', element: <RequirePermission perm={['notification', 'view']} label="通知中心"><NotificationCenter /></RequirePermission> },
+          { path: '/backup', element: <RequirePermission perm={['system_config', 'view']} label="备份恢复"><BackupManagement /></RequirePermission> },
+          { path: '/about', element: <RequirePermission perm={['system_config', 'view']} label="关于"><About /></RequirePermission> },
           // 个人中心
           { path: '/profile', element: <Profile /> },
           // 系统反馈
           { path: '/feedbacks/mine', element: <MyFeedback /> },
-          { path: '/feedbacks/admin', element: <FeedbackAdmin /> },
-          { path: '/deliverables', element: <DeliverableManagement /> },
+          { path: '/feedbacks/admin', element: <RequirePermission perm={['feedback', 'view']} label="反馈管理"><FeedbackAdmin /></RequirePermission> },
+          { path: '/deliverables', element: <RequirePermission perm={['deliverable', 'view']} label="材料管理"><DeliverableManagement /></RequirePermission> },
           { path: '/govcloud', element: <Navigate to="/assets/discovery" replace /> },
           // 运营管理 - 值班
-          { path: '/duty/members', element: <DutyMemberManagement /> },
-          { path: '/duty/schedule', element: <DutySchedule /> },
-          { path: '/duty/leaves', element: <DutyLeave /> },
-          { path: '/duty/logs', element: <DutyAdjustmentLogs /> },
+          { path: '/duty/members', element: <RequirePermission perm={['duty_member', 'view']} label="值班人员"><DutyMemberManagement /></RequirePermission> },
+          { path: '/duty/schedule', element: <RequirePermission perm={['duty_schedule', 'view']} label="值班表"><DutySchedule /></RequirePermission> },
+          { path: '/duty/leaves', element: <RequirePermission perm={['duty_leave', 'view']} label="请假管理"><DutyLeave /></RequirePermission> },
+          { path: '/duty/logs', element: <RequirePermission perm={['duty_log', 'view']} label="调班记录"><DutyAdjustmentLogs /></RequirePermission> },
           // 运营管理 - 工单（工单中心 / 处理分组 / 流程模板）
-          { path: '/tickets', element: <TicketCenter /> },
-          { path: '/tickets/:id', element: <TicketDetail /> },
-          { path: '/ticket-config/groups', element: <TicketGroupManage /> },
-          { path: '/ticket-config/sla', element: <TicketSlaConfig /> },
-          { path: '/ticket-config/flows', element: <TicketFlowList /> },
-          { path: '/ticket-config/flows/new', element: <TicketFlowEdit /> },
-          { path: '/ticket-config/flows/:id/edit', element: <TicketFlowEdit /> },
+          { path: '/tickets', element: <RequirePermission perm={['ticket', 'view']} label="工单中心"><TicketCenter /></RequirePermission> },
+          { path: '/tickets/:id', element: <RequirePermission perm={['ticket', 'view']} label="工单中心"><TicketDetail /></RequirePermission> },
+          { path: '/ticket-config/groups', element: <RequirePermission perm={['ticket_config', 'view']} label="工单配置"><TicketGroupManage /></RequirePermission> },
+          { path: '/ticket-config/sla', element: <RequirePermission perm={['ticket_config', 'view']} label="工单配置"><TicketSlaConfig /></RequirePermission> },
+          { path: '/ticket-config/flows', element: <RequirePermission perm={['ticket_config', 'view']} label="工单配置"><TicketFlowList /></RequirePermission> },
+          { path: '/ticket-config/flows/new', element: <RequirePermission perm={['ticket_config', 'view']} label="工单配置"><TicketFlowEdit /></RequirePermission> },
+          { path: '/ticket-config/flows/:id/edit', element: <RequirePermission perm={['ticket_config', 'view']} label="工单配置"><TicketFlowEdit /></RequirePermission> },
           // 连接配置 - 设备对接（设备列表 / 接收器 / 数据源条目 / 解析模板 / 告警列表 / 入库监控）
-          { path: '/receivers', element: <ReceiverList /> },
-          { path: '/source-entries', element: <SourceEntryList /> },
-          { path: '/source-entries/:id', element: <SourceEntryDetail /> },
-          { path: '/strategies', element: <StrategyList /> },
-          { path: '/strategies/new', element: <StrategyEdit /> },
-          { path: '/strategies/:id/edit', element: <StrategyEdit /> },
+          { path: '/receivers', element: <RequirePermission perm={['device', 'view']} label="接收器"><ReceiverList /></RequirePermission> },
+          { path: '/source-entries', element: <RequirePermission perm={['device', 'view']} label="数据源条目"><SourceEntryList /></RequirePermission> },
+          { path: '/source-entries/:id', element: <RequirePermission perm={['device', 'view']} label="数据源条目"><SourceEntryDetail /></RequirePermission> },
+          { path: '/strategies', element: <RequirePermission perm={['strategy', 'view']} label="解析模板"><StrategyList /></RequirePermission> },
+          { path: '/strategies/new', element: <RequirePermission perm={['strategy', 'view']} label="解析模板"><StrategyEdit /></RequirePermission> },
+          { path: '/strategies/:id/edit', element: <RequirePermission perm={['strategy', 'view']} label="解析模板"><StrategyEdit /></RequirePermission> },
           // 告警接入 - 告警列表 / 告警规则 / 解析入库监控
-          { path: '/alerts', element: <AlertList /> },
-          { path: '/alert-rules', element: <AlertRules /> },
-          { path: '/alert-rules/new', element: <AlertRuleEditPage /> },
-          { path: '/alert-rules/:id/edit', element: <AlertRuleEditPage /> },
-          { path: '/ingest-monitor', element: <IngestionMonitor /> },
-          { path: '/lineage', element: <LineageView /> },
+          { path: '/alerts', element: <RequirePermission perm={['alert', 'view']} label="告警列表"><AlertList /></RequirePermission> },
+          { path: '/alert-rules', element: <RequirePermission perm={['alert', 'view']} label="告警规则"><AlertRules /></RequirePermission> },
+          { path: '/alert-rules/new', element: <RequirePermission perm={['alert', 'view']} label="告警规则"><AlertRuleEditPage /></RequirePermission> },
+          { path: '/alert-rules/:id/edit', element: <RequirePermission perm={['alert', 'view']} label="告警规则"><AlertRuleEditPage /></RequirePermission> },
+          { path: '/ingest-monitor', element: <RequirePermission perm={['monitor', 'view']} label="入库监控"><IngestionMonitor /></RequirePermission> },
+          { path: '/lineage', element: <RequirePermission perm={['device', 'view']} label="数据血缘"><LineageView /></RequirePermission> },
           // 告警自动封禁工作流：触发规则独立页面；审批/封禁/历史已合并进工作台 Tab
           { path: '/ban-workflow/instances', element: <Navigate to="/approvals?tab=all" replace /> },
           { path: '/ban-workflow/approvals', element: <Navigate to="/approvals" replace /> },
           { path: '/ban-workflow/banned', element: <Navigate to="/approvals?tab=banned" replace /> },
-          { path: '/ban-workflow/rules', element: <BanTriggerRules /> },
-          // 兜底：未匹配的受保护路由跳转运营大屏
-          { path: '*', element: <Navigate to="/dashboard" replace /> },
+          { path: '/ban-workflow/rules', element: <RequirePermission perm={['ban_workflow', 'view']} label="封禁工作流"><BanTriggerRules /></RequirePermission> },
+          // 兜底：未匹配的受保护路由重定向到当前用户有权限的第一个页面
+          { path: '*', element: <HomeRedirect /> },
         ],
       },
     ],

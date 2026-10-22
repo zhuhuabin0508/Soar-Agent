@@ -263,9 +263,15 @@ def delete_tool(
 
 @router.post("/{tool_id:int}/test")
 async def test_tool(
-    tool_id: int, body: ToolTestRequest, db: Session = Depends(get_db)
+    tool_id: int,
+    body: ToolTestRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("tool", "execute")),
 ) -> dict:
     """测试执行工具，返回结果与日志。
+
+    鉴权：需 ``tool:execute`` 权限 + 资源级 owner 校验（工具代码在沙箱执行，
+    防止任意登录用户执行他人工具读写数据/触发封禁）。
 
     自动按 ``tool_type`` 路由：code 工具走沙箱执行，http 工具走 HTTP 请求。
     对 HTTP 工具，通过 ``log_handler`` 回传「参数分发 / 实际请求 URL / 响应状态」
@@ -275,6 +281,8 @@ async def test_tool(
     tool = db.query(Tool).filter(Tool.id == tool_id).first()
     if tool is None:
         raise HTTPException(status_code=404, detail="Tool not found")
+    # 资源级 owner 校验：仅 admin/owner/被授权用户可测试执行
+    check_resource_ownership(current_user, db, "tool", tool_id, tool)
     if not tool.enabled:
         raise HTTPException(status_code=400, detail="Tool is disabled")
 
@@ -528,7 +536,7 @@ async def optimize_description(body: OptimizeDescRequest, db: Session = Depends(
         optimized = optimized.strip().strip('"').strip("'")
     except Exception as exc:  # noqa: BLE001
         logger.exception("LLM 优化描述失败: %s", exc)
-        raise HTTPException(status_code=500, detail=f"LLM 调用失败: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"LLM 调用失败（{type(exc).__name__}），详情见服务日志") from exc
 
     return {"description": optimized}
 
@@ -573,7 +581,7 @@ async def extract_parameters(body: ExtractParamsRequest, db: Session = Depends(g
         params = []
     except Exception as exc:  # noqa: BLE001
         logger.exception("AI 提取参数失败: %s", exc)
-        raise HTTPException(status_code=500, detail=f"LLM 调用失败: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"LLM 调用失败（{type(exc).__name__}），详情见服务日志") from exc
 
     return {"parameters": params}
 
@@ -640,7 +648,7 @@ async def debug_chat(
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("工具对话调试失败: %s", exc)
-        raise HTTPException(status_code=500, detail=f"对话调试失败: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"对话调试失败（{type(exc).__name__}），详情见服务日志") from exc
 
     return {
         "response": result.response or "",

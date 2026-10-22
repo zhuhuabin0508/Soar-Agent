@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { guardNavPermission } from '../utils/permissions'
 import ReactECharts from 'echarts-for-react'
 import { getChartTheme, emphasisPie, emphasisBar, emphasisLine } from '../utils/chartTheme'
 import { getDashboardStats } from '../api/dashboard'
@@ -13,7 +14,7 @@ import { Skeleton, EmptyState } from '../components/ui'
 import { TutorialButton, TutorialDrawer } from '../components/TutorialDrawer'
 import { DASHBOARD_TUTORIAL } from '../components/tutorialContent'
 import DutyDashboard from './DutyDashboard'
-import { RefreshCw, Radio, BarChart3, PieChart as PieIcon, TrendingUp, Inbox, FolderOpen, FileText, Package, CalendarDays } from 'lucide-react'
+import { RefreshCw, Radio, BarChart3, PieChart as PieIcon, TrendingUp, Inbox, FolderOpen, FileText, Package, CalendarDays, ShieldCheck, Timer, ClipboardList, Database } from 'lucide-react'
 
 // ============ 工具函数 ============
 function fmtTime(t) {
@@ -111,36 +112,44 @@ function AnimatedNumber({ value, duration = 1000 }) {
 }
 
 // ============ 可点击 KPI 卡片 ============
-function KpiCard({ label, value, suffix, accent, onClick, hint }) {
+function KpiCard({ label, value, suffix, accent, onClick, hint, icon: Icon, iconColor }) {
   const clickable = !!onClick
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={!clickable}
-      className={`group min-w-0 flex-1 rounded-xl border border-border bg-card p-5 text-left shadow-lg transition-all ${
+      style={{ animation: 'card-enter 0.35s ease-out' }}
+      className={`group card-accent-top card-hover relative min-w-0 flex-1 rounded-xl border border-border bg-card p-5 text-left shadow-lg transition-all ${
         clickable
           ? 'cursor-pointer hover:border-primary/50 hover:shadow-primary/10 hover:shadow-xl'
           : 'cursor-default'
       }`}
     >
       <div className="flex items-center justify-between">
-        <span className="text-xs font-normal text-muted-foreground">{label}</span>
+        <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-muted-foreground">
+          {Icon && <Icon className={`h-4 w-4 shrink-0 ${iconColor || 'text-primary'}`} />}
+          <span className="truncate">{label}</span>
+        </span>
         {clickable && (
-          <span className="text-[10px] text-muted-foreground/50 transition-colors group-hover:text-primary">
+          <span className="shrink-0 text-[10px] text-muted-foreground transition-colors group-hover:text-primary">
             点击查看详情 →
           </span>
         )}
       </div>
       <div className="mt-2 flex items-baseline gap-1">
         <span
-          className={`bg-clip-text text-4xl font-bold text-transparent ${accent || 'bg-gradient-to-r from-primary/80 to-primary'}`}
+          className={`text-glow bg-clip-text text-4xl font-bold tabular-nums text-transparent ${accent || 'bg-gradient-to-r from-primary/80 to-primary'}`}
         >
           {typeof value === 'number' ? <AnimatedNumber value={value} /> : value}
         </span>
         {suffix && <span className="text-sm text-muted-foreground">{suffix}</span>}
       </div>
-      {hint && <div className="mt-1 text-[10px] text-muted-foreground/50">{hint}</div>}
+      {hint && (
+        <div className="mt-2 inline-flex items-center gap-1 rounded-md bg-secondary px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
+          {hint}
+        </div>
+      )}
     </button>
   )
 }
@@ -159,10 +168,13 @@ function KpiSkeleton() {
 // ============ 图表卡片包装 ============
 function ChartCard({ title, icon: Icon, loading, isEmpty, emptyText, emptyDesc, emptyAction, children }) {
   return (
-    <div className="w-full rounded-xl border border-border bg-card p-4">
+    <div
+      className="card-accent-top card-hover w-full rounded-xl border border-border bg-card p-5"
+      style={{ animation: 'card-enter 0.35s ease-out' }}
+    >
       <div className="mb-3 flex items-center gap-2">
-        {Icon && <Icon className="h-4 w-4 text-muted-foreground" />}
-        <span className="text-sm font-medium text-foreground">{title}</span>
+        {Icon && <Icon className="h-4 w-4 text-primary" />}
+        <span className="text-sm font-semibold text-foreground">{title}</span>
       </div>
       {loading ? (
         <div className="flex h-[320px] items-center justify-center">
@@ -194,19 +206,24 @@ function ExecutionList({ items }) {
       {items.map((e) => (
         <div
           key={e.id}
-          className="rounded-lg border border-border bg-background/60 p-3 text-sm transition-colors hover:border-primary/40"
+          className="rounded-lg border border-border bg-background p-3 text-sm transition-colors hover:border-primary/40"
         >
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <span className="font-mono text-xs text-muted-foreground">#{e.id}</span>
-              <span className={`text-xs font-medium ${statusColorClass(e.status)}`}>
-                ● {statusLabel(e.status)}
+              <span className={`flex items-center gap-1.5 text-xs font-medium ${statusColorClass(e.status)}`}>
+                <span
+                  className={`inline-block h-1.5 w-1.5 rounded-full bg-current ${
+                    (e.status || '').toLowerCase() === 'running' ? 'dot-pulse' : ''
+                  }`}
+                />
+                {statusLabel(e.status)}
               </span>
               <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">
                 {triggerLabel(e.trigger_type)}
               </span>
             </div>
-            <span className="text-xs text-muted-foreground/70">{fmtTime(e.created_at)}</span>
+            <span className="text-xs tabular-nums text-muted-foreground">{fmtTime(e.created_at)}</span>
           </div>
           {e.workflow_id && (
             <div className="mt-1.5 text-xs text-muted-foreground">
@@ -220,7 +237,7 @@ function ExecutionList({ items }) {
             </div>
           )}
           {e.finished_at && e.created_at && (
-            <div className="mt-1 text-xs text-muted-foreground/70">
+            <div className="mt-1 text-xs tabular-nums text-muted-foreground">
               耗时: {fmtDuration((new Date(e.finished_at) - new Date(e.created_at)) / 1000)}
             </div>
           )}
@@ -243,17 +260,20 @@ function ApprovalList({ items }) {
         return (
           <div
             key={a.execution_id}
-            className="rounded-lg border border-border bg-background/60 p-3 text-sm transition-colors hover:border-warning/40"
+            className="rounded-lg border border-border bg-background p-3 text-sm transition-colors hover:border-warning/40"
           >
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <span className="font-mono text-xs text-muted-foreground">#{a.execution_id}</span>
-                <span className="text-xs font-medium text-warning">● 待审批</span>
-                {a.workflow_name && (
-                  <span className="truncate text-xs text-foreground">{a.workflow_name}</span>
-                )}
-              </div>
-              <span className="shrink-0 text-xs text-muted-foreground/70">{fmtTime(a.created_at)}</span>
+              <span className="font-mono text-xs text-muted-foreground">#{a.execution_id}</span>
+              <span className="flex items-center gap-1.5 text-xs font-medium text-warning">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-current" />
+                待审批
+              </span>
+              {a.workflow_name && (
+                <span className="truncate text-xs text-foreground">{a.workflow_name}</span>
+              )}
+            </div>
+            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{fmtTime(a.created_at)}</span>
             </div>
             {(alertData.alert_type || alertData.src_ip) && (
               <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
@@ -386,7 +406,8 @@ function OperationsDashboard({ onRefresh, refreshing, autoRefresh, onToggleAutoR
     const t = getChartTheme()
     return {
       backgroundColor: 'transparent',
-      color: ['#22d3ee', '#f59e0b'],
+      // 跟随主题色板：自动化处置=青 / 人工介入=琥珀
+      color: [t.palette[0], t.palette[4]],
       tooltip: { trigger: 'axis', ...t.tooltip },
       legend: { data: ['自动化处置', '人工介入'], textStyle: { color: t.textMuted }, top: 0 },
       grid: { left: 40, right: 24, top: 40, bottom: 32, containLabel: true },
@@ -459,8 +480,8 @@ function OperationsDashboard({ onRefresh, refreshing, autoRefresh, onToggleAutoR
           itemStyle: {
             borderRadius: [4, 4, 0, 0],
             color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [
-              { offset: 0, color: '#22d3ee' },
-              { offset: 1, color: '#3b82f6' },
+              { offset: 0, color: t.palette[0] },
+              { offset: 1, color: t.palette[1] },
             ]},
           },
           data: top10.map((d) => d.count),
@@ -484,7 +505,7 @@ function OperationsDashboard({ onRefresh, refreshing, autoRefresh, onToggleAutoR
       )}
 
       {/* KPI 卡片：加载时用骨架屏 */}
-      <div className="flex w-full flex-col gap-4 sm:flex-row">
+      <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {loading ? (
           <>
             <KpiSkeleton />
@@ -497,6 +518,8 @@ function OperationsDashboard({ onRefresh, refreshing, autoRefresh, onToggleAutoR
             <KpiCard
               label="今日接警总数"
               value={kpi.today_alerts ?? '-'}
+              icon={Radio}
+              iconColor="text-chart-1"
               onClick={() => openDrawer('today_alerts')}
               hint="点击查看今日执行记录"
             />
@@ -504,6 +527,8 @@ function OperationsDashboard({ onRefresh, refreshing, autoRefresh, onToggleAutoR
               label="全自动化封禁成功率"
               value={successRate}
               suffix="%"
+              icon={ShieldCheck}
+              iconColor="text-chart-2"
               onClick={() => openDrawer('recent_executions', { title: '自动化封禁执行详情' })}
               hint="点击查看执行记录"
             />
@@ -512,6 +537,8 @@ function OperationsDashboard({ onRefresh, refreshing, autoRefresh, onToggleAutoR
               value={kpi.mttr_seconds ?? '-'}
               suffix="秒"
               accent="bg-gradient-to-r from-emerald-400 to-cyan-500"
+              icon={Timer}
+              iconColor="text-chart-5"
               onClick={() => openDrawer('recent_executions', { title: '系统响应时间详情' })}
               hint="点击查看执行记录"
             />
@@ -519,6 +546,8 @@ function OperationsDashboard({ onRefresh, refreshing, autoRefresh, onToggleAutoR
               label="待人工处理工单数"
               value={kpi.pending_approvals ?? '-'}
               accent="bg-gradient-to-r from-amber-400 to-pink-500"
+              icon={ClipboardList}
+              iconColor="text-chart-4"
               onClick={() => openDrawer('pending_approvals')}
               hint="点击查看待处理工单"
             />
@@ -811,7 +840,8 @@ function MaterialsDashboard({ refreshing, autoRefresh }) {
       const maxIdx = counts.indexOf(maxVal)
       return {
         backgroundColor: 'transparent',
-        color: ['#22d3ee', '#f59e0b'],
+        // 跟随主题色板：柱=琥珀 / 折线=青（与图例一致）
+        color: [t.palette[4], t.palette[0]],
         tooltip: {
           trigger: 'axis',
           ...t.tooltip,
@@ -853,7 +883,7 @@ function MaterialsDashboard({ refreshing, autoRefresh }) {
             yAxisIndex: 1,
             data: sizesMB,
             barWidth: '40%',
-            itemStyle: { color: '#f59e0b', borderRadius: [4, 4, 0, 0] },
+            itemStyle: { color: t.palette[4], borderRadius: [4, 4, 0, 0] },
             ...emphasisBar(),
           },
           {
@@ -870,12 +900,12 @@ function MaterialsDashboard({ refreshing, autoRefresh }) {
               data: [{ name: '峰值', coord: [maxIdx, maxVal], value: maxVal }],
               symbol: 'pin',
               symbolSize: 40,
-              itemStyle: { color: '#ef4444' },
+              itemStyle: { color: t.palette[6] },
               label: { color: '#fff', fontSize: 10 },
             } : undefined,
             markLine: {
               data: [{ type: 'average', name: '平均' }],
-              lineStyle: { color: '#22d3ee', type: 'dashed' },
+              lineStyle: { color: t.palette[0], type: 'dashed' },
               label: { color: t.textMuted },
             },
             ...emphasisLine(),
@@ -890,7 +920,7 @@ function MaterialsDashboard({ refreshing, autoRefresh }) {
       const maxIdx = counts.indexOf(maxVal)
       return {
         backgroundColor: 'transparent',
-        color: ['#22d3ee'],
+        color: [t.palette[0]],
         tooltip: { trigger: 'axis', ...t.tooltip },
         grid: { left: 40, right: 24, top: 24, bottom: 40, containLabel: true },
         xAxis: {
@@ -920,12 +950,12 @@ function MaterialsDashboard({ refreshing, autoRefresh }) {
               data: [{ name: '峰值', coord: [maxIdx, maxVal], value: maxVal }],
               symbol: 'pin',
               symbolSize: 40,
-              itemStyle: { color: '#ef4444' },
+              itemStyle: { color: t.palette[6] },
               label: { color: '#fff', fontSize: 10 },
             } : undefined,
             markLine: {
               data: [{ type: 'average', name: '平均' }],
-              lineStyle: { color: '#22d3ee', type: 'dashed' },
+              lineStyle: { color: t.palette[0], type: 'dashed' },
               label: { color: t.textMuted },
             },
             ...emphasisLine(),
@@ -964,20 +994,20 @@ function MaterialsDashboard({ refreshing, autoRefresh }) {
           itemStyle: {
             borderRadius: [4, 4, 0, 0],
             color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [
-              { offset: 0, color: '#22d3ee' },
-              { offset: 1, color: '#3b82f6' },
+              { offset: 0, color: t.palette[0] },
+              { offset: 1, color: t.palette[1] },
             ]},
           },
           markPoint: maxVal > 0 ? {
             data: [{ name: '峰值', coord: [maxIdx, maxVal], value: maxVal }],
             symbol: 'pin',
             symbolSize: 40,
-            itemStyle: { color: '#ef4444' },
+            itemStyle: { color: t.palette[6] },
             label: { color: '#fff', fontSize: 10 },
           } : undefined,
           markLine: {
             data: [{ type: 'average', name: '平均' }],
-            lineStyle: { color: '#22d3ee', type: 'dashed' },
+            lineStyle: { color: t.palette[0], type: 'dashed' },
             label: { color: t.textMuted },
           },
           ...emphasisBar(),
@@ -1048,10 +1078,13 @@ function MaterialsDashboard({ refreshing, autoRefresh }) {
       setExtFilter(null)
     }
   }
-  // 点击类别柱条 → 跳转材料管理页
-  const onCatClick = () => {
+  // 跳转材料管理（跨模块，无权限时 toast 拦截）
+  const goDeliverables = () => {
+    if (!guardNavPermission('deliverable', 'view', '材料管理')) return
     navigate('/deliverables')
   }
+  // 点击类别柱条 → 跳转材料管理页
+  const onCatClick = goDeliverables
 
   // ============ 文件类型彩色图标 ============
   const fileColorClass = (ext) => {
@@ -1066,26 +1099,32 @@ function MaterialsDashboard({ refreshing, autoRefresh }) {
   return (
     <div className="flex flex-col gap-4">
       {/* ============ 1. KPI 卡片（5 张，带环比 + 下钻）============ */}
-      <div className="grid w-full grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid w-full grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         <KpiCard
           label="目录类别"
           value={s.total_categories || 0}
           accent="bg-gradient-to-r from-primary/80 to-primary"
-          onClick={() => navigate('/deliverables')}
+          icon={FolderOpen}
+          iconColor="text-primary"
+          onClick={goDeliverables}
           hint="点击进入材料管理"
         />
         <KpiCard
           label="材料总数"
           value={s.total_files || 0}
           accent="bg-gradient-to-r from-blue-400 to-cyan-500"
-          onClick={() => navigate('/deliverables')}
+          icon={FileText}
+          iconColor="text-chart-2"
+          onClick={goDeliverables}
           hint="点击进入材料管理"
         />
         <KpiCard
           label="今日新增"
           value={todayCount}
           accent="bg-gradient-to-r from-emerald-400 to-teal-500"
-          onClick={() => navigate('/deliverables')}
+          icon={TrendingUp}
+          iconColor="text-chart-5"
+          onClick={goDeliverables}
           hint={
             <span>
               较昨日 <span className={todayTrendColor}>{todayTrend}</span>（昨日 {yesterdayCount}）
@@ -1096,7 +1135,9 @@ function MaterialsDashboard({ refreshing, autoRefresh }) {
           label="本周新增"
           value={thisWeek}
           accent="bg-gradient-to-r from-amber-400 to-orange-500"
-          onClick={() => navigate('/deliverables')}
+          icon={CalendarDays}
+          iconColor="text-amber-500"
+          onClick={goDeliverables}
           hint={
             <span>
               较上周 <span className={weekTrendColor}>{weekTrend}</span>（上周 {lastWeek}）
@@ -1107,6 +1148,8 @@ function MaterialsDashboard({ refreshing, autoRefresh }) {
           label="占用空间"
           value={fmtSize(s.total_size || 0)}
           accent="bg-gradient-to-r from-purple-400 to-pink-500"
+          icon={Database}
+          iconColor="text-chart-3"
         />
       </div>
 
@@ -1129,10 +1172,10 @@ function MaterialsDashboard({ refreshing, autoRefresh }) {
             <button
               type="button"
               onClick={() => setCatTab('level1')}
-              className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
+              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
                 catTab === 'level1'
-                  ? 'bg-primary text-primary-foreground shadow'
-                  : 'bg-secondary text-muted-foreground hover:text-foreground'
+                  ? 'bg-primary/10 text-primary ring-1 ring-primary/25'
+                  : 'text-muted-foreground hover:bg-primary/10 hover:text-foreground'
               }`}
             >
               一级
@@ -1140,10 +1183,10 @@ function MaterialsDashboard({ refreshing, autoRefresh }) {
             <button
               type="button"
               onClick={() => setCatTab('level2')}
-              className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
+              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
                 catTab === 'level2'
-                  ? 'bg-primary text-primary-foreground shadow'
-                  : 'bg-secondary text-muted-foreground hover:text-foreground'
+                  ? 'bg-primary/10 text-primary ring-1 ring-primary/25'
+                  : 'text-muted-foreground hover:bg-primary/10 hover:text-foreground'
               }`}
             >
               二级
@@ -1151,10 +1194,10 @@ function MaterialsDashboard({ refreshing, autoRefresh }) {
             <button
               type="button"
               onClick={() => setCatTab('level3')}
-              className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
+              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
                 catTab === 'level3'
-                  ? 'bg-primary text-primary-foreground shadow'
-                  : 'bg-secondary text-muted-foreground hover:text-foreground'
+                  ? 'bg-primary/10 text-primary ring-1 ring-primary/25'
+                  : 'text-muted-foreground hover:bg-primary/10 hover:text-foreground'
               }`}
             >
               三级
@@ -1197,7 +1240,7 @@ function MaterialsDashboard({ refreshing, autoRefresh }) {
                   {extDetails.map((e) => (
                     <tr
                       key={e.ext || 'unknown'}
-                      className={`border-t border-border transition-colors hover:bg-secondary/50 ${
+                      className={`border-t border-border transition-colors hover:bg-secondary ${
                         extFilter && (e.ext || '').toLowerCase() === extFilter.toLowerCase() ? 'bg-primary/10' : ''
                       }`}
                     >
@@ -1234,10 +1277,10 @@ function MaterialsDashboard({ refreshing, autoRefresh }) {
           <button
             type="button"
             onClick={() => setTrendRange('7d')}
-            className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
+            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
               trendRange === '7d'
-                ? 'bg-primary text-primary-foreground shadow'
-                : 'bg-secondary text-muted-foreground hover:text-foreground'
+                ? 'bg-primary/10 text-primary ring-1 ring-primary/25'
+                : 'text-muted-foreground hover:bg-primary/10 hover:text-foreground'
             }`}
           >
             近 7 日
@@ -1245,10 +1288,10 @@ function MaterialsDashboard({ refreshing, autoRefresh }) {
           <button
             type="button"
             onClick={() => setTrendRange('30d')}
-            className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
+            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
               trendRange === '30d'
-                ? 'bg-primary text-primary-foreground shadow'
-                : 'bg-secondary text-muted-foreground hover:text-foreground'
+                ? 'bg-primary/10 text-primary ring-1 ring-primary/25'
+                : 'text-muted-foreground hover:bg-primary/10 hover:text-foreground'
             }`}
           >
             近 30 日
@@ -1256,15 +1299,15 @@ function MaterialsDashboard({ refreshing, autoRefresh }) {
           <button
             type="button"
             onClick={() => setTrendRange('year')}
-            className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
+            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
               trendRange === 'year'
-                ? 'bg-primary text-primary-foreground shadow'
-                : 'bg-secondary text-muted-foreground hover:text-foreground'
+                ? 'bg-primary/10 text-primary ring-1 ring-primary/25'
+                : 'text-muted-foreground hover:bg-primary/10 hover:text-foreground'
             }`}
           >
             本年度
           </button>
-          <span className="ml-auto text-[10px] text-muted-foreground/60">
+          <span className="ml-auto text-[10px] text-muted-foreground">
             {trendRange === '7d' ? '双轴：折线=文件数 / 柱=总大小MB' : trendRange === '30d' ? '近 30 天每日文件数' : '本年度每月文件数'}
           </span>
         </div>
@@ -1312,7 +1355,7 @@ function MaterialsDashboard({ refreshing, autoRefresh }) {
           {recentList.map((it) => (
             <li
               key={it.id}
-              className="group flex items-center gap-3 py-2 transition-colors hover:bg-secondary/30"
+              className="group flex items-center gap-3 py-2 transition-colors hover:bg-secondary"
             >
               <FileText className={`h-4 w-4 shrink-0 ${fileColorClass(it.file_ext)}`} />
               <div className="min-w-0 flex-1">
@@ -1330,7 +1373,7 @@ function MaterialsDashboard({ refreshing, autoRefresh }) {
                   <button
                     type="button"
                     title="预览（跳转材料管理）"
-                    onClick={() => navigate('/deliverables')}
+                    onClick={goDeliverables}
                     className="rounded-md border border-border bg-card px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
                   >
                     预览
@@ -1353,7 +1396,7 @@ function MaterialsDashboard({ refreshing, autoRefresh }) {
         <div className="mt-3 flex justify-end">
           <button
             type="button"
-            onClick={() => navigate('/deliverables')}
+            onClick={goDeliverables}
             className="rounded-md border border-border bg-secondary px-3 py-1.5 text-xs text-muted-foreground transition hover:border-primary/50 hover:text-primary"
           >
             查看全部 →
@@ -1388,18 +1431,21 @@ function Dashboard() {
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
       {/* 顶部标题栏 */}
-      <header className="flex shrink-0 items-center justify-between border-b border-border bg-card/60 px-6 py-4">
-        <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-semibold text-foreground">运营大屏</h1>
+      <header className="flex shrink-0 items-center justify-between border-b border-border panel-glass px-6 py-4">
+        <div className="flex items-center gap-5">
+          <div className="flex flex-col">
+            <h1 className="text-gradient-primary text-3xl font-bold tracking-wide">运营大屏</h1>
+            <p className="mt-0.5 text-xs text-muted-foreground">智能安全运营平台 · 实时监控</p>
+          </div>
           {/* Tab 切换 */}
-          <div className="flex items-center gap-1 rounded-lg bg-secondary p-0.5">
+          <div className="flex items-center gap-1 rounded-lg bg-secondary p-1">
             <button
               type="button"
               onClick={() => setTab('operations')}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors ${
                 tab === 'operations'
-                  ? 'bg-primary text-primary-foreground shadow'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'bg-primary/10 text-primary ring-1 ring-primary/25'
+                  : 'text-muted-foreground hover:bg-primary/10 hover:text-foreground'
               }`}
             >
               安全运营大屏
@@ -1407,10 +1453,10 @@ function Dashboard() {
             <button
               type="button"
               onClick={() => setTab('ai_usage')}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors ${
                 tab === 'ai_usage'
-                  ? 'bg-primary text-primary-foreground shadow'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'bg-primary/10 text-primary ring-1 ring-primary/25'
+                  : 'text-muted-foreground hover:bg-primary/10 hover:text-foreground'
               }`}
             >
               AI 使用大屏
@@ -1418,10 +1464,10 @@ function Dashboard() {
             <button
               type="button"
               onClick={() => setTab('materials')}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors ${
                 tab === 'materials'
-                  ? 'bg-primary text-primary-foreground shadow'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'bg-primary/10 text-primary ring-1 ring-primary/25'
+                  : 'text-muted-foreground hover:bg-primary/10 hover:text-foreground'
               }`}
             >
               材料管理大屏
@@ -1429,10 +1475,10 @@ function Dashboard() {
             <button
               type="button"
               onClick={() => setTab('duty')}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors ${
                 tab === 'duty'
-                  ? 'bg-primary text-primary-foreground shadow'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'bg-primary/10 text-primary ring-1 ring-primary/25'
+                  : 'text-muted-foreground hover:bg-primary/10 hover:text-foreground'
               }`}
             >
               值班大屏
@@ -1447,7 +1493,7 @@ function Dashboard() {
               {autoRefresh && (
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
               )}
-              <span className={`relative inline-flex h-2 w-2 rounded-full ${autoRefresh ? 'bg-success' : 'bg-muted-foreground/50'}`} />
+              <span className={`relative inline-flex h-2 w-2 rounded-full ${autoRefresh ? 'dot-pulse bg-success' : 'bg-border'}`} />
             </span>
             <span>{autoRefresh ? '实时更新 · 每 30 秒刷新' : '已暂停自动刷新'}</span>
           </div>
@@ -1464,7 +1510,7 @@ function Dashboard() {
           >
             <Radio className={`h-3.5 w-3.5 ${autoRefresh ? 'text-success' : ''}`} />
             <span>自动刷新</span>
-            <span className={`ml-0.5 inline-flex h-3.5 w-6 items-center rounded-full p-0.5 transition ${autoRefresh ? 'bg-success' : 'bg-muted-foreground/30'}`}>
+            <span className={`ml-0.5 inline-flex h-3.5 w-6 items-center rounded-full p-0.5 transition ${autoRefresh ? 'bg-success' : 'bg-input'}`}>
               <span className={`h-2.5 w-2.5 rounded-full bg-white transition ${autoRefresh ? 'translate-x-2.5' : ''}`} />
             </span>
           </button>
@@ -1481,14 +1527,14 @@ function Dashboard() {
           </button>
 
           {/* 当前时间 */}
-          <div className="text-xs text-muted-foreground/70 tabular-nums">
+          <div className="text-sm tabular-nums text-muted-foreground">
             {now.toLocaleString('zh-CN', { hour12: false })}
           </div>
         </div>
       </header>
 
       {/* 内容滚动区 */}
-      <div className={`flex-1 min-w-0 ${tab === 'duty' ? 'overflow-hidden' : 'overflow-y-auto p-6'}`}>
+      <div className={`flex-1 min-w-0 ${tab === 'duty' ? 'overflow-hidden' : 'bg-tech-grid overflow-y-auto p-6'}`}>
         {tab === 'operations' ? (
           <OperationsDashboard
             onRefresh={handleRefresh}

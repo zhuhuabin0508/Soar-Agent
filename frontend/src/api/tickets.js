@@ -36,27 +36,40 @@ export const ticketApi = {
 
   // ===== 工单中心 =====
   flowOptions: () => request('/tickets/flows/options'),
+  // 抄送候选（启用用户 + 启用分组，ticket:view 即可调用，避免弹窗"权限不足"）
+  ccOptions: () => request('/tickets/cc-options'),
   createTicket: (body) => request('/tickets', { method: 'POST', body }),
   listTickets: (params) => request(`/tickets${_qs(params)}`),
   getTicket: (id) => request(`/tickets/${id}`),
   // 监控大屏聚合（KPI/趋势/分布/SLA/分组/流转节点/最新工单，一次返回）
-  getMonitorStats: () => request('/tickets/monitor'),
+  // flowId：指定处置状态流转展示的流程模板；缺省自动选取（进行中工单最多）
+  getMonitorStats: (flowId) => request(`/tickets/monitor${flowId ? `?flow_id=${flowId}` : ''}`),
   advanceTicket: (id, body) => request(`/tickets/${id}/advance`, { method: 'POST', body }),
+  // 回退工单：当前节点退回上一节点，comment 必填（回退原因）
+  rollbackTicket: (id, body) => request(`/tickets/${id}/rollback`, { method: 'POST', body }),
   cancelTicket: (id, body) => request(`/tickets/${id}/cancel`, { method: 'POST', body }),
   archiveTicket: (id) => request(`/tickets/${id}/archive`, { method: 'POST' }),
   unarchiveTicket: (id) => request(`/tickets/${id}/unarchive`, { method: 'POST' }),
+  // 抄送：追加（人员/分组混合勾选）与移除，均返回工单详情
+  addCc: (id, targets) => request(`/tickets/${id}/cc`, { method: 'POST', body: { targets } }),
+  removeCc: (id, ccId) => request(`/tickets/${id}/cc/${ccId}`, { method: 'DELETE' }),
+  // 删除工单记录（物理删除，ticket:delete 权限）
+  deleteTicket: (id) => request(`/tickets/${id}`, { method: 'DELETE' }),
 
   // ===== 附件 =====
   uploadAttachment: (file) => {
     const fd = new FormData()
     fd.append('file', file)
-    return request('/tickets/attachments', { method: 'POST', body: fd })
+    // 60 秒超时：防止极端环境下请求无限挂起、上传按钮一直停在"上传中"
+    return request('/tickets/attachments', { method: 'POST', body: fd, timeoutMs: 60000 })
   },
 }
 
 // 附件直链（<img>/<a> 无法带 Authorization 头，追加 query token）
+// 幂等：URL 已带 token 时原样返回，避免叠加多份 token
 export function attachmentUrl(url) {
   if (!url) return ''
+  if (url.includes('token=')) return url
   const token = localStorage.getItem('soar_token')
   if (!token) return url
   return url.includes('?') ? `${url}&token=${token}` : `${url}?token=${token}`

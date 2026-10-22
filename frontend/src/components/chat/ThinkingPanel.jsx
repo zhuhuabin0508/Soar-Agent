@@ -105,12 +105,12 @@ export default function ThinkingPanel({ thinking, streaming = false }) {
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="flex items-center gap-1 text-[11px] text-muted-foreground/70 transition hover:text-muted-foreground"
+          className="flex items-center gap-1 text-[11px] text-muted-foreground transition hover:text-muted-foreground"
         >
           <ChevronRight className={`inline-block h-3 w-3 transition-transform ${open ? 'rotate-90' : ''}`} />
           <Brain className="h-3.5 w-3.5" />
           <span>思考过程</span>
-          <span className="text-muted-foreground/50">
+          <span className="text-muted-foreground">
             {streaming ? '(思考中…)' : `(${steps} 步推理)`}
           </span>
         </button>
@@ -119,10 +119,10 @@ export default function ThinkingPanel({ thinking, streaming = false }) {
           <button
             type="button"
             onClick={handleCopy}
-            className="ml-auto flex items-center gap-1 text-[10px] text-muted-foreground/50 transition hover:text-muted-foreground"
+            className="ml-auto flex items-center gap-1 text-[10px] text-muted-foreground transition hover:text-muted-foreground"
             title="复制思考过程"
           >
-            {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+            {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
             {copied ? '已复制' : '复制'}
           </button>
         )}
@@ -130,27 +130,27 @@ export default function ThinkingPanel({ thinking, streaming = false }) {
 
       {/* 展开内容：结构化渲染 */}
       {open && (
-        <div className="mt-1 max-h-80 overflow-y-auto rounded-lg border border-border bg-card/60 p-2.5 text-[12px] leading-relaxed text-muted-foreground">
+        <div className="mt-1 max-h-80 overflow-y-auto rounded-lg bg-muted p-2.5 text-[12px] leading-relaxed text-muted-foreground">
           {highlighted.map(({ lineIdx, segments }) => (
             <div key={lineIdx} className="py-0.5">
               {segments.map((seg, i) => {
                 if (seg.type === 'ip') {
                   return (
-                    <code key={i} className="rounded bg-amber-500/15 px-1 font-mono text-amber-400">
+                    <code key={i} className="rounded bg-amber-500/15 px-1 font-mono text-amber-600 dark:text-amber-400">
                       {seg.text}
                     </code>
                   )
                 }
                 if (seg.type === 'tool') {
                   return (
-                    <code key={i} className="rounded bg-sky-500/15 px-1 font-mono text-sky-400">
+                    <code key={i} className="rounded bg-sky-500/15 px-1 font-mono text-sky-600 dark:text-sky-400">
                       {seg.text}
                     </code>
                   )
                 }
                 if (seg.type === 'keyword') {
                   return (
-                    <span key={i} className="rounded bg-rose-500/15 px-0.5 text-rose-400">
+                    <span key={i} className="rounded bg-rose-500/15 px-0.5 text-rose-600 dark:text-rose-400">
                       {seg.text}
                     </span>
                   )

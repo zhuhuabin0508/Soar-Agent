@@ -51,8 +51,18 @@ class FlowUpdate(BaseModel):
 
 # ============ 工单实例 ============
 
+class CcTarget(BaseModel):
+    """抄送对象：人员或工单分组。"""
+    type: str = Field(..., pattern="^(user|group)$")
+    id: int
+    name: str = Field("", max_length=100)
+
+
 class TicketCreate(BaseModel):
-    """发起工单：field_values 按首节点字段定义校验。"""
+    """发起工单：field_values 按首节点字段定义校验。
+
+    ``cc_targets``：发起时手动追加的抄送对象（模板固定抄送自动生效，此处无需重复）。
+    """
     flow_id: int
     title: str = Field(..., min_length=1, max_length=200)
     priority: str = Field(default="medium", pattern="^(low|medium|high|critical)$")
@@ -61,6 +71,12 @@ class TicketCreate(BaseModel):
     comment: Optional[str] = None
     related_alert_id: Optional[int] = None
     related_alert_uuid: Optional[str] = Field(None, max_length=64)
+    cc_targets: list[CcTarget] = Field(default_factory=list)
+
+
+class TicketCcAdd(BaseModel):
+    """追加抄送对象（发起人/当前处理人/admin，进行中工单）。"""
+    targets: list[CcTarget] = Field(default_factory=list)
 
 
 class TicketAdvance(BaseModel):
@@ -73,3 +89,8 @@ class TicketAdvance(BaseModel):
 class TicketCancel(BaseModel):
     """取消工单：仅发起人或 admin。"""
     comment: Optional[str] = None
+
+
+class TicketRollback(BaseModel):
+    """回退工单：当前节点处理人退回上一节点，必须填写回退原因。"""
+    comment: str = Field(..., min_length=1, max_length=1000, description="回退原因（必填）")

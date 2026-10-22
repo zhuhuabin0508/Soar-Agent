@@ -177,7 +177,7 @@ function AgentList() {
     { key: 'max_iterations', header: '迭代上限', width: '100px', numeric: true, render: (r) => <span className="text-muted-foreground">{r.max_iterations ?? '-'}</span> },
     { key: 'updated_at', header: '更新时间', width: '170px', render: (r) => <span className="text-muted-foreground">{fmtTime(r.updated_at)}</span> },
     {
-      key: '__actions', header: '操作', width: '300px',
+      key: '__actions', header: '操作', width: '410px',
       render: (r) => {
         const canEdit = canEditResource(r)
         const canShare = canManageShare(r)
@@ -222,10 +222,10 @@ function AgentList() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
-      <header className="flex items-center justify-between border-b border-border bg-card/60 px-6 py-4">
+      <header className="flex items-center justify-between border-b border-border bg-card px-6 py-4">
         <div className="flex items-center gap-4">
           <h1 className="text-xl font-semibold text-foreground">智能体</h1>
-          <span className="text-xs text-muted-foreground/70">共 {filteredRows.length} 个</span>
+          <span className="text-xs text-muted-foreground">共 {filteredRows.length} 个</span>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -278,6 +278,8 @@ function AgentList() {
             selectedKeys={selectedKeys}
             onSelectChange={setSelectedKeys}
             rowKey="id"
+            onRowClick={(r) => navigate(`/agents/${r.id}/edit`)}
+            rowClickHint="点击编辑"
             emptyText="暂无智能体"
           />
         </div>
@@ -356,36 +358,36 @@ function AgentList() {
         ) : (
           <div className="flex flex-col gap-4">
             <div className="grid w-full grid-cols-2 gap-4">
-              <div className="rounded-md border border-border bg-card/60 p-4">
-                <div className="text-xs text-muted-foreground/70">decision</div>
+              <div className="rounded-md border border-border bg-card p-4">
+                <div className="text-xs text-muted-foreground">decision</div>
                 <div className="mt-1 font-mono text-sm text-primary">
                   {result?.decision ?? '-'}
                 </div>
               </div>
-              <div className="rounded-md border border-border bg-card/60 p-4">
-                <div className="text-xs text-muted-foreground/70">target_ip</div>
+              <div className="rounded-md border border-border bg-card p-4">
+                <div className="text-xs text-muted-foreground">target_ip</div>
                 <div className="mt-1 font-mono text-sm text-foreground">
                   {result?.target_ip ?? '-'}
                 </div>
               </div>
             </div>
             <div>
-              <div className="text-xs text-muted-foreground/70">reason</div>
+              <div className="text-xs text-muted-foreground">reason</div>
               <div className="mt-1 rounded-md bg-background p-4 text-sm text-foreground ring-1 ring-border">
                 {result?.reason || '-'}
               </div>
             </div>
             <div>
-              <div className="text-xs text-muted-foreground/70">duration</div>
+              <div className="text-xs text-muted-foreground">duration</div>
               <div className="mt-1 font-mono text-sm text-muted-foreground">{result?.duration ?? '-'}</div>
             </div>
             <div>
-              <div className="mb-1 text-xs text-muted-foreground/70">
+              <div className="mb-1 text-xs text-muted-foreground">
                 推理过程 messages（{(result?.messages || []).length} 条）
               </div>
               <div className="max-h-72 w-full overflow-auto rounded-md bg-background p-4 ring-1 ring-border">
                 {(result?.messages || []).length === 0 ? (
-                  <div className="text-xs text-muted-foreground/60">暂无消息</div>
+                  <div className="text-xs text-muted-foreground">暂无消息</div>
                 ) : (
                   <div className="flex flex-col gap-2">
                     {result.messages.map((m, idx) => (
@@ -405,12 +407,12 @@ function AgentList() {
               </div>
             </div>
             <div>
-              <div className="mb-1 text-xs text-muted-foreground/70">
+              <div className="mb-1 text-xs text-muted-foreground">
                 日志（{(result?.logs || []).length} 条）
               </div>
               <div className="max-h-48 w-full overflow-auto rounded-md bg-background p-4 ring-1 ring-border">
                 {(result?.logs || []).length === 0 ? (
-                  <div className="text-xs text-muted-foreground/60">暂无日志</div>
+                  <div className="text-xs text-muted-foreground">暂无日志</div>
                 ) : (
                   <div className="flex flex-col gap-1">
                     {result.logs.map((log, idx) => (
@@ -510,7 +512,7 @@ function AgentList() {
             return (
               <div
                 key={tpl.id}
-                className="flex flex-col gap-2 rounded-lg border border-border bg-card/40 p-4"
+                className="flex flex-col gap-2 rounded-lg border border-border bg-card p-4"
               >
                 <div className="flex items-center gap-2">
                   <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
@@ -520,7 +522,7 @@ function AgentList() {
                 </div>
                 <span className="text-xs leading-relaxed text-muted-foreground">{tpl.description}</span>
                 {tpl.scenario && (
-                  <span className="text-[10px] text-muted-foreground/70">适用：{tpl.scenario}</span>
+                  <span className="text-[10px] text-muted-foreground">适用：{tpl.scenario}</span>
                 )}
                 {tpl.tags?.length > 0 && (
                   <div className="flex flex-wrap gap-1">
@@ -561,7 +563,7 @@ function AgentList() {
               setTemplateOpen(false)
               navigate('/agents/new')
             }}
-            className="flex flex-col gap-2 rounded-lg border border-dashed border-border bg-card/20 p-4 text-left transition hover:border-primary/50 hover:bg-secondary/40 sm:col-span-2"
+            className="flex flex-col gap-2 rounded-lg border border-dashed border-border bg-card p-4 text-left transition hover:border-primary/50 hover:bg-secondary sm:col-span-2"
           >
             <div className="flex items-center gap-2">
               <span className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary text-muted-foreground">

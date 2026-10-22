@@ -13,7 +13,7 @@ import { hasPermission } from '../utils/permissions'
 import { Modal } from '../components/Dialog'
 import { confirm } from '../components/ConfirmDialog'
 import { toast } from '../store/toastStore'
-import { DataTable, Pagination, EmptyState } from '../components/ui'
+import { DataTable, Pagination, EmptyState, Badge, StatusBadge } from '../components/ui'
 import FilterBar from '../components/FilterBar'
 import BatchActions from '../components/BatchActions'
 import { usePagination } from '../hooks/usePagination'
@@ -112,9 +112,9 @@ function Switch({ checked, onChange, disabled }) {
       aria-checked={checked}
       disabled={disabled}
       onClick={() => !disabled && onChange(!checked)}
-      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
-        checked ? 'bg-primary' : 'bg-muted-foreground/30'
-      } disabled:opacity-50`}
+      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-all hover:ring-2 hover:ring-primary/30 ${
+        checked ? 'bg-primary' : 'bg-input'
+      } disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:ring-0`}
     >
       <span
         className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
@@ -142,21 +142,21 @@ function PasswordField({ label, value, onChange, placeholder, hint, required, sh
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 pr-28 text-sm text-foreground outline-none transition placeholder:text-muted-foreground hover:border-primary/50 focus:border-primary focus:ring-1 focus:ring-primary"
+          className="input-base h-9 pr-28"
         />
         <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
           {rightSlot}
           <button
             type="button"
             onClick={() => setShow((s) => !s)}
-            className="text-muted-foreground/50 transition hover:text-foreground"
+            className="text-muted-foreground transition hover:text-foreground"
             tabIndex={-1}
           >
             {show ? <EyeOff className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
           </button>
         </div>
       </div>
-      {hint && <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground/70">{hint}</p>}
+      {hint && <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{hint}</p>}
       {showStrength && value && strength && (
         <div className="mt-2">
           <div className="flex items-center gap-2">
@@ -175,7 +175,7 @@ function PasswordField({ label, value, onChange, placeholder, hint, required, sh
                 className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] leading-none ${
                   c.pass
                     ? 'bg-success/10 text-success'
-                    : 'bg-muted/80 text-muted-foreground/60'
+                    : 'bg-muted text-muted-foreground'
                 }`}
               >
                 <span className="w-3 shrink-0 text-center">{c.pass ? '✓' : '○'}</span>
@@ -224,19 +224,18 @@ function UserDetailDrawer({ open, user, onClose, onEdit }) {
 
         {/* 标签 */}
         <div className="flex gap-2 px-5 py-3">
-          <span className="rounded-md bg-primary/15 px-2.5 py-1 text-xs font-medium text-primary">
+          <Badge variant="primary">
             {ROLE_LABELS[user.role_name] || user.role_name || ROLE_LABELS[user.role] || user.role || '-'}
-          </span>
-          {user.is_active ? (
-            <span className="rounded-md bg-success/15 px-2.5 py-1 text-xs font-medium text-success">● 启用</span>
-          ) : (
-            <span className="rounded-md bg-destructive/15 px-2.5 py-1 text-xs font-medium text-destructive">● 禁用</span>
-          )}
+          </Badge>
+          <StatusBadge
+            color={user.is_active ? 'success' : 'neutral'}
+            label={user.is_active ? '启用' : '禁用'}
+          />
         </div>
 
         {/* 基本信息 */}
         <div className="px-5 py-3">
-          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">基本信息</h3>
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">基本信息</h3>
           <div className="space-y-2.5 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">用户 ID</span>
@@ -248,11 +247,11 @@ function UserDetailDrawer({ open, user, onClose, onEdit }) {
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">创建时间</span>
-              <span className="text-foreground">{fmtTime(user.created_at)}</span>
+              <span className="tabular-nums text-foreground">{fmtTime(user.created_at)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">最近登录</span>
-              <span className="text-foreground">{fmtTime(user.last_login_at)}</span>
+              <span className="tabular-nums text-foreground">{fmtTime(user.last_login_at)}</span>
             </div>
           </div>
         </div>
@@ -788,7 +787,7 @@ function UserManagement() {
   // 表格列定义
   const columns = [
     {
-      key: 'id', header: 'ID', width: '56px',
+      key: 'id', header: 'ID', width: '56px', numeric: true,
       render: (r) => <span className="font-mono text-xs text-muted-foreground">#{r.id}</span>,
     },
     {
@@ -803,7 +802,7 @@ function UserManagement() {
         <div className="min-w-0 py-0.5 leading-tight">
           <button
             type="button"
-            onClick={() => setDetailUser(r)}
+            onClick={(e) => { e.stopPropagation(); setDetailUser(r) }}
             title={r.username}
             className="block max-w-full truncate text-left font-medium text-primary hover:underline"
           >
@@ -819,21 +818,27 @@ function UserManagement() {
       key: 'email', header: '邮箱',
       render: (r) => r.email
         ? <span className="truncate text-muted-foreground" title={r.email}>{r.email}</span>
-        : <span className="rounded bg-secondary px-2 py-0.5 text-[10px] text-muted-foreground/60">未绑定</span>,
+        : <span className="rounded bg-secondary px-2 py-0.5 text-[10px] text-muted-foreground">未绑定</span>,
     },
     {
       key: 'role', header: '角色', width: '96px',
-      render: (r) => (
-        <span className="inline-block max-w-full truncate rounded bg-primary/20 px-2 py-0.5 text-[11px] font-medium text-primary" title={ROLE_LABELS[r.role_name] || r.role_name || ROLE_LABELS[r.role] || r.role}>
-          {ROLE_LABELS[r.role_name] || r.role_name || ROLE_LABELS[r.role] || r.role}
-        </span>
-      ),
+      render: (r) => {
+        const roleLabel = ROLE_LABELS[r.role_name] || r.role_name || ROLE_LABELS[r.role] || r.role
+        return (
+          <span className="inline-block max-w-full" title={roleLabel}>
+            <Badge variant="primary" className="max-w-full truncate">{roleLabel}</Badge>
+          </span>
+        )
+      },
     },
     {
       key: 'is_active', header: '状态', width: '76px',
-      render: (r) => r.is_active
-        ? <span className="inline-flex items-center gap-1 rounded bg-success/20 px-2 py-0.5 text-[11px] font-medium text-success"><span className="h-1.5 w-1.5 rounded-full bg-success" />启用</span>
-        : <span className="inline-flex items-center gap-1 rounded bg-destructive/20 px-2 py-0.5 text-[11px] font-medium text-destructive"><span className="h-1.5 w-1.5 rounded-full bg-destructive" />禁用</span>,
+      render: (r) => (
+        <StatusBadge
+          color={r.is_active ? 'success' : 'neutral'}
+          label={r.is_active ? '启用' : '禁用'}
+        />
+      ),
     },
     {
       key: 'last_login_at', header: (
@@ -842,7 +847,7 @@ function UserManagement() {
         </button>
       ), width: '148px',
       render: (r) => (
-        <span className="font-mono text-[12px] tabular-nums text-muted-foreground" title={r.last_login_at || ''}>
+        <span className="font-mono text-xs tabular-nums text-muted-foreground" title={r.last_login_at || ''}>
           {fmtTime(r.last_login_at)}
         </span>
       ),
@@ -882,10 +887,10 @@ function UserManagement() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
-      <header className="flex items-center justify-between gap-4 border-b border-border bg-card/60 px-6 py-4">
+      <header className="flex items-center justify-between gap-4 border-b border-border bg-card px-6 py-4">
         <div className="flex min-w-0 items-center gap-3">
-          <h1 className="text-xl font-semibold text-foreground">用户管理</h1>
-          <span className="text-xs text-muted-foreground/70">共 {filteredRows.length} 个用户</span>
+          <h1 className="text-[22px] font-bold tracking-tight text-foreground">用户管理</h1>
+          <span className="text-xs text-muted-foreground tabular-nums">共 {filteredRows.length} 个用户</span>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button type="button" onClick={load} className="btn-secondary btn-sm">刷新</button>
@@ -975,6 +980,8 @@ function UserManagement() {
               selectedKeys={selectedKeys}
               onSelectChange={setSelectedKeys}
               rowKey="id"
+              onRowClick={(r) => (canEdit ? openEdit(r) : setDetailUser(r))}
+              rowClickHint={canEdit ? '点击编辑' : '点击查看详情'}
               emptyText="暂无用户"
             />
           </div>
@@ -1093,12 +1100,12 @@ function UserManagement() {
             />
           )}
           <div className="flex items-center justify-between">
-            <span className="text-sm text-foreground/90">启用账号</span>
+            <span className="text-sm text-foreground">启用账号</span>
             <Switch checked={form.is_active} onChange={setField('is_active')} />
           </div>
           {/* 允许的登录方式 */}
           <div>
-            <div className="mb-2 text-sm text-foreground/90">允许的登录方式</div>
+            <div className="mb-2 text-sm text-foreground">允许的登录方式</div>
             <div className="flex flex-wrap gap-2">
               {[
                 { value: 'password', label: '账号密码' },
@@ -1120,7 +1127,7 @@ function UserManagement() {
                     className={`rounded-md border px-3 py-1.5 text-xs font-medium transition ${
                       checked
                         ? 'border-primary bg-primary/15 text-primary'
-                        : 'border-border bg-secondary/40 text-muted-foreground hover:border-primary/50'
+                        : 'border-border bg-secondary text-muted-foreground hover:border-primary/50'
                     }`}
                   >
                     {checked && <CheckCircle2 className="mr-1 inline h-3 w-3" />}
@@ -1129,7 +1136,7 @@ function UserManagement() {
                 )
               })}
             </div>
-            <p className="mt-1.5 text-[10px] text-muted-foreground/60">
+            <p className="mt-1.5 text-[10px] text-muted-foreground">
               控制该用户可以使用哪些方式登录系统，至少保留一种
             </p>
           </div>
@@ -1170,7 +1177,7 @@ function UserManagement() {
             </button>
           }
         />
-        <p className="mt-2 text-[11px] text-muted-foreground/70">
+        <p className="mt-2 text-[11px] text-muted-foreground">
           重置后请通知用户尽快登录并修改为自己的密码。
         </p>
       </Modal>
@@ -1209,7 +1216,7 @@ function UserManagement() {
             </button>
           }
         />
-        <p className="mt-2 text-[11px] text-muted-foreground/70">
+        <p className="mt-2 text-[11px] text-muted-foreground">
           所有选中用户将使用相同的新密码，重置后请通知用户尽快修改。
         </p>
       </Modal>

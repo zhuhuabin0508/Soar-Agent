@@ -47,11 +47,27 @@ export async function request(path, options = {}) {
         : options.body,
   }
 
+  // 可选超时（options.timeoutMs 毫秒）：到点 abort 请求并抛 TimeoutError，
+  // 避免上传等请求在极端环境（文件源读取卡住/连接池耗尽）下无限挂起、按钮永远"上传中"
+  let timeoutTimer = null
+  const hasTimeout = typeof AbortController !== 'undefined' && options.timeoutMs > 0
+  const controller = hasTimeout ? new AbortController() : null
+  if (controller) {
+    timeoutTimer = setTimeout(
+      () => controller.abort(new DOMException('请求超时', 'TimeoutError')),
+      options.timeoutMs,
+    )
+  }
+
   let res
   try {
-    res = await fetch(url, init)
+    res = await fetch(url, controller ? { ...init, signal: controller.signal } : init)
   } catch (err) {
+    // 超时/取消原样抛出，让调用方按 err.name 区分提示
+    if (err && (err.name === 'TimeoutError' || err.name === 'AbortError')) throw err
     throw new Error(`网络错误：${err.message || err}`)
+  } finally {
+    if (timeoutTimer) clearTimeout(timeoutTimer)
   }
 
   if (!res.ok) {

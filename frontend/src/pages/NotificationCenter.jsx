@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Bell, Megaphone, AlertTriangle, XCircle, ExternalLink, Settings2 } from 'lucide-react'
 import { notificationsApi } from '../api/notifications'
 import NotificationRulesPanel from '../components/NotificationRulesPanel'
+import { EmptyState, Skeleton, CompactSelect } from '../components/ui'
 import useLockBackgroundScroll from '../hooks/useLockBackgroundScroll'
 
 // 根据通知关联资源生成跳转链接
@@ -29,11 +30,11 @@ function buildNotificationLink(n) {
   return typeMap[n.type] || null
 }
 
-// 类型图标映射
-const TYPE_ICON = {
-  announcement: <Megaphone className="h-4 w-4" />,
-  system_alert: <AlertTriangle className="h-4 w-4" />,
-  execution_failed: <XCircle className="h-4 w-4" />,
+// 类型图标映射：按语义色着色（公告 info / 系统告警 warning / 执行失败 destructive）
+const TYPE_META = {
+  announcement: { icon: <Megaphone className="h-4 w-4" />, cls: 'bg-info/10 text-info hover:bg-info/20' },
+  system_alert: { icon: <AlertTriangle className="h-4 w-4" />, cls: 'bg-warning/10 text-warning hover:bg-warning/20' },
+  execution_failed: { icon: <XCircle className="h-4 w-4" />, cls: 'bg-destructive/10 text-destructive hover:bg-destructive/20' },
 }
 
 const TYPE_OPTIONS = [
@@ -50,7 +51,12 @@ const READ_OPTIONS = [
 ]
 
 function getTypeIcon(type) {
-  return TYPE_ICON[type] || <Bell className="h-4 w-4" />
+  return TYPE_META[type]?.icon || <Bell className="h-4 w-4" />
+}
+
+// 类型图标外框语义色（rounded-full p-1.5 bg-*/10）
+function getTypeCls(type) {
+  return TYPE_META[type]?.cls || 'bg-primary/10 text-primary hover:bg-primary/20'
 }
 
 // 相对时间格式化：刚刚 / X分钟前 / X小时前 / X天前
@@ -216,42 +222,13 @@ function NotificationCenter() {
 
   const hasUnread = items.some((n) => !n.is_read)
 
-  const selectCls =
-    'rounded-md border border-border bg-secondary px-3 py-1.5 text-sm text-foreground outline-none focus:border-primary'
-
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
       {/* 顶部标题栏 */}
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border bg-card/60 px-6 py-4">
-        <div className="flex items-center gap-4">
-          <h1 className="text-xl font-semibold text-foreground">通知中心</h1>
-          {/* Tab 切换 */}
-          <div className="flex items-center gap-1 rounded-lg bg-secondary p-0.5">
-            <button
-              type="button"
-              onClick={() => setTab('list')}
-              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                tab === 'list'
-                  ? 'bg-primary text-primary-foreground shadow'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <Bell className="h-3.5 w-3.5" />
-              通知列表
-            </button>
-            <button
-              type="button"
-              onClick={() => setTab('rules')}
-              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                tab === 'rules'
-                  ? 'bg-primary text-primary-foreground shadow'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <Settings2 className="h-3.5 w-3.5" />
-              通知规则
-            </button>
-          </div>
+      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border bg-card px-6 py-4">
+        <div className="min-w-0">
+          <h1 className="text-[22px] font-bold tracking-tight text-foreground">通知中心</h1>
+          <p className="mt-1.5 text-sm text-muted-foreground">实时接收系统公告、系统告警与执行失败通知</p>
         </div>
         {tab === 'list' && (
           <button
@@ -265,6 +242,34 @@ function NotificationCenter() {
         )}
       </header>
 
+      {/* Tab 切换栏 */}
+      <div className="flex items-center gap-1 border-b border-border bg-card px-6 py-2">
+        <button
+          type="button"
+          onClick={() => setTab('list')}
+          className={`flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+            tab === 'list'
+              ? 'bg-primary/10 text-primary ring-1 ring-primary/25'
+              : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+          }`}
+        >
+          <Bell className="h-3.5 w-3.5" />
+          通知列表
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('rules')}
+          className={`flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+            tab === 'rules'
+              ? 'bg-primary/10 text-primary ring-1 ring-primary/25'
+              : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+          }`}
+        >
+          <Settings2 className="h-3.5 w-3.5" />
+          通知规则
+        </button>
+      </div>
+
       {/* 通知规则 Tab */}
       {tab === 'rules' ? (
         <div className="flex-1 overflow-y-auto p-6">
@@ -272,35 +277,37 @@ function NotificationCenter() {
         </div>
       ) : (
         <div className="flex flex-1 flex-col overflow-hidden">
-      {/* 筛选区 */}
-      <div className="flex flex-wrap items-center gap-4 border-b border-border bg-card/30 px-6 py-3">
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-muted-foreground">类型</span>
-          <select
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
-            className={selectCls}
-          >
-            {TYPE_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-muted-foreground">状态</span>
-          <select
-            value={readFilter}
-            onChange={(e) => setReadFilter(e.target.value)}
-            className={selectCls}
-          >
-            {READ_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
+      {/* 筛选区：卡片条样式，控件统一 input-base 风格（h-9） */}
+      <div className="border-b border-border px-6 py-3">
+        <div className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-card px-4 py-2.5">
+          <div className="flex items-center gap-1.5">
+            <span className="whitespace-nowrap text-xs text-muted-foreground">类型</span>
+            <CompactSelect
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              size="lg"
+            >
+              {TYPE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </CompactSelect>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="whitespace-nowrap text-xs text-muted-foreground">状态</span>
+            <CompactSelect
+              value={readFilter}
+              onChange={(e) => setReadFilter(e.target.value)}
+              size="lg"
+            >
+              {READ_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </CompactSelect>
+          </div>
         </div>
       </div>
 
@@ -313,18 +320,18 @@ function NotificationCenter() {
         )}
 
         {loading ? (
-          <div className="flex h-40 items-center justify-center text-sm text-muted-foreground/70">
-            加载中...
+          <div className="flex flex-col gap-4">
+            {[0, 1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-24 rounded-lg border border-border" />
+            ))}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="flex h-60 flex-col items-center justify-center gap-2 text-muted-foreground/70">
-            <Bell className="h-10 w-10" />
-            <div className="text-sm">
-              {items.length === 0
-                ? '暂无通知'
-                : '未匹配到符合筛选条件的通知'}
-            </div>
-          </div>
+          <EmptyState
+            icon={Bell}
+            title={items.length === 0 ? '暂无通知' : '未匹配到符合筛选条件的通知'}
+            description={items.length === 0 ? '系统公告、告警与执行结果通知将在此展示' : '尝试调整类型或已读状态筛选条件'}
+            className="py-16"
+          />
         ) : (
           <div className="flex flex-col gap-4">
             {filtered.map((n) => {
@@ -333,15 +340,18 @@ function NotificationCenter() {
               return (
               <div
                 key={n.id}
-                className={`rounded-lg border border-border p-4 transition-colors hover:bg-muted ${
-                  n.is_read ? '' : 'border-l-2 border-l-primary'
-                }`}
+                className="cursor-pointer rounded-lg border border-border bg-card p-5 transition-colors hover:bg-accent"
               >
                 <div className="flex items-start gap-4">
+                  {/* 未读/已读状态圆点：未读主色 / 已读弱化 */}
+                  <span
+                    className={`mt-3 h-2 w-2 shrink-0 rounded-full ${n.is_read ? 'bg-border' : 'bg-primary'}`}
+                    title={n.is_read ? '已读' : '未读'}
+                  />
                   <button
                     type="button"
                     onClick={() => handleViewNotification(n)}
-                    className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-secondary transition hover:bg-primary/20"
+                    className={`flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full p-1.5 transition-colors ${getTypeCls(n.type)}`}
                     title="点击查看详情"
                   >
                     {getTypeIcon(n.type)}
@@ -363,7 +373,7 @@ function NotificationCenter() {
                           </span>
                         )}
                         {n.type && (
-                          <span className="rounded bg-muted/60 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          <span className="whitespace-nowrap rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                             {n.type}
                           </span>
                         )}
@@ -380,7 +390,7 @@ function NotificationCenter() {
                         </div>
                       )}
                       <div
-                        className="mt-2 text-[11px] text-muted-foreground/70"
+                        className="mt-2 whitespace-nowrap text-xs tabular-nums text-muted-foreground"
                         title={fmtAbsolute(n.created_at)}
                       >
                         {fmtRelative(n.created_at)}
@@ -429,7 +439,7 @@ function NotificationCenter() {
         {/* 分页 */}
         {!loading && filtered.length > 0 && (
           <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
-            <span>
+            <span className="tabular-nums">
               共 {total} 条，第 {currentPage} / {totalPages} 页
             </span>
             <div className="flex items-center gap-2">
@@ -458,7 +468,7 @@ function NotificationCenter() {
       {detailItem && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60" onClick={() => setDetailItem(null)}>
           <div
-            className="w-full max-w-lg overflow-hidden rounded-lg border border-border bg-card shadow-2xl"
+            className="card-accent-top w-full max-w-lg overflow-hidden rounded-lg border border-border bg-card shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-border px-5 py-3">
@@ -475,7 +485,7 @@ function NotificationCenter() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-base font-semibold text-foreground">{detailItem.title || '(无标题)'}</span>
                 {detailItem.type && (
-                  <span className="rounded bg-muted/60 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                  <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                     {detailItem.type}
                   </span>
                 )}
@@ -490,11 +500,11 @@ function NotificationCenter() {
                   {detailItem.content}
                 </div>
               )}
-              <div className="text-xs text-muted-foreground/70" title={fmtAbsolute(detailItem.created_at)}>
+              <div className="whitespace-nowrap text-xs tabular-nums text-muted-foreground" title={fmtAbsolute(detailItem.created_at)}>
                 {fmtRelative(detailItem.created_at)} · {fmtAbsolute(detailItem.created_at)}
               </div>
               {detailItem.related_type && detailItem.related_id && (
-                <div className="rounded-md border border-border bg-secondary/50 p-3 text-xs">
+                <div className="rounded-md border border-border bg-secondary p-3 text-xs">
                   <div className="text-muted-foreground">关联资源</div>
                   <div className="mt-1 text-foreground">
                     {detailItem.related_type} #{detailItem.related_id}

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   CheckCircle2,
@@ -36,6 +36,7 @@ import BanWorkflowInstances from './ban/BanWorkflowInstances'
 import { inputBaseCls } from '../components/property/FormControls'
 import { isAdmin } from '../utils/permissions'
 import { confirm } from '../components/ConfirmDialog'
+import { CompactSelect } from '../components/ui'
 
 // ============ 工具函数 ============
 function fmtTime(t) {
@@ -69,14 +70,15 @@ function toText(v) {
 function InfoCell({ label, value, mono = true }) {
   const text = toText(value)
   const isEmpty = text === '-' || text === '' || text == null
+  const display = typeof value === 'number' ? value.toLocaleString() : text
   return (
     <div className="min-w-0">
-      <div className="text-xs text-muted-foreground/70">{label}</div>
+      <div className="text-xs text-muted-foreground">{label}</div>
       <div
-        className={`truncate ${mono ? 'font-mono' : ''} text-sm ${isEmpty ? 'text-muted-foreground/40' : 'text-foreground'}`}
+        className={`truncate ${mono ? 'font-mono' : ''} text-sm ${typeof value === 'number' ? 'tabular-nums' : ''} ${isEmpty ? 'text-muted-foreground' : 'text-foreground'}`}
         title={text}
       >
-        {isEmpty ? '无' : text}
+        {isEmpty ? '无' : display}
       </div>
     </div>
   )
@@ -94,7 +96,7 @@ function highlightJson(obj) {
         if (/:$/.test(match)) cls = 'text-sky-300' // key
         else cls = 'text-emerald-300' // string
       } else if (/true|false/.test(match)) cls = 'text-purple-300'
-      else if (/null/.test(match)) cls = 'text-muted-foreground/60'
+      else if (/null/.test(match)) cls = 'text-muted-foreground'
       return `<span class="${cls}">${match}</span>`
     })
 }
@@ -134,9 +136,9 @@ function ContextPanel({ ctx }) {
         <span className="inline-flex items-center gap-1">{expanded ? '收起' : '展开'} {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}</span>
       </button>
       {expanded && (
-        <div className="mt-2 w-full overflow-hidden rounded-md border border-border bg-background/80">
-          <div className="flex items-center justify-between border-b border-border bg-muted/50 px-3 py-1.5">
-            <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">JSON</span>
+        <div className="mt-2 w-full overflow-hidden rounded-md border border-border bg-background">
+          <div className="flex items-center justify-between border-b border-border bg-muted px-3 py-1.5">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">JSON</span>
             <div className="flex items-center gap-1">
               <button type="button" onClick={handleCopy} className="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground transition hover:bg-secondary hover:text-foreground">
                 {copied ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
@@ -172,9 +174,9 @@ function MessagesPanel({ messages }) {
         <span className="inline-flex items-center gap-1">{expanded ? '收起' : '展开'} {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}</span>
       </button>
       {expanded && (
-        <div className="mt-2 max-h-80 w-full overflow-y-auto rounded-md border border-border bg-background/80 p-4">
+        <div className="mt-2 max-h-80 w-full overflow-y-auto rounded-md border border-border bg-background p-4">
           {list.length === 0 ? (
-            <div className="text-xs text-muted-foreground/60">暂无日志</div>
+            <div className="text-xs text-muted-foreground">暂无日志</div>
           ) : (
             <div className="flex flex-col gap-2">
               {list.map((m, idx) => (
@@ -210,24 +212,24 @@ function MessagesPanel({ messages }) {
   )
 }
 
-// ============ 统计看板卡片 ============
-function StatCard({ label, value, sub, color = 'indigo' }) {
-  const colorMap = {
-    indigo: 'from-primary/20 to-primary/5 border-primary/30 text-primary',
-    orange: 'from-orange-500/20 to-orange-600/5 border-orange-500/30 text-warning',
-    green: 'from-success-500/20 to-success-600/5 border-success/30 text-success',
-    red: 'from-danger-500/20 to-danger-600/5 border-destructive/30 text-destructive',
-    gray: 'from-gray-500/20 to-gray-600/5 border-border/30 text-muted-foreground',
-  }
-  return (
-    <div
-      className={`flex min-w-0 flex-col gap-1 rounded-lg border bg-gradient-to-br p-4 ${colorMap[color]}`}
-    >
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="text-2xl font-bold text-foreground">{value}</div>
-      {sub && <div className="text-[11px] text-muted-foreground/70">{sub}</div>}
-    </div>
-  )
+// ============ 快捷筛选 chips 定义（全部历史 Tab） ============
+// 计数由前端从当前列表派生，仅作快速参考，不新增请求
+const QUICK_FILTERS = [
+  { value: 'success', label: '成功', dot: 'bg-success' },
+  { value: 'failed', label: '失败', dot: 'bg-destructive' },
+  { value: '今日', label: '今日', dot: 'bg-info' },
+  { value: '近7天', label: '近 7 天', dot: 'bg-purple-400' },
+]
+
+// 工单结果近似判定（与快捷筛选的后端文本匹配语义对齐，用于 chips 计数）
+function isSuccessItem(it) {
+  const s = String(it?.status || '').toLowerCase()
+  return s === 'success' || s === 'approved' || it?.context?.outcome === 'approved'
+}
+
+function isFailedItem(it) {
+  const s = String(it?.status || '').toLowerCase()
+  return s === 'failed' || s === 'rejected' || it?.context?.outcome === 'rejected'
 }
 
 // ============ 迷你时间线 ============
@@ -255,13 +257,13 @@ function MiniTimeline({ item }) {
       {nodes.map((n, idx) => (
         <div key={idx} className="flex items-center gap-1">
           <div className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] ${
-            n.done ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border bg-secondary text-muted-foreground/50'
+            n.done ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border bg-secondary text-muted-foreground'
           }`}>
             {n.icon}
             <span>{n.label}</span>
-            {n.done && n.time && <span className="text-muted-foreground/50">· {fmtTime(n.time).split(' ')[1] || ''}</span>}
+            {n.done && n.time && <span className="text-muted-foreground">· {fmtTime(n.time).split(' ')[1] || ''}</span>}
           </div>
-          {idx < nodes.length - 1 && <span className="text-muted-foreground/30">→</span>}
+          {idx < nodes.length - 1 && <span className="text-muted-foreground">→</span>}
         </div>
       ))}
     </div>
@@ -289,16 +291,20 @@ function ApprovalCard({ item, onApprove, onReject, onDelete, busy }) {
   ].filter((s) => s.value != null && s.value !== '')
 
   return (
-    <div className={`w-full rounded-lg border bg-card/60 p-5 shadow-lg transition-colors hover:border-orange-500/40 ${isRejected ? 'border-border/50 opacity-75' : 'border-border'}`}>
+    <div className={`card-hover w-full rounded-lg border bg-card p-5 transition-colors ${
+      isRejected
+        ? 'border-border opacity-75 hover:border-border'
+        : 'border-border hover:border-primary/40'
+    }`}>
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded bg-destructive/20 px-2 py-0.5 text-xs font-medium text-destructive">
             {alertData.alert_type || '未知告警'}
           </span>
-          <span className="text-xs text-muted-foreground/70">
+          <span className="text-xs text-muted-foreground">
             工作流：{item.workflow_name || '-'}
           </span>
-          <span className="text-xs text-muted-foreground/60">#{item.execution_id}</span>
+          <span className="text-xs text-muted-foreground">#{item.execution_id}</span>
           {outcome && (
             <span
               className={`rounded px-2 py-0.5 text-xs font-medium ${
@@ -316,13 +322,13 @@ function ApprovalCard({ item, onApprove, onReject, onDelete, busy }) {
             <button
               type="button"
               onClick={() => onDelete(item)}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/70 transition hover:bg-accent hover:text-destructive"
+              className="btn-danger btn-sm"
               title="删除该工单（仅管理员）"
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash2 className="h-3 w-3" />
             </button>
           )}
-          <span className="text-xs text-muted-foreground/70">
+          <span className="text-xs text-muted-foreground">
             创建：{fmtTime(item.created_at)}
           </span>
         </div>
@@ -333,10 +339,10 @@ function ApprovalCard({ item, onApprove, onReject, onDelete, busy }) {
 
       {/* 关键字段摘要卡片 */}
       {summaryItems.length > 0 && (
-        <div className="mt-2 grid w-full grid-cols-2 gap-2 rounded-md border border-border bg-background/40 p-2 sm:grid-cols-4">
+        <div className="mt-2 grid w-full grid-cols-2 gap-2 rounded-md border border-border bg-background p-2 sm:grid-cols-4">
           {summaryItems.map((s) => (
             <div key={s.label} className="min-w-0">
-              <div className="text-[10px] text-muted-foreground/60">{s.label}</div>
+              <div className="text-[10px] text-muted-foreground">{s.label}</div>
               <div className="truncate font-mono text-xs text-foreground" title={toText(s.value)}>{toText(s.value)}</div>
             </div>
           ))}
@@ -379,10 +385,10 @@ function ApprovalCard({ item, onApprove, onReject, onDelete, busy }) {
       )}
 
       {/* Agent 建议：已忽略时显示「无需建议」 */}
-      <div className="w-full rounded-md bg-background/60 p-4">
-        <div className="mb-1 text-xs text-muted-foreground/70">Agent 建议</div>
+      <div className="w-full rounded-md bg-background p-4">
+        <div className="mb-1 text-xs text-muted-foreground">Agent 建议</div>
         {isRejected ? (
-          <div className="text-sm text-muted-foreground/50">该工单已被忽略，无需 Agent 建议</div>
+          <div className="text-sm text-muted-foreground">该工单已被忽略，无需 Agent 建议</div>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded bg-warning/20 px-2 py-0.5 text-xs text-warning">
@@ -397,12 +403,12 @@ function ApprovalCard({ item, onApprove, onReject, onDelete, busy }) {
       <MessagesPanel messages={item.agent_messages} />
 
       {isPending && (
-        <div className="mt-4 flex w-full items-center justify-end gap-4 border-t border-border pt-3">
+        <div className="mt-4 flex w-full items-center justify-end gap-3 border-t border-border pt-3">
           <button
             type="button"
             disabled={busy}
             onClick={() => onReject(item.execution_id)}
-            className="btn-secondary"
+            className="btn-secondary btn-sm"
           >
             忽略
           </button>
@@ -410,7 +416,7 @@ function ApprovalCard({ item, onApprove, onReject, onDelete, busy }) {
             type="button"
             disabled={busy}
             onClick={() => onApprove(item.execution_id)}
-            className="btn-danger"
+            className="btn-danger btn-sm"
           >
             同意封禁
           </button>
@@ -439,6 +445,7 @@ function ApprovalCenter() {
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState(null)
   const [lastUpdated, setLastUpdated] = useState(null)
+  const [refreshing, setRefreshing] = useState(false)
 
   // 查询筛选条件：pending | all | banned
   const [tab, setTab] = useState(initialTab)
@@ -520,13 +527,18 @@ function ApprovalCenter() {
   }, [tab, workflowId, keyword, quickFilter])
 
   // 手动刷新（审批中心/已封禁IP Tab 由嵌入组件自带刷新，这里刷新统计即可）
-  const handleRefresh = useCallback(() => {
-    loadBanStats()
-    loadStats()
-    if (tab === 'all') {
-      load()
+  const handleRefresh = useCallback(async () => {
+    if (refreshing) return
+    setRefreshing(true)
+    try {
+      await Promise.all([loadBanStats(), loadStats()])
+      if (tab === 'all') {
+        await load()
+      }
+    } finally {
+      setRefreshing(false)
     }
-  }, [tab, load, loadStats, loadBanStats])
+  }, [tab, load, loadStats, loadBanStats, refreshing])
 
   // 初始化加载：全历史 Tab 拉列表；统计始终拉取
   useEffect(() => {
@@ -581,106 +593,149 @@ function ApprovalCenter() {
     }
   }
 
-  // 快捷筛选 chips（全部历史 Tab）
-  const currentQuickFilters = [
-    { value: 'success', label: '成功' },
-    { value: 'failed', label: '失败' },
-    { value: '今日', label: '今日' },
-    { value: '近7天', label: '近 7 天' },
-  ]
+  // 快捷筛选 chips 计数：useMemo 从当前列表派生，不新增请求
+  const quickCounts = useMemo(() => {
+    const list = Array.isArray(items) ? items : []
+    const startToday = new Date()
+    startToday.setHours(0, 0, 0, 0)
+    return {
+      success: list.filter((it) => isSuccessItem(it)).length,
+      failed: list.filter((it) => isFailedItem(it)).length,
+      今日: list.filter((it) => {
+        const t = new Date(it.created_at).getTime()
+        return Number.isFinite(t) && t >= startToday.getTime()
+      }).length,
+      近7天: list.filter((it) => {
+        const t = new Date(it.created_at).getTime()
+        return Number.isFinite(t) && t >= Date.now() - 7 * 86400000
+      }).length,
+    }
+  }, [items])
+
+  // 是否存在生效中的筛选（区分「无数据」与「筛选无结果」两种空态）
+  const hasFilter = Boolean(keyword.trim() || quickFilter || workflowId)
+  const clearFilters = useCallback(() => {
+    setKeyword('')
+    setQuickFilter('')
+    setWorkflowId('')
+  }, [])
+
+  // 待处理总数 = 工作流审批待办 + 封禁工作流审批待办
+  const pendingTotal = (stats?.pending ?? 0) + banStats.pendingApprovals
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
-      {/* 顶部标题栏：页面名 + 全局快捷入口 + 刷新+最后更新时间 */}
-      <header className="flex items-center justify-between border-b border-border bg-card/60 px-6 py-4">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold">工作台</h1>
+      {/* 顶部标题栏：页面名 + 待办快捷入口 chips + 刷新 */}
+      <header className="flex items-center justify-between gap-4 border-b border-border bg-card px-6 py-4">
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">工作台</h1>
+          {!loading && tab === 'all' && (
+            <span className="text-xs text-muted-foreground">
+              共 <span className="text-sm font-medium tabular-nums text-foreground">{items.length.toLocaleString()}</span> 条工单
+            </span>
+          )}
           {/* 全局快捷入口（点击跳转对应 Tab） */}
           <button
             type="button"
             onClick={() => switchTab('approval')}
-            className="rounded-full bg-warning/20 px-2.5 py-0.5 text-xs font-medium text-warning transition hover:bg-warning/30"
+            className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+              pendingTotal > 0
+                ? 'border-warning/30 bg-warning/10 text-warning hover:bg-warning/20'
+                : 'border-border bg-secondary text-muted-foreground'
+            }`}
             title="点击查看待审批工单"
           >
-            待处理 {(stats?.pending ?? 0) + banStats.pendingApprovals}
+            <span className={`h-1.5 w-1.5 rounded-full bg-warning ${pendingTotal > 0 ? 'animate-pulse' : ''}`} />
+            待处理
+            <span className="tabular-nums">{pendingTotal.toLocaleString()}</span>
           </button>
           {isAdmin() && (
             <button
               type="button"
               onClick={() => switchTab('banned')}
-              className="rounded-full bg-destructive/20 px-2.5 py-0.5 text-xs font-medium text-destructive transition hover:bg-destructive/30"
+              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+                banStats.activeBans > 0
+                  ? 'border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/20'
+                  : 'border-border bg-secondary text-muted-foreground'
+              }`}
               title="点击查看已封禁 IP"
             >
-              封禁中 {banStats.activeBans}
+              <span className="h-1.5 w-1.5 rounded-full bg-destructive" />
+              封禁中
+              <span className="tabular-nums">{banStats.activeBans.toLocaleString()}</span>
             </button>
           )}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center gap-3">
           {lastUpdated && (
-            <span className="text-[11px] text-muted-foreground/50">
+            <span className="text-[11px] text-muted-foreground">
               最后更新：{lastUpdated.toLocaleTimeString('zh-CN', { hour12: false })}
             </span>
           )}
           <button
             type="button"
             onClick={handleRefresh}
-            className="flex items-center gap-1.5 btn-secondary btn-sm"
+            disabled={refreshing}
+            className="btn-secondary btn-sm"
+            title="刷新统计与列表"
           >
-            <RefreshCw className="h-3.5 w-3.5" />
+            <RefreshCw className={`mr-1 h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
             刷新
           </button>
         </div>
       </header>
 
       <div className="flex-1 min-w-0 overflow-y-auto p-6">
-        {/* Tab 导航栏：增强激活状态对比 */}
-        <div className="mb-4 flex w-full items-center gap-3 border-b border-border pb-4">
-          <div className="flex shrink-0 rounded-md border border-border bg-card/60 p-0.5">
+        {/* Tab 导航栏：下划线式 + tabular-nums 计数徽标 */}
+        <div className="mb-4 flex w-full items-center border-b border-border">
+          <button
+            type="button"
+            onClick={() => switchTab('approval')}
+            className={`-mb-px flex items-center gap-1.5 border-b-2 px-4 py-3 text-sm font-medium transition ${
+              tab === 'approval'
+                ? 'border-primary text-foreground'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <ClipboardList className="h-4 w-4" />
+            审批中心
+            {pendingTotal > 0 && (
+              <span className="rounded-full bg-warning/20 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-warning">
+                {pendingTotal.toLocaleString()}
+              </span>
+            )}
+          </button>
+          {isAdmin() && (
             <button
               type="button"
-              onClick={() => switchTab('approval')}
-              className={`flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-colors ${
-                tab === 'approval'
-                  ? 'bg-primary text-primary-foreground shadow-sm'
-                  : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+              onClick={() => switchTab('banned')}
+              className={`-mb-px flex items-center gap-1.5 border-b-2 px-4 py-3 text-sm font-medium transition ${
+                tab === 'banned'
+                  ? 'border-primary text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
-              <ClipboardList className="h-4 w-4" />
-              审批中心
-              {(stats?.pending ?? 0) + banStats.pendingApprovals > 0 && tab !== 'approval' && (
-                <span className="ml-1 rounded-full bg-warning/30 px-1.5 text-[10px]">{(stats?.pending ?? 0) + banStats.pendingApprovals}</span>
+              <Ban className="h-4 w-4" />
+              已封禁 IP
+              {banStats.activeBans > 0 && (
+                <span className="rounded-full bg-destructive/20 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-destructive">
+                  {banStats.activeBans.toLocaleString()}
+                </span>
               )}
             </button>
-            {isAdmin() && (
-              <button
-                type="button"
-                onClick={() => switchTab('banned')}
-                className={`flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-colors ${
-                  tab === 'banned'
-                    ? 'bg-destructive text-destructive-foreground shadow-sm'
-                    : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
-                }`}
-              >
-                <Ban className="h-4 w-4" />
-                已封禁 IP
-                {banStats.activeBans > 0 && tab !== 'banned' && (
-                  <span className="ml-1 rounded-full bg-destructive/30 px-1.5 text-[10px]">{banStats.activeBans}</span>
-                )}
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => switchTab('all')}
-              className={`flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-colors ${
-                tab === 'all'
-                  ? 'bg-primary text-primary-foreground shadow-sm'
-                  : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
-              }`}
-            >
-              <ScrollText className="h-4 w-4" />
-              全部历史
-            </button>
-          </div>
+          )}
+          <button
+            type="button"
+            onClick={() => switchTab('all')}
+            className={`-mb-px flex items-center gap-1.5 border-b-2 px-4 py-3 text-sm font-medium transition ${
+              tab === 'all'
+                ? 'border-primary text-foreground'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <ScrollText className="h-4 w-4" />
+            全部历史
+          </button>
         </div>
 
         {/* ====== 审批中心 Tab：统一审批（封禁工单 + 工作流人工审批） ====== */}
@@ -692,103 +747,45 @@ function ApprovalCenter() {
         ) : (
           <>
             {/* ====== 全部历史 Tab：统一历史（封禁实例 + 审批历史） ====== */}
-            <div className="mb-4 flex items-center gap-2">
-              <div className="flex items-center gap-1 rounded-md border border-border bg-card/60 p-0.5">
-                <button
-                  type="button"
-                  onClick={() => setHistoryTab('instances')}
-                  className={`flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-colors ${
-                    historyTab === 'instances'
-                      ? 'bg-primary text-primary-foreground shadow-sm'
-                      : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
-                  }`}
-                >
-                  <Activity className="h-4 w-4" />
-                  封禁实例
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setHistoryTab('approvals')}
-                  className={`flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-colors ${
-                    historyTab === 'approvals'
-                      ? 'bg-primary text-primary-foreground shadow-sm'
-                      : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
-                  }`}
-                >
-                  <ScrollText className="h-4 w-4" />
-                  审批历史
-                </button>
-              </div>
+            <div className="mb-4 flex w-full items-center border-b border-border">
+              <button
+                type="button"
+                onClick={() => setHistoryTab('instances')}
+                className={`-mb-px flex items-center gap-1.5 border-b-2 px-4 py-3 text-sm font-medium transition ${
+                  historyTab === 'instances'
+                    ? 'border-primary text-foreground'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Activity className="h-4 w-4" />
+                封禁实例
+              </button>
+              <button
+                type="button"
+                onClick={() => setHistoryTab('approvals')}
+                className={`-mb-px flex items-center gap-1.5 border-b-2 px-4 py-3 text-sm font-medium transition ${
+                  historyTab === 'approvals'
+                    ? 'border-primary text-foreground'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <ScrollText className="h-4 w-4" />
+                审批历史
+              </button>
             </div>
 
             {historyTab === 'instances' ? (
               <BanWorkflowInstances embedded />
             ) : (
             <>
-            {/* 统计看板：4 张数字卡片横向铺满 */}
-            {stats && (
-              <div className="grid w-full grid-cols-2 gap-4 pb-6 lg:grid-cols-4">
-                <StatCard
-                  label="待处理工单"
-                  value={stats.pending ?? 0}
-                  sub={`今日新增 ${stats.today_new ?? 0}`}
-                  color="orange"
-                />
-                <StatCard
-                  label="同意封禁"
-                  value={stats.approved ?? 0}
-                  sub="累计"
-                  color="red"
-                />
-                <StatCard
-                  label="已忽略"
-                  value={stats.rejected ?? 0}
-                  sub="累计"
-                  color="gray"
-                />
-                <StatCard
-                  label="平均处理时长"
-                  value={fmtDuration(stats.avg_handle_seconds)}
-                  sub="已结束工单"
-                  color="indigo"
-                />
-              </div>
-            )}
-
-            {/* 快捷筛选 chips */}
-            <div className="mb-3 flex flex-wrap items-center gap-1.5">
-              <span className="text-[11px] text-muted-foreground/60">快捷筛选：</span>
-              {currentQuickFilters.map((f) => (
-                <button
-                  key={f.value}
-                  type="button"
-                  onClick={() => setQuickFilter((prev) => (prev === f.value ? '' : f.value))}
-                  className={`rounded-full border px-2.5 py-0.5 text-[11px] transition ${
-                    quickFilter === f.value
-                      ? 'border-primary bg-primary/15 text-primary'
-                      : 'border-border bg-secondary text-muted-foreground hover:border-primary/50 hover:text-foreground'
-                  }`}
-                >
-                  {f.label}
-                </button>
-              ))}
-              {quickFilter && (
-                <button
-                  type="button"
-                  onClick={() => setQuickFilter('')}
-                  className="flex items-center gap-0.5 text-[11px] text-muted-foreground/50 hover:text-foreground"
-                >
-                  <X className="h-3 w-3" /> 清除
-                </button>
-              )}
-            </div>
-
             {/* 查询筛选区：工作流下拉 + 关键词输入（实时搜索） */}
             <div className="mb-4 flex w-full flex-wrap items-center gap-3">
-              <select
+              <CompactSelect
                 value={workflowId}
                 onChange={(e) => setWorkflowId(e.target.value)}
-                className={`${inputBaseCls} min-w-0 flex-1`}
+                size="lg"
+                block
+                className="min-w-0 flex-1"
               >
                 <option value="">全部工作流</option>
                 {workflows.map((w) => (
@@ -796,10 +793,10 @@ function ApprovalCenter() {
                     {w.name}
                   </option>
                 ))}
-              </select>
+              </CompactSelect>
 
               <div className="relative min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                 <input
                   value={keyword}
                   onChange={(e) => setKeyword(e.target.value)}
@@ -809,6 +806,63 @@ function ApprovalCenter() {
               </div>
             </div>
 
+            {/* 状态指标条：快捷筛选 chips（前端派生计数，点击筛选/再点取消）+ 右侧汇总 */}
+            {!loading && items.length > 0 && (
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                {QUICK_FILTERS.map((f) => {
+                  const active = quickFilter === f.value
+                  const count = quickCounts[f.value] ?? 0
+                  return (
+                    <button
+                      key={f.value}
+                      type="button"
+                      onClick={() => setQuickFilter((prev) => (prev === f.value ? '' : f.value))}
+                      className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition ${
+                        active
+                          ? 'border-transparent bg-primary/15 text-primary ring-1 ring-primary/40'
+                          : 'border-border bg-secondary text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                      }`}
+                      title={active ? '点击取消该筛选' : `点击筛选「${f.label}」的工单`}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${f.dot}`} />
+                      {f.label}
+                      <span className={`font-medium tabular-nums ${count > 0 ? '' : 'text-muted-foreground'}`}>{count}</span>
+                    </button>
+                  )
+                })}
+                <div className="ml-auto flex items-center gap-4 text-xs text-muted-foreground">
+                  <span className="inline-flex items-center gap-1.5" title="今日新增工单数">
+                    <Rocket className="h-3.5 w-3.5 text-primary/80" />
+                    今日新增
+                    <span className={`font-semibold tabular-nums ${stats?.today_new > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+                      {stats?.today_new > 0 ? stats.today_new.toLocaleString() : '--'}
+                    </span>
+                  </span>
+                  <span className="inline-flex items-center gap-1.5" title="累计同意封禁的工单数">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-primary/80" />
+                    同意封禁
+                    <span className={`font-semibold tabular-nums ${stats?.approved > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+                      {stats?.approved > 0 ? stats.approved.toLocaleString() : '--'}
+                    </span>
+                  </span>
+                  <span className="inline-flex items-center gap-1.5" title="累计已忽略的工单数">
+                    <X className="h-3.5 w-3.5 text-primary/80" />
+                    已忽略
+                    <span className={`font-semibold tabular-nums ${stats?.rejected > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+                      {stats?.rejected > 0 ? stats.rejected.toLocaleString() : '--'}
+                    </span>
+                  </span>
+                  <span className="inline-flex items-center gap-1.5" title="已结束工单的平均处理时长">
+                    <Clock className="h-3.5 w-3.5 text-primary/80" />
+                    平均时长
+                    <span className={`font-semibold tabular-nums ${stats?.avg_handle_seconds > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+                      {stats?.avg_handle_seconds > 0 ? fmtDuration(stats.avg_handle_seconds) : '--'}
+                    </span>
+                  </span>
+                </div>
+              </div>
+            )}
+
             {error && (
               <div className="mb-4 w-full rounded-md border border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive">
                 {error}
@@ -816,44 +870,58 @@ function ApprovalCenter() {
             )}
 
             {loading ? (
-              <div className="flex h-40 items-center justify-center text-sm text-muted-foreground/70">
-                加载中...
+              /* 骨架屏：模拟工单卡片真实结构 */
+              <div className="flex flex-col gap-4">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="rounded-lg border border-border bg-card p-5">
+                    <div className="flex items-center justify-between gap-2 border-b border-border pb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="h-5 w-24 rounded skeleton-shimmer" />
+                        <div className="h-3.5 w-32 rounded skeleton-shimmer" />
+                        <div className="h-3.5 w-16 rounded skeleton-shimmer" />
+                      </div>
+                      <div className="h-3.5 w-28 rounded skeleton-shimmer" />
+                    </div>
+                    <div className="mt-3 flex items-center gap-1.5">
+                      <div className="h-6 w-28 rounded-full skeleton-shimmer" />
+                      <div className="h-6 w-24 rounded-full skeleton-shimmer" />
+                      <div className="h-6 w-28 rounded-full skeleton-shimmer" />
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      {Array.from({ length: 4 }).map((_, j) => (
+                        <div key={j} className="h-10 rounded-md skeleton-shimmer" />
+                      ))}
+                    </div>
+                    <div className="mt-3 h-12 rounded-md skeleton-shimmer" />
+                  </div>
+                ))}
               </div>
             ) : items.length === 0 ? (
-              /* 空状态优化：更明确的文案 + 快捷操作 */
-              <div className="flex h-60 flex-col items-center justify-center gap-3 text-muted-foreground/70">
-                <CheckCircle2 className="h-14 w-14 opacity-40" />
-                <div className="text-sm font-medium">未查询到符合条件的工单</div>
-                {tab === 'all' && (
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => switchTab('approval')}
-                      className="rounded-md border border-border px-2.5 py-1 text-[11px] text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-                    >
+              /* 空态两分：无数据 → 主 CTA；有筛选无结果 → 清除筛选 */
+              <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border py-16 text-center">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                  <ScrollText className="h-6 w-6" />
+                </div>
+                {hasFilter ? (
+                  <>
+                    <div className="text-sm font-medium text-foreground">未找到匹配的工单</div>
+                    <div className="text-xs text-muted-foreground">调整关键词或清除筛选条件后再试</div>
+                    <button type="button" onClick={clearFilters} className="btn-secondary btn-sm">
+                      清除筛选
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-sm font-medium text-foreground">暂无历史工单</div>
+                    <div className="text-xs text-muted-foreground">处理完成的审批工单将归档到此处</div>
+                    <button type="button" onClick={() => switchTab('approval')} className="btn-primary btn-sm">
                       前往审批中心
                     </button>
-                    {isAdmin() && (
-                      <button
-                        type="button"
-                        onClick={() => switchTab('banned')}
-                        className="rounded-md border border-border px-2.5 py-1 text-[11px] text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-                      >
-                        查看已封禁 IP
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={handleRefresh}
-                      className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-[11px] text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-                    >
-                      <RefreshCw className="h-3 w-3" /> 刷新
-                    </button>
-                  </div>
+                  </>
                 )}
               </div>
             ) : (
-              <div className="flex flex-col gap-4">
+              <div className="card-stagger flex flex-col gap-4">
                 {items.map((item) => (
                   <ApprovalCard
                     key={item.execution_id}

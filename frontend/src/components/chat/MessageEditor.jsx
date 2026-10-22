@@ -73,7 +73,7 @@ export default function MessageEditor({ value = '', onSave, onCancel }) {
         >
           <X className="h-3 w-3" />
           <span>取消</span>
-          <span className="ml-1 text-[9px] text-muted-foreground/50">Esc</span>
+          <span className="ml-1 text-[9px] text-muted-foreground">Esc</span>
         </button>
         <button
           type="button"
@@ -83,7 +83,7 @@ export default function MessageEditor({ value = '', onSave, onCancel }) {
         >
           <Check className="h-3 w-3" />
           <span>保存并发送</span>
-          <span className="ml-1 text-[9px] text-primary-foreground/60">Enter</span>
+          <span className="ml-1 text-[9px] text-primary-foreground">Enter</span>
         </button>
       </div>
     </div>

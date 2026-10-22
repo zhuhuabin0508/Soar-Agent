@@ -171,7 +171,7 @@ function BranchHandles({ type, data }) {
           className="absolute right-0 flex items-center"
           style={{ top: `${start + i * maxGap}%`, transform: 'translateY(-50%)', zIndex: 20 }}
         >
-          <span className="mr-1 rounded bg-card/80 px-1 text-[10px] text-foreground/90">
+          <span className="mr-1 rounded bg-card px-1 text-[10px] text-foreground">
             {o.label}
           </span>
           <Handle
@@ -329,7 +329,7 @@ function CustomNode({ id, type, data, selected }) {
     <>
       {/* hover 工具栏：鼠标移入节点时显示 */}
       <NodeToolbar position={Position.Top} offset={8}>
-        <div className="flex items-center gap-0.5 rounded-md border border-border bg-card/95 p-1 shadow-xl backdrop-blur">
+        <div className="flex items-center gap-0.5 rounded-md border border-border bg-card p-1 shadow-xl backdrop-blur">
           <button
             type="button"
             onClick={handleRunNode}
@@ -409,7 +409,7 @@ function CustomNode({ id, type, data, selected }) {
               </div>
               <div className="truncate text-[11px] text-muted-foreground leading-tight">
                 {type}
-                <span className="ml-1 text-muted-foreground/60">· 双击改名</span>
+                <span className="ml-1 text-muted-foreground">· 双击改名</span>
               </div>
             </div>
           </div>
@@ -427,7 +427,7 @@ function CustomNode({ id, type, data, selected }) {
           {/* 关键字段摘要 */}
           {summary && (
             <div
-              className="mt-2 truncate rounded bg-card/60 px-2 py-1 text-xs text-foreground/90"
+              className="mt-2 truncate rounded bg-card px-2 py-1 text-xs text-foreground"
               title={summary}
             >
               {summary}
@@ -472,7 +472,7 @@ function CustomNode({ id, type, data, selected }) {
             </div>
             <div className="max-h-48 overflow-auto rounded-md bg-background p-2 ring-1 ring-gray-800">
               {(runResult?.logs || []).length === 0 ? (
-                <div className="text-xs text-muted-foreground/60">暂无日志</div>
+                <div className="text-xs text-muted-foreground">暂无日志</div>
               ) : (
                 <div className="flex flex-col gap-1">
                   {runResult.logs.map((l, i) => (
@@ -483,12 +483,12 @@ function CustomNode({ id, type, data, selected }) {
                             ? 'text-destructive'
                             : l.level === 'warn'
                             ? 'text-warning-400'
-                            : 'text-muted-foreground/70'
+                            : 'text-muted-foreground'
                         }`}
                       >
                         [{l.level}]
                       </span>
-                      <span className="text-foreground/90">{l.message}</span>
+                      <span className="text-foreground">{l.message}</span>
                     </div>
                   ))}
                 </div>

@@ -15,6 +15,7 @@ import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from urllib.parse import urlsplit
 
 import jwt
 from passlib.context import CryptContext
@@ -263,6 +264,48 @@ def decrypt_device_secret(ciphertext: Optional[str]) -> str:
     except Exception as exc:  # noqa: BLE001
         logger.warning("设备凭据解密失败: %s", exc)
         return ""
+
+
+# ============ 出站 URL 安全校验（SSRF 防护基线） ============
+
+# 云厂商元数据服务地址：绝不应作为服务端出站请求目标
+_METADATA_HOSTS = {
+    "169.254.169.254",           # AWS / GCE / OpenStack 元数据
+    "100.100.100.200",           # 阿里云元数据
+    "metadata.google.internal",  # GCE 元数据（域名形式）
+    "metadata.goog",
+}
+
+
+def validate_outbound_url(url: str, *, field: str = "URL") -> str:
+    """校验服务端出站请求目标 URL（SSRF 防护基线）。
+
+    规则（不禁止内网地址——设备管理业务天然需要访问内网设备）：
+    - 协议仅允许 http / https（阻断 file:// gopher:// ftp:// 等）；
+    - 主机不得为云元数据地址（防云凭证窃取）。
+
+    Args:
+        url: 待校验的 URL。
+        field: 字段名（用于错误提示，如 "设备 api_url"）。
+
+    Returns:
+        校验通过时返回 None（占位，便于调用方 ``if validate_outbound_url(...):`` 判断）。
+
+    Raises:
+        ValueError: URL 不合法时抛出，消息可直接用于 4xx 响应。
+    """
+    if not url or not url.strip():
+        raise ValueError(f"{field} 不能为空")
+    parsed = urlsplit(url.strip())
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in ("http", "https"):
+        raise ValueError(f"{field} 协议非法（仅允许 http/https）: {url[:80]}")
+    host = (parsed.hostname or "").lower()
+    if not host:
+        raise ValueError(f"{field} 缺少主机地址: {url[:80]}")
+    if host in _METADATA_HOSTS:
+        raise ValueError(f"{field} 指向云元数据地址，已被安全策略拦截")
+    return None
 
 
 # ============ 轻量数据库迁移 ============

@@ -10,6 +10,7 @@ import {
   fileExt,
   fmtSize,
 } from '../utils/feedback'
+import { CompactSelect } from './ui'
 
 // 提交反馈抽屉：右侧滑入，宽 560px（小屏撑满）
 // 供 AppShell（悬浮按钮 / 用户菜单）与 MyFeedback 页复用
@@ -58,7 +59,7 @@ function Switch({ checked, onChange }) {
       aria-checked={checked}
       onClick={() => onChange(!checked)}
       className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
-        checked ? 'bg-primary' : 'bg-muted-foreground/30'
+        checked ? 'bg-primary' : 'bg-muted'
       }`}
     >
       <span
@@ -78,7 +79,7 @@ function FieldError({ msg }) {
 
 // 字段填写规范提示（弱化灰色，告知用户约束）
 function FieldHint({ children }) {
-  return <p className="mt-1 text-[11px] text-muted-foreground/70">{children}</p>
+  return <p className="mt-1 text-[11px] text-muted-foreground">{children}</p>
 }
 
 function FeedbackDrawer({ open, onClose, onSubmitted }) {
@@ -208,7 +209,7 @@ function FeedbackDrawer({ open, onClose, onSubmitted }) {
 
   // 输入框通用样式：校验失败红边
   const inputCls = (field) =>
-    `w-full rounded-md border bg-muted/50 px-3 py-2 text-sm text-foreground placeholder-muted-foreground transition focus:outline-none focus:ring-1 ${
+    `w-full rounded-md border bg-muted px-3 py-2 text-sm text-foreground placeholder-muted-foreground transition focus:outline-none focus:ring-1 ${
       errors[field]
         ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
         : 'border-border focus:border-primary focus:ring-primary'
@@ -258,7 +259,7 @@ function FeedbackDrawer({ open, onClose, onSubmitted }) {
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
               反馈类型 <span className="text-destructive">*</span>
             </label>
-            <div className="flex rounded-md border border-border bg-muted/50 p-1">
+            <div className="flex rounded-md border border-border bg-muted p-1">
               {TYPE_OPTIONS.map((opt) => (
                 <button
                   key={opt.value}
@@ -313,17 +314,18 @@ function FeedbackDrawer({ open, onClose, onSubmitted }) {
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
               严重程度
             </label>
-            <select
+            <CompactSelect
+              size="lg"
+              block
               value={form.priority}
               onChange={(e) => setField('priority', e.target.value)}
-              className={inputCls('priority')}
             >
               {FEEDBACK_PRIORITIES.map((p) => (
                 <option key={p.value} value={p.value}>
                   {p.label}
                 </option>
               ))}
-            </select>
+            </CompactSelect>
           </div>
 
           {/* 详细描述 */}
@@ -420,7 +422,7 @@ function FeedbackDrawer({ open, onClose, onSubmitted }) {
                 {files.map((f, idx) => (
                   <li
                     key={`${f.name}-${idx}`}
-                    className="flex items-center gap-2 rounded-md border border-border bg-muted/50 px-3 py-1.5 text-xs"
+                    className="flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-1.5 text-xs"
                   >
                     <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <span className="min-w-0 flex-1 truncate text-foreground" title={f.name}>
@@ -459,7 +461,7 @@ function FeedbackDrawer({ open, onClose, onSubmitted }) {
           </div>
 
           {/* 允许回访开关 */}
-          <div className="flex items-center justify-between rounded-md border border-border bg-muted/50 px-3 py-2.5">
+          <div className="flex items-center justify-between rounded-md border border-border bg-muted px-3 py-2.5">
             <div>
               <div className="text-sm text-foreground">允许管理员回访</div>
               <div className="text-xs text-muted-foreground">

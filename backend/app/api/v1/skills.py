@@ -286,7 +286,7 @@ async def optimize_skill(
         optimized = optimized.strip()
     except Exception as exc:  # noqa: BLE001
         logger.exception("LLM 优化技能失败: %s", exc)
-        raise HTTPException(status_code=500, detail=f"LLM 调用失败: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"LLM 调用失败（{type(exc).__name__}），详情见服务日志") from exc
 
     return {"content": optimized}
 
@@ -345,7 +345,7 @@ async def check_skill(
         result = {"issues": [], "score": 0, "suggestions": "检测失败：LLM 返回格式异常"}
     except Exception as exc:  # noqa: BLE001
         logger.exception("技能检测失败: %s", exc)
-        raise HTTPException(status_code=500, detail=f"LLM 调用失败: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"LLM 调用失败（{type(exc).__name__}），详情见服务日志") from exc
 
     return result
 
@@ -433,7 +433,7 @@ async def test_skill(
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("技能测试调用失败: %s", exc)
-        raise HTTPException(status_code=500, detail=f"技能测试失败: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"技能测试失败（{type(exc).__name__}），详情见服务日志") from exc
 
     if has_tools and result.decision:
         decision = result.decision

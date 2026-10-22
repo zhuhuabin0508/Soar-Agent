@@ -12,7 +12,7 @@ import { workflows as workflowsApi } from '../api/client'
 import { JsonInputDialog, Modal } from '../components/Dialog'
 import { confirm } from '../components/ConfirmDialog'
 import { toast } from '../store/toastStore'
-import { DataTable, Pagination } from '../components/ui'
+import { DataTable, Pagination, CompactSelect } from '../components/ui'
 import FilterBar from '../components/FilterBar'
 import BatchActions from '../components/BatchActions'
 import { usePagination } from '../hooks/usePagination'
@@ -94,8 +94,8 @@ function RunStatusBadge({ status }) {
   }
   if (!status) {
     return (
-      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground/60">
-        <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />未运行
+      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground" />未运行
       </span>
     )
   }
@@ -109,9 +109,9 @@ function RunStatusBadge({ status }) {
 
 // 7 天成功率：<80% 红，80-95% 黄，>95% 绿
 function SuccessRate({ rate }) {
-  if (rate == null || rate === '') return <span className="text-muted-foreground/60">-</span>
+  if (rate == null || rate === '') return <span className="text-muted-foreground">-</span>
   const pct = Math.round(Number(rate) * 100)
-  if (!Number.isFinite(pct)) return <span className="text-muted-foreground/60">-</span>
+  if (!Number.isFinite(pct)) return <span className="text-muted-foreground">-</span>
   const cls = pct < 80 ? 'text-destructive' : pct <= 95 ? 'text-warning' : 'text-success'
   return <span className={`tabular-nums ${cls}`}>{pct}%</span>
 }
@@ -610,12 +610,12 @@ function WorkflowList() {
       render: (r) => (
         <button
           type="button"
-          onClick={() => handleToggleFavorite(r)}
+          onClick={(e) => { e.stopPropagation(); handleToggleFavorite(r) }}
           className="rounded p-1 transition hover:bg-secondary"
           aria-label={r.favorite ? '取消收藏' : '收藏'}
           title={r.favorite ? '取消收藏' : '收藏'}
         >
-          <Star className={`h-4 w-4 ${r.favorite ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground/60 hover:text-foreground'}`} />
+          <Star className={`h-4 w-4 ${r.favorite ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground hover:text-foreground'}`} />
         </button>
       ),
     },
@@ -629,7 +629,7 @@ function WorkflowList() {
         <div className="flex max-w-[210px] flex-col">
           <span className="truncate text-foreground" title={r.name}>{r.name || '-'}</span>
           {r.description ? (
-            <span className="truncate text-[11px] text-muted-foreground/70" title={r.description}>{r.description}</span>
+            <span className="truncate text-[11px] text-muted-foreground" title={r.description}>{r.description}</span>
           ) : null}
         </div>
       ),
@@ -641,7 +641,7 @@ function WorkflowList() {
     {
       key: 'category', header: '分类', width: '110px',
       render: (r) => {
-        if (!r.category) return <span className="text-xs text-muted-foreground/50">未分类</span>
+        if (!r.category) return <span className="text-xs text-muted-foreground">未分类</span>
         const v = categoryVariant(r.category)
         const cls = v === 'info' ? 'bg-info/15 text-info'
           : v === 'warning' ? 'bg-warning/15 text-warning'
@@ -657,7 +657,7 @@ function WorkflowList() {
         const tags = Array.isArray(r.tags) ? r.tags : []
         if (tags.length === 0) {
           return (
-            <button type="button" onClick={() => handleOpenTagEditor(r)} className="text-xs text-muted-foreground/40 transition hover:text-foreground" title="点击添加标签">
+            <button type="button" onClick={(e) => { e.stopPropagation(); handleOpenTagEditor(r) }} className="text-xs text-muted-foreground transition hover:text-foreground" title="点击添加标签">
               添加标签
             </button>
           )
@@ -667,14 +667,14 @@ function WorkflowList() {
         return (
           <button
             type="button"
-            onClick={() => handleOpenTagEditor(r)}
+            onClick={(e) => { e.stopPropagation(); handleOpenTagEditor(r) }}
             className="inline-flex max-w-[160px] items-center gap-1 transition hover:opacity-80"
             title="点击编辑标签"
           >
             {shown.map((t, i) => (
               <span key={i} className="truncate rounded bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">{t}</span>
             ))}
-            {rest > 0 && <span className="text-[10px] text-muted-foreground/70">+{rest}</span>}
+            {rest > 0 && <span className="text-[10px] text-muted-foreground">+{rest}</span>}
           </button>
         )
       },
@@ -702,7 +702,7 @@ function WorkflowList() {
       render: (r) => {
         const n = Number(r.today_count) || 0
         return n === 0
-          ? <span className="tabular-nums text-muted-foreground/40">0</span>
+          ? <span className="tabular-nums text-muted-foreground">0</span>
           : <span className="tabular-nums text-foreground">{n}</span>
       },
     },
@@ -719,7 +719,7 @@ function WorkflowList() {
       render: (r) => <span className="text-muted-foreground">{fmtTime(r.updated_at)}</span>,
     },
     {
-      key: '__actions', header: '操作', width: '220px',
+      key: '__actions', header: '操作', width: '305px',
       render: (r) => {
         const canEdit = canEditResource(r)
         const canShare = canManageShare(r)
@@ -776,10 +776,10 @@ function WorkflowList() {
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
       {/* 顶部标题栏 */}
-      <header className="flex items-center justify-between gap-4 border-b border-border bg-card/60 px-6 py-4">
+      <header className="flex items-center justify-between gap-4 border-b border-border bg-card px-6 py-4">
         <div className="flex min-w-0 items-center gap-3">
           <h1 className="text-xl font-semibold text-foreground">工作流管理</h1>
-          <span className="text-xs text-muted-foreground/70">共 {filteredRows.length} 个</span>
+          <span className="text-xs text-muted-foreground">共 {filteredRows.length} 个</span>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button type="button" onClick={load} className="btn-secondary btn-sm">刷新</button>
@@ -843,6 +843,8 @@ function WorkflowList() {
             selectedKeys={selectedKeys}
             onSelectChange={setSelectedKeys}
             rowKey="id"
+            onRowClick={(r) => handleEdit(r.id)}
+            rowClickHint="点击编辑"
             emptyText="暂无工作流，点击右上角「新建工作流」创建"
           />
         </div>
@@ -891,20 +893,20 @@ function WorkflowList() {
             <div className="text-sm text-muted-foreground">
               状态：<span className="font-mono text-primary">{runResult?.status || '-'}</span>
               {runResult?.execution_id != null && (
-                <span className="ml-3 text-xs text-muted-foreground/70">execution_id: {runResult.execution_id}</span>
+                <span className="ml-3 text-xs text-muted-foreground">execution_id: {runResult.execution_id}</span>
               )}
             </div>
             <div>
-              <div className="mb-1 text-xs text-muted-foreground/70">
+              <div className="mb-1 text-xs text-muted-foreground">
                 节点轨迹（{(runResult?.traces || []).length} 个）
               </div>
               <div className="max-h-72 w-full overflow-auto rounded-md bg-background p-3 ring-1 ring-border">
                 {(runResult?.traces || []).length === 0 ? (
-                  <div className="text-xs text-muted-foreground/60">暂无轨迹</div>
+                  <div className="text-xs text-muted-foreground">暂无轨迹</div>
                 ) : (
                   <div className="flex flex-col gap-2">
                     {runResult.traces.map((tr, idx) => (
-                      <div key={idx} className="rounded-md border border-border bg-card/60 p-2 text-xs">
+                      <div key={idx} className="rounded-md border border-border bg-card p-2 text-xs">
                         <div className="flex items-center justify-between">
                           <span className="text-foreground">
                             {tr.node_label || tr.node_type || `节点 ${tr.node_id}`}
@@ -923,12 +925,12 @@ function WorkflowList() {
               </div>
             </div>
             <div>
-              <div className="mb-1 text-xs text-muted-foreground/70">
+              <div className="mb-1 text-xs text-muted-foreground">
                 日志（{(runResult?.logs || []).length} 条）
               </div>
               <div className="max-h-64 w-full overflow-auto rounded-md bg-background p-3 ring-1 ring-border">
                 {(runResult?.logs || []).length === 0 ? (
-                  <div className="text-xs text-muted-foreground/60">暂无日志</div>
+                  <div className="text-xs text-muted-foreground">暂无日志</div>
                 ) : (
                   <div className="flex flex-col gap-1">
                     {runResult.logs.map((log, idx) => (
@@ -980,15 +982,15 @@ function WorkflowList() {
       >
         <div className="flex flex-col gap-4">
           <div className="rounded-md border border-border bg-background p-4">
-            <div className="mb-1 text-xs text-muted-foreground/70">调用 webhook 时需在请求头携带：</div>
+            <div className="mb-1 text-xs text-muted-foreground">调用 webhook 时需在请求头携带：</div>
             <div className="font-mono text-[11px] text-primary">
               X-Webhook-Secret: &lt;下方密钥&gt;
             </div>
           </div>
           <div>
-            <div className="mb-1 text-xs text-muted-foreground/70">Webhook 密钥</div>
+            <div className="mb-1 text-xs text-muted-foreground">Webhook 密钥</div>
             {secretLoading ? (
-              <div className="text-sm text-muted-foreground/70">加载中...</div>
+              <div className="text-sm text-muted-foreground">加载中...</div>
             ) : (
               <div className="max-h-32 overflow-auto rounded-md bg-background p-3 ring-1 ring-border">
                 <code className="break-all font-mono text-xs text-warning">
@@ -1022,8 +1024,9 @@ function WorkflowList() {
         <div className="flex flex-col gap-4">
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">分类</label>
-            <select
-              className={inputCls}
+            <CompactSelect
+              size="lg"
+              block
               value={tagCategory}
               onChange={(e) => setTagCategory(e.target.value)}
             >
@@ -1031,7 +1034,7 @@ function WorkflowList() {
               {tagCategoryOptions.map((c) => (
                 <option key={c} value={c}>{c}</option>
               ))}
-            </select>
+            </CompactSelect>
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">标签（多个用英文逗号分隔）</label>
@@ -1042,7 +1045,7 @@ function WorkflowList() {
               value={tagInput}
               onChange={(e) => setTagInput(e.target.value)}
             />
-            <p className="mt-1 text-[11px] text-muted-foreground/70">输入标签后按逗号分隔，保存时自动去除空项。</p>
+            <p className="mt-1 text-[11px] text-muted-foreground">输入标签后按逗号分隔，保存时自动去除空项。</p>
           </div>
         </div>
       </Modal>
@@ -1068,7 +1071,7 @@ function WorkflowList() {
               <Upload className="h-3.5 w-3.5" />选择 JSON 文件
               <input type="file" accept=".json,application/json" className="hidden" onChange={handleImportFile} />
             </label>
-            <span className="text-[11px] text-muted-foreground/70">选择文件后会自动填入下方文本框，可手动编辑。</span>
+            <span className="text-[11px] text-muted-foreground">选择文件后会自动填入下方文本框，可手动编辑。</span>
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">graph_config（JSON）</label>
@@ -1095,8 +1098,9 @@ function WorkflowList() {
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-muted-foreground">触发方式</label>
-              <select
-                className={inputCls}
+              <CompactSelect
+                size="lg"
+                block
                 value={importMeta.trigger_type}
                 onChange={(e) => setImportMeta((m) => ({ ...m, trigger_type: e.target.value }))}
               >
@@ -1104,12 +1108,13 @@ function WorkflowList() {
                 <option value="schedule">定时</option>
                 <option value="event">事件</option>
                 <option value="manual">手动</option>
-              </select>
+              </CompactSelect>
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-muted-foreground">分类</label>
-              <select
-                className={inputCls}
+              <CompactSelect
+                size="lg"
+                block
                 value={importMeta.category}
                 onChange={(e) => setImportMeta((m) => ({ ...m, category: e.target.value }))}
               >
@@ -1117,7 +1122,7 @@ function WorkflowList() {
                 {CATEGORY_PRESETS.map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
-              </select>
+              </CompactSelect>
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-muted-foreground">标签（逗号分隔）</label>
@@ -1150,7 +1155,7 @@ function WorkflowList() {
         title="新建工作流 — 选择方式"
         size="lg"
       >
-        <div className="mb-4 rounded-lg border border-border bg-muted/30 p-3">
+        <div className="mb-4 rounded-lg border border-border bg-muted p-3">
           <div className="mb-2 flex items-center gap-2 text-sm font-medium text-foreground">
             <MessageSquare className="h-4 w-4 text-primary" />
             用一句话描述流程（AI 草稿 PoC）
@@ -1194,7 +1199,7 @@ function WorkflowList() {
                 setCreateOpen(false)
                 navigate(`/workflows/new?template=${tpl.key}`)
               }}
-              className="flex flex-col gap-1.5 rounded-lg border border-border bg-card/40 p-3 text-left transition hover:border-primary/50 hover:bg-primary/5"
+              className="flex flex-col gap-1.5 rounded-lg border border-border bg-card p-3 text-left transition hover:border-primary/50 hover:bg-primary/5"
             >
               <span className="text-sm font-medium text-foreground">{tpl.name}</span>
               <span className="text-xs text-muted-foreground">{tpl.description}</span>

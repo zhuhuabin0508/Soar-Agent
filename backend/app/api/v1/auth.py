@@ -610,18 +610,22 @@ def login_otp_direct(
 
 
 class CaptchaResponse(BaseModel):
-    """图形验证码响应体。"""
+    """滑块拼图验证码响应体。"""
 
     captcha_id: str = Field(..., description="验证码 ID，登录时随 captcha_code 一并提交")
-    image: str = Field(..., description="Base64 编码的 PNG 图片，可直接作为 <img src=...>")
+    image: str = Field(..., description="含缺口的背景图（base64 PNG data URL）")
+    slider_image: str = Field("", description="拼图块小图（base64 PNG data URL，带透明通道）")
+    slider_y: int = Field(0, description="缺口在背景图中的 y 坐标（前端按此定位拼图块）")
+    slider_size: int = Field(44, description="拼图块直径（像素）")
 
 
 @router.get("/captcha", response_model=CaptchaResponse)
 def get_captcha(request: Request) -> CaptchaResponse:
-    """生成一张图形验证码（无需认证）。
+    """生成滑块拼图验证码（无需认证）。
 
-    前端登录页加载时与点击「换一张」时调用，将返回的 ``image`` 直接渲染，
-    登录时将 ``captcha_id`` + 用户输入的 ``captcha_code`` 随登录请求提交。
+    前端登录页加载时与点击「刷新」时调用：渲染 ``image``（含缺口背景）与
+    ``slider_image``（拼图块，垂直位置按 ``slider_y``），用户拖动滑块对准缺口，
+    松手时的 x 坐标作为 ``captcha_code`` 随登录请求提交（容差 ±5px）。
     验证码 5 分钟过期，校验后立即失效（一次性消费）。
 
     IP 限频：60 秒内最多 20 次，超限返回 429（防止验证码生成接口被刷）。
@@ -630,6 +634,34 @@ def get_captcha(request: Request) -> CaptchaResponse:
     from app.core.captcha import generate_captcha
     data = generate_captcha()
     return CaptchaResponse(**data)
+
+
+class CaptchaCheckRequest(BaseModel):
+    """滑块位置预校验请求体（登录前弹窗内即时反馈，不消费验证码）。"""
+
+    captcha_id: str = Field(..., description="验证码 ID")
+    x: int = Field(..., ge=0, le=1000, description="滑块松手时的 x 坐标（像素）")
+
+
+class CaptchaCheckResponse(BaseModel):
+    """滑块位置预校验结果。"""
+
+    passed: bool = Field(..., description="位置是否在容差内")
+    expired: bool = Field(False, description="验证码已失效，前端应刷新换图")
+
+
+@router.post("/captcha/check", response_model=CaptchaCheckResponse)
+def check_captcha_position(body: CaptchaCheckRequest, request: Request) -> CaptchaCheckResponse:
+    """滑块位置预校验（无需认证，不消费验证码）。
+
+    登录页滑块松手时先调本接口获得「验证通过/未对准」的即时反馈，
+    通过后再发起登录请求（登录时 ``verify_captcha`` 做最终校验并一次性消费）。
+    同一验证码累计 5 次未对准会作废验证图（expired=True），前端需刷新换图。
+    """
+    _rate_limit_ip(request, "captcha-check", max_count=30, window=60, message="请求过于频繁")
+    from app.core.captcha import check_captcha
+    passed, expired = check_captcha(body.captcha_id, body.x)
+    return CaptchaCheckResponse(passed=passed, expired=expired)
 
 
 @router.get("/password-policy")

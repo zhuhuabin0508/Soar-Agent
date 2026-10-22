@@ -91,8 +91,8 @@ export default function ParamPanel({ params = {}, onChange, provider = 'openai' 
         onClick={() => setOpen((v) => !v)}
         className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs transition ${
           enabledCount > 0
-            ? 'border-primary/50 bg-primary/10 text-primary'
-            : 'border-border bg-secondary text-muted-foreground hover:bg-muted hover:text-foreground'
+            ? 'border-primary/40 bg-muted text-foreground'
+            : 'border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground'
         }`}
         title="参数设置（仅本次会话生效）"
       >
@@ -118,13 +118,13 @@ export default function ParamPanel({ params = {}, onChange, provider = 'openai' 
             {/* 头部 */}
             <div className="flex items-center justify-between border-b border-border px-3 py-2">
               <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
-                <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground/70" />
+                <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
                 <span>参数设置</span>
               </div>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="text-muted-foreground/60 transition hover:text-foreground"
+                className="text-muted-foreground transition hover:text-foreground"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -139,7 +139,7 @@ export default function ParamPanel({ params = {}, onChange, provider = 'openai' 
                 return (
                   <div
                     key={key}
-                    className={`border-b border-border/50 py-2 last:border-b-0 ${
+                    className={`border-b border-border py-2 last:border-b-0 ${
                       disabled ? 'opacity-50' : ''
                     }`}
                   >
@@ -187,7 +187,7 @@ export default function ParamPanel({ params = {}, onChange, provider = 'openai' 
 
                     {/* 描述 + 滑块 */}
                     <div className="mt-1 pl-9">
-                      <div className="text-[10px] text-muted-foreground/70">
+                      <div className="text-[10px] text-muted-foreground">
                         {unsupported ? (
                           <span className="text-warning">当前模型（Anthropic）不支持此参数</span>
                         ) : (
@@ -218,12 +218,12 @@ export default function ParamPanel({ params = {}, onChange, provider = 'openai' 
               <button
                 type="button"
                 onClick={resetAll}
-                className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/70 transition hover:text-foreground"
+                className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition hover:text-foreground"
               >
                 <RotateCcw className="h-3 w-3" />
                 <span>重置全部</span>
               </button>
-              <span className="text-[10px] text-muted-foreground/50">
+              <span className="text-[10px] text-muted-foreground">
                 已启用 {enabledCount} / 6
               </span>
               <button

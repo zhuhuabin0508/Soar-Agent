@@ -5,6 +5,7 @@
 // admin 角色自动拥有全部权限（后端 _resolve_permissions 已展开为全量矩阵）。
 
 import { useAuthStore } from '../store/authStore'
+import { toast } from '../store/toastStore'
 
 /**
  * 新模块尚未写入角色 JSON 时，从前端同步后端 migrate_permissions 的继承来源。
@@ -72,6 +73,24 @@ export function isAdmin() {
 }
 
 /**
+ * 跨模块跳转前的权限核验；无权限时 toast 提示并返回 false。
+ *
+ * 所有跨模块 navigate()/Link 跳转（如工单安全上下文 → 资产清单、
+ * 告警列表 → 资产/工单）必须先经过本守卫，防止无权限用户通过
+ * 页面内链接越权访问目标模块（后端 require_permission 仍是最终防线）。
+ *
+ * @param {string} module 目标模块名（如 'asset_list'）
+ * @param {string} action 动作名，默认 'view'
+ * @param {string} label 目标功能中文名（提示文案用），如 '资产清单'
+ * @returns {boolean} 有权限返回 true；无权限返回 false（已 toast 提示）
+ */
+export function guardNavPermission(module, action = 'view', label) {
+  if (hasPermission(module, action)) return true
+  toast.error(`权限不足：没有「${label || module}」访问权限，请联系管理员在角色管理中授权`)
+  return false
+}
+
+/**
  * 判断当前用户是否可编辑指定资源（资源级 owner 控制）。
  *
  * 优先级：
@@ -107,4 +126,4 @@ export function canManageShare(resource) {
   return false
 }
 
-export default { hasPermission, isAdmin, canEditResource, canManageShare }
+export default { hasPermission, isAdmin, canEditResource, canManageShare, guardNavPermission }

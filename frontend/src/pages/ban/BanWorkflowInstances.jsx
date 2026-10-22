@@ -6,7 +6,7 @@ import {
   CheckCircle2, XCircle, MinusCircle, Loader2, ShieldAlert, Inbox, Activity,
 } from 'lucide-react'
 import { toast } from '../../store/toastStore'
-import { Button, PageContainer, PageHeader, Card, DataTable, Badge, Pagination, EmptyState } from '../../components/ui'
+import { Button, PageContainer, PageHeader, Card, DataTable, Badge, Pagination, EmptyState, CompactSelect, DatePicker } from '../../components/ui'
 import { Modal } from '../../components/Dialog'
 import { inputBaseCls } from '../../components/property/FormControls'
 import { hasPermission } from '../../utils/permissions'
@@ -65,7 +65,7 @@ function NodeTimeline({ nodes }) {
             <div className={`z-10 mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted ${NODE_STATUS_CLS[n.status] || ''}`}>
               <Icon className="h-3.5 w-3.5" />
             </div>
-            <div className="min-w-0 flex-1 rounded-lg border border-border bg-muted/30 px-3 py-2">
+            <div className="min-w-0 flex-1 rounded-lg border border-border bg-muted px-3 py-2">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm font-medium text-foreground">{n.node_name}</span>
                 <Badge variant={n.status === 'success' ? 'success' : n.status === 'fail' ? 'danger' : 'neutral'}>
@@ -83,7 +83,7 @@ function NodeTimeline({ nodes }) {
               {n.output != null && (
                 <details className="mt-1.5">
                   <summary className="cursor-pointer select-none text-xs text-muted-foreground transition hover:text-foreground">节点输出</summary>
-                  <pre className="mt-1 max-h-52 overflow-auto rounded-md bg-background/60 p-2 font-mono text-[11px] leading-relaxed text-foreground/80">
+                  <pre className="mt-1 max-h-52 overflow-auto rounded-md bg-background p-2 font-mono text-[11px] leading-relaxed text-foreground">
                     {typeof n.output === 'string' ? n.output : JSON.stringify(n.output, null, 2)}
                   </pre>
                 </details>
@@ -102,7 +102,7 @@ function AgentInvocations({ invocations }) {
   return (
     <div className="space-y-3">
       {invocations.map((a) => (
-        <div key={a.id} className="rounded-lg border border-border bg-muted/30 p-3">
+        <div key={a.id} className="rounded-lg border border-border bg-muted p-3">
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="font-medium text-foreground">调用 #{a.id}</span>
             <Badge variant={a.status === 'success' ? 'success' : 'danger'}>{a.status === 'success' ? '成功' : '失败'}</Badge>
@@ -115,13 +115,13 @@ function AgentInvocations({ invocations }) {
           <div className="mt-2 grid gap-2 lg:grid-cols-2">
             <details open>
               <summary className="cursor-pointer select-none text-xs text-muted-foreground">请求体</summary>
-              <pre className="mt-1 max-h-48 overflow-auto rounded-md bg-background/60 p-2 font-mono text-[11px] leading-relaxed text-foreground/80">
+              <pre className="mt-1 max-h-48 overflow-auto rounded-md bg-background p-2 font-mono text-[11px] leading-relaxed text-foreground">
                 {typeof a.request_body === 'string' ? a.request_body : JSON.stringify(a.request_body, null, 2)}
               </pre>
             </details>
             <details open={!a.error_msg}>
               <summary className="cursor-pointer select-none text-xs text-muted-foreground">响应体</summary>
-              <pre className="mt-1 max-h-48 overflow-auto rounded-md bg-background/60 p-2 font-mono text-[11px] leading-relaxed text-foreground/80">
+              <pre className="mt-1 max-h-48 overflow-auto rounded-md bg-background p-2 font-mono text-[11px] leading-relaxed text-foreground">
                 {a.response_body ? (typeof a.response_body === 'string' ? a.response_body : JSON.stringify(a.response_body, null, 2)) : '--'}
               </pre>
             </details>
@@ -137,7 +137,7 @@ function JsonBlock({ title, data }) {
   return (
     <div>
       <div className="mb-1.5 text-xs font-medium text-muted-foreground">{title}</div>
-      <pre className="max-h-60 overflow-auto rounded-lg border border-border bg-muted/30 p-3 font-mono text-[11px] leading-relaxed text-foreground/80">
+      <pre className="max-h-60 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-[11px] leading-relaxed text-foreground">
         {typeof data === 'string' ? data : JSON.stringify(data, null, 2)}
       </pre>
     </div>
@@ -211,7 +211,7 @@ export default function BanWorkflowInstances({ embedded = false }) {
     {
       key: 'alert_name', header: '触发告警', width: '200px',
       render: (r) => (
-        <button className="max-w-[190px] truncate text-left font-medium text-foreground transition hover:text-primary" title={r.alert_name} onClick={() => openDetail(r.id)}>
+        <button className="max-w-[190px] truncate text-left font-medium text-foreground transition hover:text-primary" title={r.alert_name} onClick={(e) => { e.stopPropagation(); openDetail(r.id) }}>
           {r.alert_name || r.alert_uuid || '--'}
         </button>
       ),
@@ -289,17 +289,17 @@ export default function BanWorkflowInstances({ embedded = false }) {
       {/* 筛选区 */}
       <Card className="mb-4">
         <div className="flex flex-wrap items-center gap-2.5">
-          <select className={`${inputBaseCls} h-[34px] w-[130px]`} value={filters.status} onChange={(e) => setF({ status: e.target.value })}>
+          <CompactSelect size="lg" className="w-[130px]" value={filters.status} onChange={(e) => setF({ status: e.target.value })}>
             <option value="">全部状态</option>
             {STATUS_OPTIONS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
-          </select>
-          <select className={`${inputBaseCls} h-[34px] w-[150px]`} value={filters.rule_id} onChange={(e) => setF({ rule_id: e.target.value })}>
+          </CompactSelect>
+          <CompactSelect size="lg" className="w-[150px]" value={filters.rule_id} onChange={(e) => setF({ rule_id: e.target.value })}>
             <option value="">全部触发规则</option>
             {rules.map((r) => <option key={r.id} value={r.id}>{r.rule_name}</option>)}
-          </select>
-          <input type="datetime-local" className={`${inputBaseCls} h-[34px] w-[185px] font-mono text-xs`} value={filters.start_time} onChange={(e) => setF({ start_time: e.target.value })} />
+          </CompactSelect>
+          <DatePicker type="datetime" value={filters.start_time} onChange={(e) => setF({ start_time: e.target.value })} />
           <span className="text-xs text-muted-foreground">至</span>
-          <input type="datetime-local" className={`${inputBaseCls} h-[34px] w-[185px] font-mono text-xs`} value={filters.end_time} onChange={(e) => setF({ end_time: e.target.value })} />
+          <DatePicker type="datetime" value={filters.end_time} onChange={(e) => setF({ end_time: e.target.value })} />
           <input className={`${inputBaseCls} h-[34px] w-[200px]`} placeholder="IP / 告警UUID" value={filters.keyword} onChange={(e) => setF({ keyword: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter') load() }} />
         </div>
       </Card>
@@ -312,6 +312,7 @@ export default function BanWorkflowInstances({ embedded = false }) {
           loading={loading}
           rowKey="id"
           selectable={false}
+          onRowClick={(r) => openDetail(r.id)}
           emptyText="暂无工作流实例"
           emptyDescription="告警入库后命中触发规则将自动创建实例"
           emptyIcon={Inbox}
@@ -339,7 +340,7 @@ export default function BanWorkflowInstances({ embedded = false }) {
         ) : (
           <div className="max-h-[70vh] space-y-5 overflow-y-auto pr-1">
             {/* 基础信息 */}
-            <div className="grid grid-cols-2 gap-x-6 gap-y-2 rounded-lg border border-border bg-muted/30 p-3 text-sm lg:grid-cols-3">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-2 rounded-lg border border-border bg-muted p-3 text-sm lg:grid-cols-3">
               <div><span className="text-muted-foreground">源IP：</span><span className="font-mono">{t.src_ip || '--'}</span></div>
               <div className="truncate" title={t.alert_name}><span className="text-muted-foreground">触发告警：</span>{t.alert_name || '--'}</div>
               <div><span className="text-muted-foreground">处置结果：</span>{t.final_result_label || '--'}</div>
@@ -374,7 +375,7 @@ export default function BanWorkflowInstances({ embedded = false }) {
             {t.approval_ticket && (
               <div>
                 <div className="mb-1.5 text-sm font-semibold text-foreground">审批记录</div>
-                <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3 text-sm">
+                <div className="space-y-2 rounded-lg border border-border bg-muted p-3 text-sm">
                   <div className="flex flex-wrap gap-x-6 gap-y-1">
                     <div><span className="text-muted-foreground">工单：</span>#{t.approval_ticket.id}</div>
                     <div><span className="text-muted-foreground">状态：</span>{t.approval_ticket.status}</div>
@@ -388,7 +389,7 @@ export default function BanWorkflowInstances({ embedded = false }) {
             {t.ban_record && (
               <div>
                 <div className="mb-1.5 text-sm font-semibold text-foreground">封禁记录</div>
-                <div className="flex flex-wrap gap-x-6 gap-y-1 rounded-lg border border-border bg-muted/30 p-3 text-sm">
+                <div className="flex flex-wrap gap-x-6 gap-y-1 rounded-lg border border-border bg-muted p-3 text-sm">
                   <div><span className="text-muted-foreground">IP：</span><span className="font-mono">{t.ban_record.ip}</span></div>
                   <div><span className="text-muted-foreground">等级：</span>{t.ban_record.ban_level}</div>
                   <div><span className="text-muted-foreground">时长：</span>{t.ban_record.is_permanent ? '永久' : `${Math.round((t.ban_record.ban_duration || 0) / 60)} 分钟`}</div>
@@ -401,7 +402,7 @@ export default function BanWorkflowInstances({ embedded = false }) {
             {t.monitor_log && (
               <div>
                 <div className="mb-1.5 text-sm font-semibold text-foreground">持续监控记录</div>
-                <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm">
+                <div className="rounded-lg border border-border bg-muted p-3 text-sm">
                   <div className="flex flex-wrap gap-x-6 gap-y-1">
                     <div><span className="text-muted-foreground">IP：</span><span className="font-mono">{t.monitor_log.ip}</span></div>
                     <div><span className="text-muted-foreground">风险等级：</span>{t.monitor_log.risk_level || '--'}</div>

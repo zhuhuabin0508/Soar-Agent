@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
 
     # ===== 鉴权与安全配置 =====
+    # 运行环境标识：dev 跳过安全基线校验（仅日志警告）；production 强校验，
+    # 使用默认 JWT_SECRET/管理员口令将拒绝启动。生产部署必须在 .env 中显式设置。
+    APP_ENV: str = "dev"
     # JWT 签名密钥；生产环境必须通过 .env 注入强随机值（>=32 字节）
     JWT_SECRET: str = "soar-dev-secret-change-me-in-production-please"
     # JWT 访问令牌有效期（分钟）

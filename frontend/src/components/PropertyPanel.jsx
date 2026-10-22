@@ -29,6 +29,7 @@ import {
 import { JsonInputDialog, Modal } from './Dialog'
 import { VariablePicker, VariableField } from './VariablePicker'
 import ExpressionEditor from './ExpressionEditor'
+import { CompactSelect } from './ui'
 
 // 节点图标名 → lucide 组件映射（nodeCatalog.icon 存的是组件名字符串）
 const ICON_MAP = {
@@ -118,13 +119,13 @@ function OutputVarList({ vars, hint }) {
           <span className="text-primary">{v.name}</span>
           {v.desc && (
             <>
-              <span className="text-muted-foreground/60"> : </span>
+              <span className="text-muted-foreground"> : </span>
               <span className="text-muted-foreground">{v.desc}</span>
             </>
           )}
         </div>
       ))}
-      {hint && <div className="text-[11px] text-muted-foreground/70">{hint}</div>}
+      {hint && <div className="text-[11px] text-muted-foreground">{hint}</div>}
     </div>
   )
 }
@@ -134,17 +135,17 @@ function OutputVarList({ vars, hint }) {
 function CollapsibleSection({ title, children, defaultOpen = false, hint }) {
   const [open, setOpen] = useState(defaultOpen)
   return (
-    <div className="rounded-md border border-border bg-muted/40">
+    <div className="rounded-md border border-border bg-muted">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-foreground/90 hover:bg-accent"
+        className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-foreground hover:bg-accent"
       >
         <ChevronDown
           className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-0' : '-rotate-90'}`}
         />
         <span>{title}</span>
-        {hint && <span className="ml-auto text-[10px] font-normal normal-case text-muted-foreground/70">{hint}</span>}
+        {hint && <span className="ml-auto text-[10px] font-normal normal-case text-muted-foreground">{hint}</span>}
       </button>
       {open && <div className="flex flex-col gap-2.5 border-t border-border p-3">{children}</div>}
     </div>
@@ -261,7 +262,7 @@ function NodeOutputPicker({ currentNodeId, onPick }) {
       </button>
       {open && (
         <div className="absolute right-0 top-full z-dropdown mt-1 max-h-[300px] w-64 overflow-y-auto rounded-md border border-border bg-secondary shadow-xl">
-          <div className="border-b border-border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+          <div className="border-b border-border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             选择上游节点输出
           </div>
           {upstreamNodes.map((n) => {
@@ -270,7 +271,7 @@ function NodeOutputPicker({ currentNodeId, onPick }) {
             return (
               <div key={n.id} className="border-b border-border last:border-0">
                 <div className="truncate px-3 py-1.5 text-[11px] font-medium text-muted-foreground">
-                  {label} <span className="text-muted-foreground/60">({n.id})</span>
+                  {label} <span className="text-muted-foreground">({n.id})</span>
                 </div>
                 {fields.map((f) => (
                   <button
@@ -473,7 +474,7 @@ function WebhookTriggerForm({ node, update, workflowId }) {
           {testing ? '测试中…' : '测试 Webhook'}
         </button>
         {testResult && (
-          <div className="rounded-md border border-border bg-muted/60 p-2 text-[11px]">
+          <div className="rounded-md border border-border bg-muted p-2 text-[11px]">
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground">状态：</span>
               {testResult.error ? (
@@ -483,7 +484,7 @@ function WebhookTriggerForm({ node, update, workflowId }) {
                   {testResult.status}
                 </span>
               )}
-              <span className="ml-auto text-muted-foreground/70">
+              <span className="ml-auto text-muted-foreground">
                 耗时 {testResult.duration_ms}ms
               </span>
             </div>
@@ -599,7 +600,7 @@ function ConditionBranchForm({ node, update }) {
       <Section title="条件配置">
         {/* AND / OR 切换 */}
         <div className="mb-2 flex items-center gap-1.5">
-          <span className="text-[11px] text-muted-foreground/70">连接符：</span>
+          <span className="text-[11px] text-muted-foreground">连接符：</span>
           {['AND', 'OR'].map((l) => (
             <button
               key={l}
@@ -619,12 +620,12 @@ function ConditionBranchForm({ node, update }) {
         {/* 条件规则积木列表 */}
         <div className="flex flex-col gap-1.5">
           {conditions.length === 0 && (
-            <p className="text-[11px] text-muted-foreground/60">暂无条件，默认走「否」分支</p>
+            <p className="text-[11px] text-muted-foreground">暂无条件，默认走「否」分支</p>
           )}
           {conditions.map((item, idx) => (
             <div
               key={idx}
-              className="flex flex-col gap-1 rounded-md border border-border bg-muted/40 p-1.5"
+              className="flex flex-col gap-1 rounded-md border border-border bg-muted p-1.5"
             >
               {/* 变量选择器 + 操作符 + 删除 */}
               <div className="flex items-center gap-1.5">
@@ -655,8 +656,10 @@ function ConditionBranchForm({ node, update }) {
               </div>
               {/* 操作符 + 值 */}
               <div className="flex items-center gap-1.5">
-                <select
-                  className={`${inputBaseCls} min-w-0 flex-1`}
+                <CompactSelect
+                  size="lg"
+                  block
+                  className="min-w-0 flex-1"
                   value={item.operator}
                   onChange={(e) => updateCondition(idx, { operator: e.target.value })}
                 >
@@ -665,7 +668,7 @@ function ConditionBranchForm({ node, update }) {
                       {o.label}
                     </option>
                   ))}
-                </select>
+                </CompactSelect>
                 {!['is_empty', 'is_not_empty'].includes(item.operator) && (
                   <input
                     className={`${inputBaseCls} min-w-0 flex-1`}
@@ -746,7 +749,7 @@ function CodeExecuteForm({ node, update }) {
         result.push({ text: text.slice(lastIndex, match.index), className: '' })
       }
       if (match[1]) {
-        result.push({ text: match[1], className: 'text-muted-foreground/60 italic' })
+        result.push({ text: match[1], className: 'text-muted-foreground italic' })
       } else if (match[2]) {
         result.push({ text: match[2], className: 'text-success' })
       } else if (match[3]) {
@@ -798,7 +801,7 @@ function CodeExecuteForm({ node, update }) {
           <div className="flex">
             {/* 行号列 */}
             <div
-              className="select-none overflow-hidden border-r border-border bg-muted/40 px-2 py-2 text-right font-mono text-[11px] leading-[1.5] text-muted-foreground/60"
+              className="select-none overflow-hidden border-r border-border bg-muted px-2 py-2 text-right font-mono text-[11px] leading-[1.5] text-muted-foreground"
               style={{ minWidth: '2.5rem' }}
             >
               {lines.map((n) => (
@@ -1010,9 +1013,9 @@ function renderForm(node, update, toolOptions, toolsList, llmOptions, agentOptio
               options={[{ value: '', label: '— 请选择智能体 —' }, ...(agentOptions || [])]}
             />
             {selectedAgentOpt && (
-              <div className="rounded-md border border-border bg-card/40 px-3 py-2 text-xs text-muted-foreground">
+              <div className="rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
                 已选：{selectedAgentOpt.label}
-                <div className="mt-1 text-[11px] text-muted-foreground/70">
+                <div className="mt-1 text-[11px] text-muted-foreground">
                   该智能体的模型 / 提示词 / 工具 / 知识库配置将被原样复用。
                 </div>
               </div>
@@ -1579,7 +1582,7 @@ function renderForm(node, update, toolOptions, toolsList, llmOptions, agentOptio
 
     default:
       return (
-        <p className="text-sm text-muted-foreground/70">未识别的节点类型：{node.type}</p>
+        <p className="text-sm text-muted-foreground">未识别的节点类型：{node.type}</p>
       )
   }
 }
@@ -1658,7 +1661,7 @@ function ToolNodeForm({ node, update, toolOptions, toolsList }) {
       </Section>
 
       {loading && (
-        <div className="rounded-md border border-border bg-card/40 p-3 text-center text-[11px] text-muted-foreground/70">
+        <div className="rounded-md border border-border bg-card p-3 text-center text-[11px] text-muted-foreground">
           正在拉取工具参数…
         </div>
       )}
@@ -1785,7 +1788,7 @@ function ToolNodeForm({ node, update, toolOptions, toolsList }) {
             {outputs.map((o, idx) => (
               <div key={idx}>
                 <span className="text-primary">{o.name}</span>
-                <span className="text-muted-foreground/70"> : {o.type || 'any'}</span>
+                <span className="text-muted-foreground"> : {o.type || 'any'}</span>
               </div>
             ))}
           </div>
@@ -1793,7 +1796,7 @@ function ToolNodeForm({ node, update, toolOptions, toolsList }) {
       )}
 
       {!loading && !err && toolId != null && inputs.length === 0 && outputs.length === 0 && (
-        <div className="rounded-md border border-border bg-card/40 p-3 text-center text-[11px] text-muted-foreground/70">
+        <div className="rounded-md border border-border bg-card p-3 text-center text-[11px] text-muted-foreground">
           该工具未提供参数 schema。
         </div>
       )}
@@ -1888,7 +1891,7 @@ function DeviceActionForm({ node, update }) {
         hint="从「设备对接」页面已配置的设备中选择。仅展示已启用的设备。"
       >
         {loadingDevices ? (
-          <div className="rounded-md border border-border bg-card/40 p-3 text-center text-[11px] text-muted-foreground/70">
+          <div className="rounded-md border border-border bg-card p-3 text-center text-[11px] text-muted-foreground">
             加载设备列表…
           </div>
         ) : devicesList.length === 0 ? (
@@ -1922,7 +1925,7 @@ function DeviceActionForm({ node, update }) {
           hint="选择设备已配置的动作。动作类型对应 SOAR 处置动作（封禁/解封/隔离/IOC 等）。"
         >
           {loadingActions ? (
-            <div className="rounded-md border border-border bg-card/40 p-3 text-center text-[11px] text-muted-foreground/70">
+            <div className="rounded-md border border-border bg-card p-3 text-center text-[11px] text-muted-foreground">
               加载动作列表…
             </div>
           ) : actionsErr ? (
@@ -1973,7 +1976,7 @@ function DeviceActionForm({ node, update }) {
                 </span>
               </div>
               {selectedAction.description && (
-                <div className="mt-1 text-muted-foreground/70">
+                <div className="mt-1 text-muted-foreground">
                   {selectedAction.description}
                 </div>
               )}
@@ -2152,7 +2155,7 @@ function TestNodeResultModal({ open, result, error, onClose }) {
       ) : (
         <>
           <div>
-            <div className="mb-1 text-xs text-muted-foreground/70">Output</div>
+            <div className="mb-1 text-xs text-muted-foreground">Output</div>
             <pre className="max-h-64 w-full overflow-auto rounded-md bg-background p-3 font-mono text-xs text-foreground ring-1 ring-border">
               {result?.output == null
                 ? '(空)'
@@ -2162,12 +2165,12 @@ function TestNodeResultModal({ open, result, error, onClose }) {
             </pre>
           </div>
           <div>
-            <div className="mb-1 text-xs text-muted-foreground/70">
+            <div className="mb-1 text-xs text-muted-foreground">
               Logs（{(result?.logs || []).length} 条）
             </div>
             <div className="max-h-64 w-full overflow-auto rounded-md bg-background p-3 ring-1 ring-border">
               {(result?.logs || []).length === 0 ? (
-                <div className="text-xs text-muted-foreground/60">暂无日志</div>
+                <div className="text-xs text-muted-foreground">暂无日志</div>
               ) : (
                 <div className="flex flex-col gap-1">
                   {(result.logs || []).map((log, idx) => (
@@ -2373,8 +2376,8 @@ function PropertyPanel() {
       <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-3">
         {!selectedNode ? (
           <div className="flex h-full min-h-[200px] flex-col items-center justify-center gap-2 px-4 text-center">
-            <Settings className="h-8 w-8 text-muted-foreground/30" />
-            <p className="text-xs text-muted-foreground/70">
+            <Settings className="h-8 w-8 text-muted-foreground" />
+            <p className="text-xs text-muted-foreground">
               点击画布上的节点查看配置
             </p>
           </div>
@@ -2391,7 +2394,7 @@ function PropertyPanel() {
                     {selectedNode.data?.label ||
                       getNodeDefinition(selectedNode.type)?.label}
                   </div>
-                  <div className="truncate text-[11px] text-muted-foreground/70">
+                  <div className="truncate text-[11px] text-muted-foreground">
                     ID: {selectedNode.id} · {selectedNode.type}
                   </div>
                 </div>
@@ -2446,11 +2449,11 @@ function PropertyPanel() {
 
             {/* 试运行结果可折叠面板 */}
             {inlineResult && (
-              <div className="rounded-md border border-border bg-muted/40">
+              <div className="rounded-md border border-border bg-muted">
                 <button
                   type="button"
                   onClick={() => setInlineResultOpen((o) => !o)}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-foreground/90 hover:bg-accent"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-foreground hover:bg-accent"
                 >
                   <ChevronDown
                     className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${inlineResultOpen ? 'rotate-0' : '-rotate-90'}`}
@@ -2465,7 +2468,7 @@ function PropertyPanel() {
                   >
                     {inlineResult.status === 'success' ? '成功' : '失败'}
                   </span>
-                  <span className="text-[10px] text-muted-foreground/70">
+                  <span className="text-[10px] text-muted-foreground">
                     {inlineResult.duration_ms}ms
                   </span>
                 </button>

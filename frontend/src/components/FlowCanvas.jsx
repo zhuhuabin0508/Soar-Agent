@@ -428,7 +428,7 @@ function FlowCanvasInner({ isFullscreen = false, onToggleFullscreen }) {
 
       {nodes.length === 0 && (
         <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center p-6">
-          <div className="max-w-xs rounded-lg border border-border/60 bg-card/90 px-5 py-4 text-center shadow-lg backdrop-blur-sm">
+          <div className="max-w-xs rounded-lg border border-border bg-card px-5 py-4 text-center shadow-lg backdrop-blur-sm">
             <GitBranch className="mx-auto mb-2 h-8 w-8 text-primary/50" />
             <p className="text-sm font-medium text-foreground">开始编排工作流</p>
             <p className="mt-1 text-xs text-muted-foreground">
@@ -446,7 +446,7 @@ function FlowCanvasInner({ isFullscreen = false, onToggleFullscreen }) {
         </div>
       )}
 
-      <div className="absolute right-3 top-3 z-20 flex items-center gap-0.5 rounded-md border border-border bg-card/90 p-0.5 shadow-md backdrop-blur">
+      <div className="absolute right-3 top-3 z-20 flex items-center gap-0.5 rounded-md border border-border bg-card p-0.5 shadow-md backdrop-blur">
         <ToolBtn title="适配画布" onClick={() => fitView({ padding: 0.2, duration: 300 })}>
           <Maximize2 className="h-3.5 w-3.5" />
         </ToolBtn>

@@ -11,7 +11,7 @@ import { logsApi } from '../api/logs'
 import { toast } from '../store/toastStore'
 import { confirm } from '../components/ConfirmDialog'
 import HalfDrawer from '../components/HalfDrawer'
-import { Pagination, EmptyState, DataTable } from '../components/ui'
+import { Pagination, DataTable, StatusBadge, CompactSelect } from '../components/ui'
 
 // ===== 工具函数 =====
 function fmtTime(t) {
@@ -105,30 +105,26 @@ function LevelBadge({ level }) {
   return <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${map[(level || '').toLowerCase()] || 'bg-muted text-muted-foreground'}`}>{(level || 'info').toUpperCase()}</span>
 }
 function ExecStatusBadge({ status }) {
-  const map = {
-    success: { cls: 'bg-success/15 text-success', label: '成功' },
-    failed: { cls: 'bg-destructive/15 text-destructive', label: '失败' },
-    running: { cls: 'bg-primary/15 text-primary', label: '运行中' },
-    waiting_for_approval: { cls: 'bg-warning/15 text-warning', label: '待审批' },
-  }
-  const m = map[(status || '').toLowerCase()] || { cls: 'bg-muted text-muted-foreground', label: status || '--' }
-  return <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${m.cls}`}>{m.label}</span>
+  const s = (status || '').toLowerCase()
+  if (!s) return <span className="text-xs text-muted-foreground">--</span>
+  // 统一圆点+文字状态徽章：运行中由 StatusBadge 自动呼吸点（dot-pulse）
+  return <StatusBadge status={s} />
 }
 
 // 统计卡片（带成功率/环比）：标签左对齐，数字右对齐等宽千分位
 function StatCard({ icon: Icon, label, value, sub, subColor, color = 'text-foreground', onClick }) {
   return (
     <div
-      className={`flex items-center gap-2.5 rounded-lg border border-border bg-card/40 px-3 py-2 ${onClick ? 'cursor-pointer transition-colors hover:border-primary/40 hover:bg-primary/5' : ''}`}
+      className={`flex items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2 ${onClick ? 'cursor-pointer transition-colors hover:border-primary/40 hover:bg-primary/5' : ''}`}
       onClick={onClick}
     >
       <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${color === 'text-success' ? 'bg-success/15' : color === 'text-destructive' ? 'bg-destructive/15' : color === 'text-warning' ? 'bg-warning/15' : 'bg-primary/15'}`}>
         <Icon className={`h-3.5 w-3.5 ${color}`} />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="text-left text-[10px] text-muted-foreground/70">{label}</div>
+        <div className="text-left text-[10px] text-muted-foreground">{label}</div>
         <div className={`text-right text-base font-semibold tabular-nums ${color}`}>{value}</div>
-        {sub && <div className={`text-right text-[9px] tabular-nums ${subColor || 'text-muted-foreground/60'}`}>{sub}</div>}
+        {sub && <div className={`text-right text-[9px] tabular-nums ${subColor || 'text-muted-foreground'}`}>{sub}</div>}
       </div>
     </div>
   )
@@ -138,7 +134,7 @@ function StatCard({ icon: Icon, label, value, sub, subColor, color = 'text-foreg
 function MiniTrendChart({ data }) {
   if (!data || data.length === 0) {
     return (
-      <div className="rounded-lg border border-border bg-card/40 p-3">
+      <div className="rounded-lg border border-border bg-card p-3">
         <div className="mb-3 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
           <TrendingUp className="h-3 w-3" />7天趋势
         </div>
@@ -150,7 +146,7 @@ function MiniTrendChart({ data }) {
   // Y 轴 4 等分刻度：0 在下，向上递增
   const yTicks = [maxVal, Math.round(maxVal * 0.75), Math.round(maxVal * 0.5), Math.round(maxVal * 0.25), 0]
   return (
-    <div className="rounded-lg border border-border bg-card/40 p-3">
+    <div className="rounded-lg border border-border bg-card p-3">
       {/* 标题 + 标题下边距 16px */}
       <div className="mb-4 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
         <TrendingUp className="h-3 w-3" />7天日志趋势
@@ -160,7 +156,7 @@ function MiniTrendChart({ data }) {
         <div className="relative mr-2 w-8 shrink-0">
           {yTicks.map((t, i) => (
             <div key={i} className="absolute right-0 flex translate-y-1/2 items-center" style={{ bottom: `${(i / (yTicks.length - 1)) * 100}%` }}>
-              <span className="text-[9px] tabular-nums text-muted-foreground/50">{t}</span>
+              <span className="text-[9px] tabular-nums text-muted-foreground">{t}</span>
             </div>
           ))}
         </div>
@@ -181,11 +177,11 @@ function MiniTrendChart({ data }) {
                   <div className="pointer-events-none absolute -top-2 left-1/2 z-10 hidden -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-md border border-border bg-popover px-2.5 py-1.5 text-[10px] shadow-lg group-hover:block">
                     <div className="mb-0.5 font-semibold text-foreground">{d.date}</div>
                     <div className="text-muted-foreground">总计 {total} 条</div>
-                    <div className="text-muted-foreground/70">操作 {d.audit} · 执行 {d.executions}</div>
-                    <div className="text-muted-foreground/70">日志 {d.execution_logs} · 模型 {d.model_calls}</div>
+                    <div className="text-muted-foreground">操作 {d.audit} · 执行 {d.executions}</div>
+                    <div className="text-muted-foreground">日志 {d.execution_logs} · 模型 {d.model_calls}</div>
                   </div>
                   {/* 柱顶数值标签 */}
-                  <span className="mb-0.5 text-[9px] tabular-nums text-muted-foreground/70 opacity-0 transition-opacity group-hover:opacity-100">{total}</span>
+                  <span className="mb-0.5 text-[9px] tabular-nums text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">{total}</span>
                   {/* 柱子：品牌主色，hover 加深 */}
                   <div className="flex w-full items-end justify-center" style={{ height: '120px' }}>
                     <div
@@ -202,7 +198,7 @@ function MiniTrendChart({ data }) {
       {/* X 轴日期标签 */}
       <div className="mt-1 flex pl-10">
         {data.map((d, i) => (
-          <span key={i} className="flex-1 text-center text-[9px] text-muted-foreground/60">{d.date.slice(5)}</span>
+          <span key={i} className="flex-1 text-center text-[9px] text-muted-foreground">{d.date.slice(5)}</span>
         ))}
       </div>
     </div>
@@ -213,11 +209,11 @@ function MiniTrendChart({ data }) {
 function TopErrorsPanel({ errors, onFilter }) {
   if (!errors || errors.length === 0) {
     return (
-      <div className="rounded-lg border border-border bg-card/40 p-2.5">
-        <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground/70">
+      <div className="rounded-lg border border-border bg-card p-2.5">
+        <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
           <AlertCircle className="h-3 w-3" />错误类型 TOP5
         </div>
-        <div className="flex h-10 items-center justify-center text-[10px] text-muted-foreground/50">暂无错误</div>
+        <div className="flex h-10 items-center justify-center text-[10px] text-muted-foreground">暂无错误</div>
       </div>
     )
   }
@@ -225,12 +221,12 @@ function TopErrorsPanel({ errors, onFilter }) {
   // 蓝色系深浅：数量越高越深
   const blueShades = ['bg-primary', 'bg-primary/80', 'bg-primary/60', 'bg-primary/45', 'bg-primary/30']
   return (
-    <div className="rounded-lg border border-border bg-card/40 p-2.5">
+    <div className="rounded-lg border border-border bg-card p-2.5">
       <div className="mb-1.5 flex items-center justify-between">
-        <span className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground/70">
+        <span className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
           <AlertCircle className="h-3 w-3" />错误类型 TOP5
         </span>
-        <span className="text-[10px] text-muted-foreground/50">点击筛选</span>
+        <span className="text-[10px] text-muted-foreground">点击筛选</span>
       </div>
       <div className="flex flex-col gap-1.5">
         {errors.map((e, i) => (
@@ -257,9 +253,9 @@ function StorageBar({ used, max, onCleanup, cleaning }) {
   const pct = max > 0 ? Math.min((used / max) * 100, 100) : 0
   const color = pct > 80 ? 'bg-destructive' : pct > 60 ? 'bg-warning' : 'bg-success'
   return (
-    <div className="rounded-lg border border-border bg-card/40 p-2.5">
+    <div className="rounded-lg border border-border bg-card p-2.5">
       <div className="mb-1.5 flex items-center justify-between">
-        <span className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground/70">
+        <span className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
           <Database className="h-3 w-3" />存储用量
         </span>
         <button
@@ -274,7 +270,7 @@ function StorageBar({ used, max, onCleanup, cleaning }) {
       <div className="mb-1 h-2.5 overflow-hidden rounded-full bg-secondary">
         <div className={`h-full transition-all duration-500 ${color}`} style={{ width: `${pct}%` }} />
       </div>
-      <div className="flex justify-between text-[10px] text-muted-foreground/60">
+      <div className="flex justify-between text-[10px] text-muted-foreground">
         <span className="tabular-nums">{used} MB</span>
         <span className="tabular-nums">/ {max} MB ({pct.toFixed(1)}%)</span>
       </div>
@@ -489,7 +485,10 @@ function LogCenter() {
     navigator.clipboard.writeText(msg).then(() => toast.success('已复制错误信息'))
   }
 
-  const inputCls = 'w-full rounded-md border border-border bg-secondary px-3 py-1.5 text-sm text-foreground outline-none focus:border-primary'
+  // 输入控件：统一 input-base 风格（悬停边框反馈 + 聚焦主色环），控件统一 h-9
+  const inputCls = 'input-base h-9'
+  const filterSelectCls = 'input-base !w-auto h-9'
+  const filterInputCls = 'input-base !w-auto h-9 min-w-[160px] flex-1'
   const labelCls = 'mb-1 block text-xs font-medium text-muted-foreground'
 
   // ===== 表格列定义（各 Tab 差异化） =====
@@ -497,7 +496,7 @@ function LogCenter() {
     const timeCol = (key) => ({
       key, header: '时间', width: '120px',
       render: (r) => (
-        <span className="text-xs text-muted-foreground" title={fmtTime(r[key])}>
+        <span className="whitespace-nowrap text-xs tabular-nums text-muted-foreground" title={fmtTime(r[key])}>
           {fmtRelative(r[key])}
         </span>
       ),
@@ -507,7 +506,7 @@ function LogCenter() {
       { key: 'username', header: '用户', width: '100px', render: (r) => <span className="truncate text-foreground" title={r.username}>{r.username || '--'}</span> },
       { key: 'action', header: '操作', width: '80px', render: (r) => <span className="text-muted-foreground">{r.action || '--'}</span> },
       { key: 'resource_type', header: '资源类型', width: '100px', render: (r) => <span className="text-muted-foreground">{r.resource_type || '--'}</span> },
-      { key: 'ip_address', header: 'IP', width: '120px', render: (r) => <span className="truncate font-mono text-xs text-muted-foreground/70" title={r.ip_address}>{r.ip_address || '--'}</span> },
+      { key: 'ip_address', header: 'IP', width: '120px', render: (r) => <span className="truncate font-mono text-xs text-muted-foreground" title={r.ip_address}>{r.ip_address || '--'}</span> },
       { key: 'result', header: '结果', width: '60px', render: (r) => <ResultBadge result={r.result} /> },
       { key: 'detail', header: '详情', render: (r) => {
         // 将原始 JSON 详情转为人话摘要
@@ -526,8 +525,8 @@ function LogCenter() {
       { key: 'workflow_id', header: '工作流', width: '100px', render: (r) => <span className="text-muted-foreground">{r.workflow_id ? `#${r.workflow_id}` : '—（智能体测试）'}</span> },
       { key: 'trigger_type', header: '触发类型', width: '100px', render: (r) => <span className="text-muted-foreground">{r.trigger_type || '--'}</span> },
       { key: 'status', header: '状态', width: '70px', render: (r) => <ExecStatusBadge status={r.status} /> },
-      { key: 'created_at', header: '创建时间', width: '120px', render: (r) => <span className="text-xs text-muted-foreground" title={fmtTime(r.created_at)}>{fmtRelative(r.created_at)}</span> },
-      { key: 'finished_at', header: '完成时间', width: '120px', render: (r) => <span className="text-xs text-muted-foreground" title={fmtTime(r.finished_at)}>{fmtRelative(r.finished_at)}</span> },
+      { key: 'created_at', header: '创建时间', width: '120px', render: (r) => <span className="whitespace-nowrap text-xs tabular-nums text-muted-foreground" title={fmtTime(r.created_at)}>{fmtRelative(r.created_at)}</span> },
+      { key: 'finished_at', header: '完成时间', width: '120px', render: (r) => <span className="whitespace-nowrap text-xs tabular-nums text-muted-foreground" title={fmtTime(r.finished_at)}>{fmtRelative(r.finished_at)}</span> },
       { key: '_op', header: '', width: '60px', render: (r) => (
         <button type="button" onClick={(e) => { e.stopPropagation(); navigate(`/executions/${r.id}`) }} className="rounded px-1.5 py-0.5 text-[10px] text-primary opacity-60 transition-opacity hover:opacity-100" title="查看追溯详情">
           追溯
@@ -553,16 +552,16 @@ function LogCenter() {
       { key: 'model_name', header: '模型', width: '180px', render: (r) => <span className="truncate text-foreground" title={r.model_name}>{r.model_name || '--'}</span> },
       { key: 'provider', header: '供应商', width: '90px', render: (r) => <span className="text-muted-foreground">{r.provider || '--'}</span> },
       { key: 'status', header: '状态', width: '60px', render: (r) => <ResultBadge result={r.status} /> },
-      { key: 'error_category', header: '错误类型', width: '90px', render: (r) => r.error_category ? <ErrorBadge category={r.error_category} /> : <span className="text-muted-foreground/40">--</span> },
+      { key: 'error_category', header: '错误类型', width: '90px', render: (r) => r.error_category ? <ErrorBadge category={r.error_category} /> : <span className="text-muted-foreground">--</span> },
       { key: 'latency_ms', header: '耗时', width: '70px', numeric: true, render: (r) => <span className="tabular-nums text-muted-foreground">{fmtDuration(r.latency_ms)}</span> },
       { key: 'total_tokens', header: 'Token', width: '80px', numeric: true, render: (r) => <span className="tabular-nums text-muted-foreground">{r.total_tokens ? fmtNum(r.total_tokens) : '--'}</span> },
       { key: 'trigger_type', header: '来源', width: '90px', render: (r) => <span className="text-muted-foreground">{r.trigger_type || '--'}</span> },
       { key: 'error_message', header: '错误信息', width: '200px', render: (r) => r.error_message ? (
         <div className="flex items-center gap-1">
           <span className="truncate text-xs text-destructive/80" title={r.error_message}>{r.error_message}</span>
-          <button type="button" onClick={(e) => { e.stopPropagation(); handleCopyError(r.error_message) }} className="shrink-0 text-muted-foreground/50 hover:text-primary" title="复制错误信息"><Copy className="h-3 w-3" /></button>
+          <button type="button" onClick={(e) => { e.stopPropagation(); handleCopyError(r.error_message) }} className="shrink-0 text-muted-foreground hover:text-primary" title="复制错误信息"><Copy className="h-3 w-3" /></button>
         </div>
-      ) : <span className="text-muted-foreground/40">--</span> },
+      ) : <span className="text-muted-foreground">--</span> },
       timeCol('created_at'),
       { key: '_op', header: '', width: '60px', render: (r) => (
         <button type="button" onClick={(e) => { e.stopPropagation(); handleViewDetail(r) }} className="rounded px-1.5 py-0.5 text-[10px] text-primary opacity-60 transition-opacity hover:opacity-100" title="查看详情">
@@ -575,10 +574,10 @@ function LogCenter() {
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
       {/* 顶部标题栏 */}
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border bg-card/60 px-6 py-3">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-bold text-foreground">日志中心</h1>
-          <span className="text-xs text-muted-foreground/70">统一查看与治理系统所有日志</span>
+      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border bg-card px-6 py-4">
+        <div className="min-w-0">
+          <h1 className="text-[22px] font-bold tracking-tight text-foreground">日志中心</h1>
+          <p className="mt-1.5 text-sm text-muted-foreground">统一查看与治理系统所有日志</p>
         </div>
         <div className="flex items-center gap-2">
           {/* 实时 tail 模式 */}
@@ -604,7 +603,7 @@ function LogCenter() {
 
       {/* 概览区：上排 KPI 卡片（横向填满） + 下排 趋势图+TOP5+存储进度 */}
       {!showConfig && (
-        <div className="space-y-1.5 border-b border-border bg-card/20 px-6 py-2">
+        <div className="space-y-1.5 border-b border-border bg-card px-6 py-2">
           {/* 上排：4 个 KPI 卡片横向填满 */}
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <StatCard icon={ShieldCheck} label="操作日志" value={fmtNum(stats?.counts?.audit)} sub={stats?.storage_mb?.audit_logs ? `${stats.storage_mb.audit_logs} MB` : ''} onClick={() => switchTab('audit')} />
@@ -648,7 +647,7 @@ function LogCenter() {
           <div className="space-y-5">
             {/* 推荐配置 */}
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[10px] text-muted-foreground/60">推荐配置：</span>
+              <span className="text-[10px] text-muted-foreground">推荐配置：</span>
               {RETENTION_PRESETS.map((p) => (
                 <button key={p.name} type="button" onClick={() => applyPreset(p)} className="rounded border border-border px-2 py-1 text-[10px] text-muted-foreground transition-colors hover:border-primary hover:text-primary">
                   <Zap className="mr-1 inline h-2.5 w-2.5" />{p.name}
@@ -657,7 +656,7 @@ function LogCenter() {
             </div>
 
             {/* 存储进度条（顶部可视化） */}
-            <div className="rounded-md border border-border/60 bg-secondary/30 p-3">
+            <div className="rounded-md border border-border bg-secondary p-3">
               <div className="mb-1.5 flex justify-between text-xs">
                 <span className="text-muted-foreground">当前存储用量</span>
                 <span className="tabular-nums text-foreground">{stats?.total_storage_mb ?? 0} / {retentionEditing.max_storage_mb} MB</span>
@@ -672,7 +671,7 @@ function LogCenter() {
 
             {/* 分组1：按日志类型保留天数 */}
             <div>
-              <div className="mb-2 text-xs font-semibold text-foreground">按日志类型保留天数</div>
+              <div className="mb-2 text-sm font-semibold text-foreground">按日志类型保留天数</div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={labelCls}>操作日志</label>
@@ -695,7 +694,7 @@ function LogCenter() {
 
             {/* 分组2：全局配额 */}
             <div>
-              <div className="mb-2 text-xs font-semibold text-foreground">全局配额</div>
+              <div className="mb-2 text-sm font-semibold text-foreground">全局配额</div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={labelCls}>最大存储量（MB）</label>
@@ -710,7 +709,7 @@ function LogCenter() {
 
             {/* 危险操作区：清理按钮单独放底部，灰色次要样式 */}
             <div className="flex items-center justify-between rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2">
-              <span className="text-[11px] text-muted-foreground/70">删除超过保留天数的过期日志，不可撤销</span>
+              <span className="text-[11px] text-muted-foreground">删除超过保留天数的过期日志，不可撤销</span>
               <button type="button" onClick={handleCleanup} disabled={cleaning} className="rounded border border-border bg-secondary px-2 py-1 text-[10px] text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive disabled:opacity-50">
                 <Trash2 className="mr-1 inline h-2.5 w-2.5" />{cleaning ? '清理中...' : '立即清理'}
               </button>
@@ -720,13 +719,13 @@ function LogCenter() {
       </HalfDrawer>
 
       {/* Tab 切换 */}
-      <div className="flex items-center gap-1 border-b border-border bg-card/30 px-6 py-1.5">
+      <div className="flex items-center gap-1 border-b border-border bg-card px-6 py-2">
         {TABS.map((t) => (
           <button key={t.key} type="button" onClick={() => switchTab(t.key)}
-            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${tab === t.key ? 'bg-primary text-primary-foreground shadow' : 'text-muted-foreground hover:text-foreground'}`}>
+            className={`flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${tab === t.key ? 'bg-primary/10 text-primary ring-1 ring-primary/25' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}>
             <t.icon className="h-3.5 w-3.5" />{t.label}
             {stats?.counts && (
-              <span className={`rounded px-1 text-[10px] ${tab === t.key ? 'bg-primary-foreground/20' : 'bg-secondary'}`}>
+              <span className={`rounded px-1 text-[10px] tabular-nums ${tab === t.key ? 'bg-primary/15 text-primary' : 'bg-secondary text-muted-foreground'}`}>
                 {t.key === 'audit' ? fmtNum(stats.counts.audit) : t.key === 'executions' ? fmtNum(stats.counts.executions) : t.key === 'execution-logs' ? fmtNum(stats.counts.execution_logs) : fmtNum(stats.counts.model_calls)}
               </span>
             )}
@@ -734,57 +733,57 @@ function LogCenter() {
         ))}
       </div>
 
-      {/* 筛选栏：与 Tab 间距，浅色背景明确层级 */}
-      <div className="mt-3 border-b border-border bg-secondary/20 px-6 py-2">
-        <div className="flex flex-wrap items-center gap-3">
+      {/* 筛选栏：卡片条样式，控件统一 input-base 风格（h-9） */}
+      <div className="border-b border-border px-6 py-3">
+        <div className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-card px-4 py-2.5">
           {/* 时间范围快捷选择 */}
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground">
             <Clock className="h-3 w-3" />
-            <select value={timeRange} onChange={(e) => { setTimeRange(e.target.value); setPage(1) }} className="rounded border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-primary">
+            <CompactSelect size="lg" value={timeRange} onChange={(e) => { setTimeRange(e.target.value); setPage(1) }}>
               {TIME_RANGES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
+            </CompactSelect>
           </label>
           {/* 各 Tab 特有筛选 */}
           {tab === 'audit' && (
             <>
-              <select value={auditFilter.action} onChange={(e) => { setAuditFilter((f) => ({ ...f, action: e.target.value })); setPage(1) }} className="rounded border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-primary">
+              <CompactSelect size="lg" value={auditFilter.action} onChange={(e) => { setAuditFilter((f) => ({ ...f, action: e.target.value })); setPage(1) }}>
                 {AUDIT_ACTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-              <select value={auditFilter.result} onChange={(e) => { setAuditFilter((f) => ({ ...f, result: e.target.value })); setPage(1) }} className="rounded border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-primary">
+              </CompactSelect>
+              <CompactSelect size="lg" value={auditFilter.result} onChange={(e) => { setAuditFilter((f) => ({ ...f, result: e.target.value })); setPage(1) }}>
                 {RESULT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-              <input type="text" className="min-w-[160px] flex-1 rounded border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-primary" placeholder="搜索用户名..." value={auditFilter.username} onChange={(e) => { setAuditFilter((f) => ({ ...f, username: e.target.value })); setPage(1) }} />
+              </CompactSelect>
+              <input type="text" className={filterInputCls} placeholder="搜索用户名..." value={auditFilter.username} onChange={(e) => { setAuditFilter((f) => ({ ...f, username: e.target.value })); setPage(1) }} />
             </>
           )}
           {tab === 'executions' && (
             <>
-              <select value={execFilter.status} onChange={(e) => { setExecFilter((f) => ({ ...f, status: e.target.value })); setPage(1) }} className="rounded border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-primary">
+              <CompactSelect size="lg" value={execFilter.status} onChange={(e) => { setExecFilter((f) => ({ ...f, status: e.target.value })); setPage(1) }}>
                 {EXEC_STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-              <input type="text" inputMode="numeric" className="min-w-[160px] flex-1 rounded border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-primary" placeholder="工作流 ID（数字）..." value={execFilter.workflow_id} onChange={(e) => { setExecFilter((f) => ({ ...f, workflow_id: e.target.value })); setPage(1) }} />
+              </CompactSelect>
+              <input type="text" inputMode="numeric" className={filterInputCls} placeholder="工作流 ID（数字）..." value={execFilter.workflow_id} onChange={(e) => { setExecFilter((f) => ({ ...f, workflow_id: e.target.value })); setPage(1) }} />
             </>
           )}
           {tab === 'execution-logs' && (
             <>
-              <select value={execLogFilter.level} onChange={(e) => { setExecLogFilter((f) => ({ ...f, level: e.target.value })); setPage(1) }} className="rounded border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-primary">
+              <CompactSelect size="lg" value={execLogFilter.level} onChange={(e) => { setExecLogFilter((f) => ({ ...f, level: e.target.value })); setPage(1) }}>
                 {LOG_LEVEL_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-              <input type="text" inputMode="numeric" className="w-32 rounded border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-primary" placeholder="执行 ID" value={execLogFilter.execution_id} onChange={(e) => { setExecLogFilter((f) => ({ ...f, execution_id: e.target.value })); setPage(1) }} />
-              <input type="text" className="min-w-[160px] flex-1 rounded border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-primary" placeholder="搜索日志消息..." value={execLogFilter.keyword} onChange={(e) => { setExecLogFilter((f) => ({ ...f, keyword: e.target.value })); setPage(1) }} />
+              </CompactSelect>
+              <input type="text" inputMode="numeric" className="input-base !w-32 h-9" placeholder="执行 ID" value={execLogFilter.execution_id} onChange={(e) => { setExecLogFilter((f) => ({ ...f, execution_id: e.target.value })); setPage(1) }} />
+              <input type="text" className={filterInputCls} placeholder="搜索日志消息..." value={execLogFilter.keyword} onChange={(e) => { setExecLogFilter((f) => ({ ...f, keyword: e.target.value })); setPage(1) }} />
             </>
           )}
           {tab === 'model-calls' && (
             <>
-              <select value={modelFilter.status} onChange={(e) => { setModelFilter((f) => ({ ...f, status: e.target.value, error_category: e.target.value === 'failed' ? f.error_category : '' })); setPage(1) }} className="rounded border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-primary">
+              <CompactSelect size="lg" value={modelFilter.status} onChange={(e) => { setModelFilter((f) => ({ ...f, status: e.target.value, error_category: e.target.value === 'failed' ? f.error_category : '' })); setPage(1) }}>
                 {RESULT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
+              </CompactSelect>
               {modelFilter.status === 'failed' && (
-                <select value={modelFilter.error_category} onChange={(e) => { setModelFilter((f) => ({ ...f, error_category: e.target.value })); setPage(1) }} className="rounded border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-primary">
+                <CompactSelect size="lg" value={modelFilter.error_category} onChange={(e) => { setModelFilter((f) => ({ ...f, error_category: e.target.value })); setPage(1) }}>
                   <option value="">全部错误类型</option>
                   {Object.entries(ERROR_CAT_META).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
-                </select>
+                </CompactSelect>
               )}
-              <input type="text" className="min-w-[160px] flex-1 rounded border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-primary" placeholder="搜索模型名..." value={modelFilter.model_name} onChange={(e) => { setModelFilter((f) => ({ ...f, model_name: e.target.value })); setPage(1) }} />
+              <input type="text" className={filterInputCls} placeholder="搜索模型名..." value={modelFilter.model_name} onChange={(e) => { setModelFilter((f) => ({ ...f, model_name: e.target.value })); setPage(1) }} />
             </>
           )}
           {/* 批量导出 */}
@@ -803,25 +802,23 @@ function LogCenter() {
 
       {/* 表格 */}
       <div className="flex-1 overflow-y-auto px-6 py-3">
-        {loading ? (
-          <div className="flex h-40 items-center justify-center text-sm text-muted-foreground/70">加载中...</div>
-        ) : items.length === 0 ? (
-          <EmptyState icon={ScrollText} title="暂无日志记录" description="系统运行后日志将在此显示" className="mt-6" />
-        ) : (
-          <div className="overflow-hidden rounded-lg border border-border">
-            <DataTable
-              columns={columns}
-              data={items}
-              rowKey="id"
-              loading={loading}
-              selectable
-              selectedKeys={selectedKeys}
-              onSelectChange={setSelectedKeys}
-              onRowClick={handleViewDetail}
-              stickyHeader
-            />
-          </div>
-        )}
+        {/* 加载中显示骨架屏，空数据走 DataTable 内置空态 */}
+        <div className="overflow-hidden rounded-lg border border-border bg-card">
+          <DataTable
+            columns={columns}
+            data={items}
+            rowKey="id"
+            loading={loading}
+            selectable
+            selectedKeys={selectedKeys}
+            onSelectChange={setSelectedKeys}
+            onRowClick={handleViewDetail}
+            stickyHeader
+            emptyText="暂无日志记录"
+            emptyDescription="系统运行后日志将在此显示"
+            emptyIcon={ScrollText}
+          />
+        </div>
 
         {/* 分页 */}
         {!loading && items.length > 0 && (
@@ -848,16 +845,17 @@ function LogCenter() {
 
 // 日志详情面板（抽屉内容）
 function LogDetailPanel({ item, tab, onCopyError, onNavigate }) {
-  const Row = ({ label, value, mono }) => (
-    <div className="flex gap-3 border-b border-border/50 py-2">
-      <span className="w-24 shrink-0 text-xs text-muted-foreground/70">{label}</span>
-      <span className={`flex-1 break-all text-sm text-foreground ${mono ? 'font-mono text-xs' : ''}`}>{value || '--'}</span>
+  // 键值行：label + value 两列布局；full=true 时整行跨两列（长文本）
+  const Row = ({ label, value, mono, full }) => (
+    <div className={`flex gap-3 border-b border-border py-2 ${full ? 'col-span-full' : ''}`}>
+      <span className="w-24 shrink-0 text-xs text-muted-foreground">{label}</span>
+      <span className={`min-w-0 flex-1 break-all text-sm text-foreground ${mono ? 'font-mono text-xs tabular-nums' : ''}`}>{value || '--'}</span>
     </div>
   )
   const Section = ({ title, children }) => (
     <div className="mb-4">
-      <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">{title}</div>
-      {children}
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</div>
+      <div className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">{children}</div>
     </div>
   )
   return (
@@ -873,7 +871,7 @@ function LogDetailPanel({ item, tab, onCopyError, onNavigate }) {
             <Row label="IP" value={item.ip_address} mono />
             <Row label="结果" value={item.result === 'success' ? '成功' : '失败'} />
             <Row label="时间" value={fmtTime(item.created_at)} />
-            {item.detail && <Row label="详情" value={item.detail} />}
+            {item.detail && <Row label="详情" value={item.detail} full />}
           </>
         )}
         {tab === 'executions' && (
@@ -883,7 +881,7 @@ function LogDetailPanel({ item, tab, onCopyError, onNavigate }) {
             <Row label="状态" value={item.status} />
             <Row label="创建时间" value={fmtTime(item.created_at)} />
             <Row label="完成时间" value={fmtTime(item.finished_at)} />
-            <button type="button" onClick={() => onNavigate(`/executions/${item.id}`)} className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:text-primary/80">
+            <button type="button" onClick={() => onNavigate(`/executions/${item.id}`)} className="col-span-full mt-2 inline-flex items-center gap-1 text-xs text-primary transition-colors hover:text-primary/80">
               <Eye className="h-3.5 w-3.5" />查看完整追溯详情
             </button>
           </>
@@ -894,7 +892,7 @@ function LogDetailPanel({ item, tab, onCopyError, onNavigate }) {
             <Row label="节点" value={item.node_id} mono />
             <Row label="级别" value={item.level} />
             <Row label="时间" value={fmtTime(item.timestamp)} />
-            {item.message && <Row label="消息" value={item.message} />}
+            {item.message && <Row label="消息" value={item.message} full />}
           </>
         )}
         {tab === 'model-calls' && (
@@ -920,7 +918,7 @@ function LogDetailPanel({ item, tab, onCopyError, onNavigate }) {
           <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
             <div className="flex-1">
-              <pre className="whitespace-pre-wrap break-all text-xs text-destructive/90">{item.error_message}</pre>
+              <pre className="whitespace-pre-wrap break-all font-mono text-xs text-destructive/90">{item.error_message}</pre>
               <button type="button" onClick={() => onCopyError(item.error_message)} className="mt-2 inline-flex items-center gap-1 text-[10px] text-primary hover:text-primary/80">
                 <Copy className="h-3 w-3" />复制错误
               </button>
@@ -928,8 +926,8 @@ function LogDetailPanel({ item, tab, onCopyError, onNavigate }) {
           </div>
           {item.error_stack && (
             <div className="mt-2">
-              <div className="mb-1 text-[10px] text-muted-foreground/60">错误堆栈：</div>
-              <pre className="max-h-60 overflow-auto rounded bg-secondary p-3 text-[10px] text-muted-foreground">{item.error_stack}</pre>
+              <div className="mb-1 text-[10px] text-muted-foreground">错误堆栈：</div>
+              <pre className="max-h-60 overflow-auto rounded-md border border-border bg-muted p-3 font-mono text-xs text-muted-foreground">{item.error_stack}</pre>
             </div>
           )}
         </Section>
@@ -940,14 +938,14 @@ function LogDetailPanel({ item, tab, onCopyError, onNavigate }) {
         <Section title="调用摘要">
           {item.prompt_summary && (
             <div className="mb-2">
-              <div className="mb-1 text-[10px] text-muted-foreground/60">请求 Prompt：</div>
-              <pre className="max-h-40 overflow-auto rounded bg-secondary p-3 text-[10px] text-muted-foreground">{item.prompt_summary}</pre>
+              <div className="mb-1 text-[10px] text-muted-foreground">请求 Prompt：</div>
+              <pre className="max-h-40 overflow-auto rounded-md border border-border bg-muted p-3 font-mono text-xs text-muted-foreground">{item.prompt_summary}</pre>
             </div>
           )}
           {item.response_summary && (
             <div>
-              <div className="mb-1 text-[10px] text-muted-foreground/60">响应摘要：</div>
-              <pre className="max-h-40 overflow-auto rounded bg-secondary p-3 text-[10px] text-muted-foreground">{item.response_summary}</pre>
+              <div className="mb-1 text-[10px] text-muted-foreground">响应摘要：</div>
+              <pre className="max-h-40 overflow-auto rounded-md border border-border bg-muted p-3 font-mono text-xs text-muted-foreground">{item.response_summary}</pre>
             </div>
           )}
         </Section>
@@ -956,14 +954,14 @@ function LogDetailPanel({ item, tab, onCopyError, onNavigate }) {
       {/* 操作日志详情 */}
       {tab === 'audit' && item.detail && (
         <Section title="操作详情">
-          <pre className="max-h-60 overflow-auto whitespace-pre-wrap rounded bg-secondary p-3 text-xs text-muted-foreground">{item.detail}</pre>
+          <pre className="max-h-60 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted p-3 font-mono text-xs text-muted-foreground">{item.detail}</pre>
         </Section>
       )}
 
       {/* 执行日志消息 */}
       {tab === 'execution-logs' && item.message && (
         <Section title="完整消息">
-          <pre className="max-h-60 overflow-auto whitespace-pre-wrap rounded bg-secondary p-3 text-xs text-muted-foreground">{item.message}</pre>
+          <pre className="max-h-60 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted p-3 font-mono text-xs text-muted-foreground">{item.message}</pre>
         </Section>
       )}
     </div>

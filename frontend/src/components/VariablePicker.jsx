@@ -235,18 +235,18 @@ function TreeNode({ node, onPick, filter }) {
   const expanded = open || !!filterLower
 
   return (
-    <div className="border-b border-border/50 last:border-0">
+    <div className="border-b border-border last:border-0">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-1 px-2 py-1.5 text-left text-[11px] font-semibold text-foreground/90 hover:bg-accent"
+        className="flex w-full items-center gap-1 px-2 py-1.5 text-left text-[11px] font-semibold text-foreground hover:bg-accent"
       >
         <ChevronRight
           className={`h-3 w-3 shrink-0 text-muted-foreground transition-transform ${expanded ? 'rotate-90' : ''}`}
         />
         <VariableIcon className="h-3 w-3 shrink-0 text-primary" />
         <span className="truncate">{node.label}</span>
-        <span className="ml-auto text-[10px] text-muted-foreground/60">
+        <span className="ml-auto text-[10px] text-muted-foreground">
           {visibleChildren.length}
         </span>
       </button>
@@ -321,7 +321,7 @@ export function VariablePicker({ currentNodeId, onPick, align = 'right' }) {
           {/* 搜索框 */}
           <div className="border-b border-border p-2">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" />
+              <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <input
                 autoFocus
                 value={filter}
@@ -334,7 +334,7 @@ export function VariablePicker({ currentNodeId, onPick, align = 'right' }) {
           {/* 树形列表 */}
           <div className="max-h-[280px] overflow-y-auto">
             {tree.length === 0 ? (
-              <div className="px-3 py-4 text-center text-[11px] text-muted-foreground/70">
+              <div className="px-3 py-4 text-center text-[11px] text-muted-foreground">
                 暂无可用变量
               </div>
             ) : (
@@ -419,7 +419,7 @@ export function VariableField({
           <VariablePicker currentNodeId={currentNodeId} onPick={insertVariable} />
         </div>
       </div>
-      {hint && <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground/70">{hint}</p>}
+      {hint && <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{hint}</p>}
     </div>
   )
 }

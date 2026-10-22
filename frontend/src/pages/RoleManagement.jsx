@@ -7,9 +7,10 @@ import {
 } from 'lucide-react'
 import { rolesApi } from '../api/roles'
 import { usersApi } from '../api/users'
-import { hasPermission } from '../utils/permissions'
+import { hasPermission, guardNavPermission } from '../utils/permissions'
 import { Drawer, Modal } from '../components/Dialog'
 import { Section, TextInput } from '../components/property/FormControls'
+import { Badge, StatusBadge, CompactSelect } from '../components/ui'
 import { toast } from '../store/toastStore'
 import { confirm } from '../components/ConfirmDialog'
 import { useUnsavedChanges } from '../hooks/useUnsavedChanges'
@@ -320,7 +321,7 @@ function PermissionMatrixTable({ form, moduleDef, onToggle, onSetModuleAll, onSe
   return (
     <div className="space-y-4">
       {/* 顶部全选操作 */}
-      <div className="flex items-center gap-2 rounded-md border border-border bg-secondary/50 p-2">
+      <div className="flex items-center gap-2 rounded-md border border-border bg-secondary p-2">
         <button
           type="button"
           onClick={() => onSetAll(!isAllChecked)}
@@ -332,7 +333,7 @@ function PermissionMatrixTable({ form, moduleDef, onToggle, onSetModuleAll, onSe
         >
           {isAllChecked ? '✓ 全部权限已开启' : '一键开启全部权限'}
         </button>
-        <span className="text-[11px] text-muted-foreground/70">|</span>
+        <span className="text-[11px] text-muted-foreground">|</span>
         <button
           type="button"
           onClick={() => toggleActionAll('view')}
@@ -350,7 +351,7 @@ function PermissionMatrixTable({ form, moduleDef, onToggle, onSetModuleAll, onSe
         return (
           <div key={group.key} className="overflow-hidden rounded-md border border-border">
             {/* 分组标题（可折叠） */}
-            <div className="flex items-center justify-between bg-secondary/60 px-3 py-2">
+            <div className="flex items-center justify-between bg-secondary px-3 py-2">
               <button
                 type="button"
                 onClick={() => toggleGroup(group.key)}
@@ -362,7 +363,7 @@ function PermissionMatrixTable({ form, moduleDef, onToggle, onSetModuleAll, onSe
                   <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
                 )}
                 {group.label}
-                <span className="text-[10px] font-normal text-muted-foreground/70">
+                <span className="text-[10px] font-normal text-muted-foreground">
                   已授权 {authorized}/{total} 项
                 </span>
               </button>
@@ -380,7 +381,7 @@ function PermissionMatrixTable({ form, moduleDef, onToggle, onSetModuleAll, onSe
             {!isCollapsed && (
               <table className="w-full border-collapse">
                 <thead>
-                  <tr className="border-b border-border bg-secondary/30">
+                  <tr className="border-b border-border bg-secondary">
                     <th className="px-3 py-2 text-left text-[11px] font-medium text-muted-foreground">模块</th>
                     {actionsInUse.map((action) => (
                       <th key={action} className="px-2 py-2 text-center text-[11px] font-medium text-muted-foreground">
@@ -402,10 +403,10 @@ function PermissionMatrixTable({ form, moduleDef, onToggle, onSetModuleAll, onSe
                     if (!actions) return null
                     const userActions = form.permissions[modName] || []
                     return (
-                      <tr key={modName} className="border-b border-border/50 last:border-0 hover:bg-secondary/20">
+                      <tr key={modName} className="border-b border-border last:border-0 hover:bg-secondary">
                         <td className="px-3 py-3 text-xs text-foreground">
                           <div className="font-medium">{moduleLabels[modName] || LOCAL_MODULE_LABELS[modName] || modName}</div>
-                          <div className="text-[10px] text-muted-foreground/60">{modName}</div>
+                          <div className="text-[10px] text-muted-foreground">{modName}</div>
                         </td>
                         {actionsInUse.map((action) => {
                           const supported = actions.includes(action)
@@ -437,7 +438,7 @@ function PermissionMatrixTable({ form, moduleDef, onToggle, onSetModuleAll, onSe
         )
       })}
       {filteredGroups.length === 0 && (
-        <div className="py-8 text-center text-xs text-muted-foreground/70">
+        <div className="py-8 text-center text-xs text-muted-foreground">
           未找到匹配「{search}」的权限模块
         </div>
       )}
@@ -738,10 +739,10 @@ function RoleManagement() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
-      <header className="flex items-center justify-between gap-4 border-b border-border bg-card/60 px-6 py-4">
+      <header className="flex items-center justify-between gap-4 border-b border-border bg-card px-6 py-4">
         <div className="flex min-w-0 items-center gap-3">
-          <h1 className="text-xl font-semibold text-foreground">角色管理</h1>
-          <span className="text-xs text-muted-foreground/70">共 {rows.length} 个角色</span>
+          <h1 className="text-[22px] font-bold tracking-tight text-foreground">角色管理</h1>
+          <span className="text-xs text-muted-foreground tabular-nums">共 {rows.length} 个角色</span>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button type="button" onClick={load} className="btn-secondary btn-sm">刷新</button>
@@ -759,26 +760,26 @@ function RoleManagement() {
         )}
 
         {/* 搜索筛选 */}
-        <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-border bg-card px-4 py-2.5">
           <div className="relative min-w-[240px] flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/50" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="搜索角色名 / 描述..."
-              className="w-full rounded-md border border-border bg-secondary py-2 pl-9 pr-3 text-sm text-foreground outline-none transition focus:border-primary focus:ring-1 focus:ring-primary"
+              className="input-base h-9 pl-9 pr-3"
             />
           </div>
-          <select
+          <CompactSelect
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
-            className="rounded-md border border-border bg-secondary px-3 py-2 text-sm text-foreground outline-none transition focus:border-primary"
+            size="lg"
           >
             <option value="">全部类型</option>
             <option value="system">系统内置</option>
             <option value="custom">自定义</option>
-          </select>
+          </CompactSelect>
           {(search || typeFilter) && (
             <button
               type="button"
@@ -792,11 +793,11 @@ function RoleManagement() {
 
         {/* 角色列表 */}
         {loading ? (
-          <div className="flex h-40 items-center justify-center text-sm text-muted-foreground/70">
+          <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
             加载中...
           </div>
         ) : filteredRows.length === 0 ? (
-          <div className="flex h-40 flex-col items-center justify-center gap-2 text-muted-foreground/70">
+          <div className="flex h-40 flex-col items-center justify-center gap-2 text-muted-foreground">
             <ShieldCheck className="h-10 w-10" />
             <div className="text-sm">
               {search || typeFilter ? '未匹配到符合条件的角色' : '暂无自定义角色'}
@@ -820,7 +821,7 @@ function RoleManagement() {
               return (
                 <div
                   key={r.id}
-                  className={`rounded-lg border bg-card/40 p-4 transition hover:border-primary/40 ${
+                  className={`rounded-lg border bg-card p-5 transition hover:border-primary/40 ${
                     r.is_system ? 'border-warning/30' : 'border-border'
                   }`}
                 >
@@ -840,9 +841,7 @@ function RoleManagement() {
                           {r.name}
                         </button>
                         {r.is_system && (
-                          <span className="rounded bg-warning/20 px-2 py-0.5 text-[10px] font-medium text-warning">
-                            系统内置
-                          </span>
+                          <Badge variant="warning" className="px-2 py-0.5 text-[10px]">系统内置</Badge>
                         )}
                       </div>
 
@@ -856,18 +855,18 @@ function RoleManagement() {
                       {/* 权限总览 */}
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         {isFull ? (
-                          <span className="rounded bg-primary/15 px-2 py-0.5 text-[11px] font-medium text-primary">
+                          <Badge variant="primary" className="text-[11px]">
                             全部权限 · {permCount} 项 / {totalModules} 模块
-                          </span>
+                          </Badge>
                         ) : (
-                          <span className="rounded bg-secondary px-2 py-0.5 text-[11px] text-muted-foreground">
+                          <Badge variant="neutral" className="text-[11px]">
                             {permCount} 项权限 · {moduleCount} 个模块
-                          </span>
+                          </Badge>
                         )}
-                        <span className="flex items-center gap-1 rounded bg-secondary px-2 py-0.5 text-[11px] text-muted-foreground">
+                        <Badge variant="neutral" className="text-[11px]">
                           <Users className="h-3 w-3" />
                           已分配 {r.user_count || 0} 人
-                        </span>
+                        </Badge>
                       </div>
 
                       {/* 权限模块标签（按模块聚合） */}
@@ -879,11 +878,11 @@ function RoleManagement() {
                             return (
                               <span
                                 key={modName}
-                                className="rounded border border-border bg-secondary/60 px-2 py-0.5 text-[11px] text-muted-foreground"
+                                className="rounded border border-border bg-secondary px-2 py-0.5 text-[11px] text-muted-foreground"
                                 title={`${moduleLabels[modName] || modName}：${userActions.map((a) => actionLabels[a] || a).join(' / ')}`}
                               >
-                                <span className="text-foreground/80">{moduleLabels[modName] || modName}</span>
-                                <span className="mx-1 text-muted-foreground/40">·</span>
+                                <span className="text-foreground">{moduleLabels[modName] || modName}</span>
+                                <span className="mx-1 text-muted-foreground">·</span>
                                 <span className="text-primary">{userActions.length}/{actions.length}</span>
                               </span>
                             )
@@ -971,13 +970,13 @@ function RoleManagement() {
           {/* 权限搜索 */}
           <div className="mb-3">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/50" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 type="text"
                 value={permSearch}
                 onChange={(e) => setPermSearch(e.target.value)}
                 placeholder="搜索权限模块..."
-                className="w-full rounded-md border border-border bg-secondary py-2 pl-9 pr-3 text-sm text-foreground outline-none transition focus:border-primary focus:ring-1 focus:ring-primary"
+                className="input-base h-9 pl-9 pr-3"
               />
             </div>
           </div>
@@ -1005,6 +1004,7 @@ function RoleManagement() {
             <button
               type="button"
               onClick={() => {
+                if (!guardNavPermission('user', 'view', '用户管理')) return
                 setUsersModalOpen(false)
                 navigate(`/users?role=${usersModalRole?.name}`)
               }}
@@ -1023,11 +1023,11 @@ function RoleManagement() {
         }
       >
         {usersLoading ? (
-          <div className="flex h-24 items-center justify-center text-sm text-muted-foreground/70">
+          <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
             加载中...
           </div>
         ) : usersList.length === 0 ? (
-          <div className="flex h-24 flex-col items-center justify-center gap-1 text-muted-foreground/70">
+          <div className="flex h-24 flex-col items-center justify-center gap-1 text-muted-foreground">
             <Users className="h-8 w-8" />
             <div className="text-xs">该角色暂无已分配用户</div>
           </div>
@@ -1036,7 +1036,7 @@ function RoleManagement() {
             <div className="mb-2 text-xs text-muted-foreground">共 {usersList.length} 个用户</div>
             <div className="space-y-2">
               {usersList.map((u) => (
-                <div key={u.id} className="flex items-center gap-3 rounded-md border border-border bg-secondary/40 p-2.5">
+                <div key={u.id} className="flex items-center gap-3 rounded-md border border-border bg-secondary p-2.5">
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/20 text-sm font-bold text-primary">
                     {(u.username || '?')[0].toUpperCase()}
                   </div>
@@ -1046,13 +1046,10 @@ function RoleManagement() {
                     </div>
                     <div className="text-xs text-muted-foreground">@{u.username}</div>
                   </div>
-                  <span className={`rounded px-2 py-0.5 text-[10px] ${
-                    u.is_active
-                      ? 'bg-success/20 text-success'
-                      : 'bg-destructive/20 text-destructive'
-                  }`}>
-                    {u.is_active ? '启用' : '禁用'}
-                  </span>
+                  <StatusBadge
+                    color={u.is_active ? 'success' : 'neutral'}
+                    label={u.is_active ? '启用' : '禁用'}
+                  />
                 </div>
               ))}
             </div>

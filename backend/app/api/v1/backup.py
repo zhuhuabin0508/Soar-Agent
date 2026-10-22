@@ -414,6 +414,7 @@ def list_backups(
     limit: int = Query(50, ge=1, le=2000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
+    _: User = Depends(require_permission("system_config", "view")),
 ) -> BackupListResponse:
     """列出所有备份记录（按 created_at 降序，分页）。"""
     q = db.query(BackupRecord)
@@ -431,7 +432,10 @@ def list_backups(
 
 
 @router.get("/strategy")
-def get_strategy(db: Session = Depends(get_db)) -> dict:
+def get_strategy(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("system_config", "view")),
+) -> dict:
     """获取备份策略配置。"""
     return {"strategy": _get_strategy(db)}
 
@@ -459,7 +463,10 @@ def set_strategy(
 
 
 @router.get("/stats")
-def backup_stats(db: Session = Depends(get_db)) -> dict:
+def backup_stats(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("system_config", "view")),
+) -> dict:
     """备份概览统计：上次备份 / 下次自动备份 / 存储占用 / 健康度。
 
     用于页面顶部 4 个指标卡片。
@@ -544,6 +551,7 @@ def backup_stats(db: Session = Depends(get_db)) -> dict:
 def backup_status(
     backup_id: int,
     db: Session = Depends(get_db),
+    _: User = Depends(require_permission("system_config", "view")),
 ) -> dict:
     """查询备份进度状态（轻量接口，供前端轮询）。
 
@@ -574,6 +582,7 @@ def backup_status(
 def backup_detail(
     backup_id: int,
     db: Session = Depends(get_db),
+    _: User = Depends(require_permission("system_config", "view")),
 ) -> dict:
     """备份详情：基本信息 / 备份范围（含模块表名）/ 文件清单 / 校验信息 / 操作日志。"""
     record = db.query(BackupRecord).filter(BackupRecord.id == backup_id).first()
@@ -621,6 +630,7 @@ def backup_detail(
 def verify_backup(
     backup_id: int,
     db: Session = Depends(get_db),
+    _: User = Depends(require_permission("system_config", "view")),
 ) -> dict:
     """校验备份文件完整性：重新计算 SHA-256 并与记录值对比。
 
@@ -735,8 +745,13 @@ async def upload_backup(
 def download_backup(
     backup_id: int,
     db: Session = Depends(get_db),
+    _: User = Depends(require_permission("system_config", "edit")),
 ) -> FileResponse:
-    """下载指定备份文件。"""
+    """下载指定备份文件。
+
+    鉴权：备份文件为 pg_dump 全库导出（含密码哈希/密钥/明文口令），
+    属最高敏感级别，需 ``system_config:edit``（高于 view）。
+    """
     record = db.query(BackupRecord).filter(BackupRecord.id == backup_id).first()
     if record is None:
         raise HTTPException(status_code=404, detail="备份记录不存在")

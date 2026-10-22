@@ -174,7 +174,7 @@ function WorkflowEditor() {
               className={`flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium transition ${
                 leftTab === 'library'
                   ? 'bg-secondary text-foreground'
-                  : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
+                  : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
               }`}
             >
               <Puzzle className="h-3.5 w-3.5" />
@@ -186,7 +186,7 @@ function WorkflowEditor() {
               className={`flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium transition ${
                 leftTab === 'variables'
                   ? 'bg-secondary text-foreground'
-                  : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
+                  : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
               }`}
             >
               <Braces className="h-3.5 w-3.5" />
@@ -199,7 +199,7 @@ function WorkflowEditor() {
         </aside>
         <main className="relative min-w-0 flex-1 bg-background">
           {loading && (
-            <div className="absolute inset-0 z-dropdown flex items-center justify-center bg-background/70 text-sm text-muted-foreground">
+            <div className="absolute inset-0 z-dropdown flex items-center justify-center bg-background text-sm text-muted-foreground">
               加载工作流中...
             </div>
           )}
@@ -225,7 +225,7 @@ function WorkflowEditor() {
               className={`flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium transition ${
                 rightTab === 'property'
                   ? 'bg-secondary text-foreground'
-                  : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
+                  : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
               }`}
             >
               <Settings className="h-3.5 w-3.5" />
@@ -237,7 +237,7 @@ function WorkflowEditor() {
               className={`flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium transition ${
                 rightTab === 'monitor'
                   ? 'bg-secondary text-foreground'
-                  : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
+                  : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
               }`}
             >
               <TrendingUp className="h-3.5 w-3.5" />
@@ -249,7 +249,7 @@ function WorkflowEditor() {
               className={`flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium transition ${
                 rightTab === 'versions'
                   ? 'bg-secondary text-foreground'
-                  : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
+                  : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
               }`}
             >
               <Package className="h-3.5 w-3.5" />

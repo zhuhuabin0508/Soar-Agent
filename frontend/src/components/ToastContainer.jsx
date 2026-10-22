@@ -64,7 +64,7 @@ function ToastItem({ item }) {
             </div>
           )}
           <div
-            className={`text-sm text-foreground/90 break-words ${
+            className={`text-sm text-foreground break-words ${
               item.title ? 'mt-0.5' : ''
             }`}
           >

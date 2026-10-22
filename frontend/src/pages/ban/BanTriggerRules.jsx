@@ -1,11 +1,11 @@
 // 封禁工作流触发规则配置页：规则列表 + 新建/编辑弹窗（多条件 AND、冷却期、优先级）
 // 规则修改实时生效（worker 每次按需查库匹配）
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
-  Plus, Pencil, Trash2, RotateCw, Inbox, ChevronDown, Check, Filter, Loader2,
+  Plus, Pencil, Trash2, RefreshCw, Inbox, ChevronDown, Check, Filter, Layers,
 } from 'lucide-react'
 import { toast } from '../../store/toastStore'
-import { Button, PageContainer, PageHeader, Card, DataTable, Badge } from '../../components/ui'
+import { Button, PageContainer, Card, DataTable, CompactSelect } from '../../components/ui'
 import { Modal } from '../../components/Dialog'
 import { inputBaseCls } from '../../components/property/FormControls'
 import { hasPermission } from '../../utils/permissions'
@@ -71,7 +71,7 @@ function ConditionSummary({ cond }) {
   if (cond.alert_name_keywords?.length) parts.push(`关键词: ${cond.alert_name_keywords.join('/')}`)
   if (cond.threat_classes?.length) parts.push(`威胁分类: ${cond.threat_classes.join('/')}`)
   if (!parts.length) return <span className="text-muted-foreground">无条件（匹配全部告警）</span>
-  return <span className="text-[13px] text-foreground/90">{parts.join(' 且 ')}</span>
+  return <span className="text-[13px] text-foreground">{parts.join(' 且 ')}</span>
 }
 
 const EMPTY_FORM = {
@@ -90,6 +90,7 @@ export default function BanTriggerRules() {
   const [saving, setSaving] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleting, setDeleting] = useState(false)
+  const [quickFilter, setQuickFilter] = useState('') // '' | 'enabled' | 'disabled'
 
   const load = useCallback(() => {
     setLoading(true)
@@ -100,6 +101,18 @@ export default function BanTriggerRules() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // 指标条统计：从现有规则派生，不发额外请求
+  const stats = useMemo(() => {
+    let enabled = 0
+    rules.forEach((r) => { if (r.status === 'enabled') enabled += 1 })
+    return { enabled, disabled: rules.length - enabled }
+  }, [rules])
+
+  const filtered = useMemo(
+    () => (quickFilter ? rules.filter((r) => r.status === quickFilter) : rules),
+    [rules, quickFilter]
+  )
 
   const openCreate = () => { setForm(EMPTY_FORM); setEditor({}) }
   const openEdit = (r) => {
@@ -191,25 +204,51 @@ export default function BanTriggerRules() {
           disabled={!canEdit}
           className={`inline-flex h-6 w-11 items-center rounded-full px-0.5 transition ${r.status === 'enabled' ? 'bg-success/80' : 'bg-muted'} ${canEdit ? 'cursor-pointer' : 'cursor-default opacity-80'}`}
           title={canEdit ? (r.status === 'enabled' ? '点击停用' : '点击启用') : ''}
-          onClick={() => canEdit && toggleStatus(r)}
+          onClick={(e) => { e.stopPropagation(); if (canEdit) toggleStatus(r) }}
         >
           <span className={`h-5 w-5 rounded-full bg-white shadow transition ${r.status === 'enabled' ? 'translate-x-5' : ''}`} />
         </button>
       ),
     },
     { key: 'conditions', header: '触发条件（AND）', width: '420px', render: (r) => <ConditionSummary cond={r.conditions || {}} /> },
-    { key: 'cooldown', header: '冷却期', width: '90px', render: (r) => <span className="font-mono text-[13px]">{r.cooldown_minutes} 分钟</span> },
-    { key: 'priority', header: '优先级', width: '75px', render: (r) => <span className="tabular-nums">{r.priority}</span> },
+    {
+      key: 'cooldown', header: '冷却期', width: '90px', numeric: true,
+      render: (r) => {
+        const v = r.cooldown_minutes
+        return (
+          <span
+            className={`whitespace-nowrap font-mono text-[13px] tabular-nums ${v ? 'text-foreground' : 'text-muted-foreground'}`}
+            title={v == null ? '未统计' : undefined}
+          >
+            {v == null ? '--' : `${Number(v).toLocaleString()} 分钟`}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'priority', header: '优先级', width: '75px', numeric: true,
+      render: (r) => {
+        const v = r.priority
+        return (
+          <span
+            className={`tabular-nums ${v ? 'text-foreground' : 'text-muted-foreground'}`}
+            title={v == null ? '未统计' : undefined}
+          >
+            {v == null ? '--' : Number(v).toLocaleString()}
+          </span>
+        )
+      },
+    },
     { key: 'updated_at', header: '更新时间', width: '150px', render: (r) => <span className="font-mono text-[13px] text-muted-foreground">{fmtTime(r.updated_at)}</span> },
     ...(canEdit ? [{
-      key: 'actions', header: '操作', width: '100px',
+      key: 'actions', header: '操作', width: '125px',
       render: (r) => (
         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-          <button className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-primary" title="编辑" onClick={() => openEdit(r)}>
-            <Pencil className="h-4 w-4" />
+          <button className="btn-secondary btn-sm" title="编辑" onClick={() => openEdit(r)}>
+            <Pencil className="h-3.5 w-3.5" />
           </button>
-          <button className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-destructive" title="删除" onClick={() => setDeleteTarget(r)}>
-            <Trash2 className="h-4 w-4" />
+          <button className="btn-danger btn-sm" title="删除" onClick={() => setDeleteTarget(r)}>
+            <Trash2 className="h-3.5 w-3.5" />
           </button>
         </div>
       ),
@@ -218,26 +257,105 @@ export default function BanTriggerRules() {
 
   return (
     <PageContainer>
-      <PageHeader
-        title="触发规则配置"
-        description="告警入库后按规则条件（全部 AND）匹配触发封禁工作流；多条命中取优先级最高，修改实时生效"
-        actions={canEdit && (
-          <Button variant="primary" size="sm" onClick={openCreate}>
-            <Plus className="h-4 w-4" /> 新建规则
-          </Button>
-        )}
-      />
+      <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">触发规则配置</h1>
+          {!loading && (
+            <span className="text-xs text-muted-foreground">
+              共 <span className="font-medium tabular-nums text-foreground">{rules.length}</span> 条规则
+            </span>
+          )}
+          <span className="hidden text-xs text-muted-foreground xl:inline">告警入库后按条件（全部 AND）匹配触发；多条命中取优先级最高，修改实时生效</span>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <button type="button" onClick={load} className="btn-secondary btn-sm" title="刷新规则列表">
+            <RefreshCw className={`mr-1 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> 刷新
+          </button>
+          {canEdit && (
+            <button type="button" onClick={openCreate} className="btn-primary btn-sm">
+              <Plus className="mr-1 h-3.5 w-3.5" /> 新建规则
+            </button>
+          )}
+        </div>
+      </header>
+
+      {/* 状态指标条：启用/停用分布（点击筛选）+ 右侧汇总，从现有规则派生 */}
+      {!loading && rules.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+          {[
+            { key: 'enabled', label: '启用中', dot: 'bg-success', active: 'bg-success/15 text-success ring-success/40' },
+            { key: 'disabled', label: '已停用', dot: 'bg-zinc-500', active: 'bg-zinc-500/15 text-zinc-400 ring-zinc-500/40' },
+          ].map((chip) => {
+            const active = quickFilter === chip.key
+            const count = chip.key === 'enabled' ? stats.enabled : stats.disabled
+            return (
+              <button
+                key={chip.key}
+                type="button"
+                onClick={() => setQuickFilter(active ? '' : chip.key)}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-medium transition-all duration-200 ${
+                  active
+                    ? `border-transparent ring-1 ${chip.active}`
+                    : 'border-border bg-secondary text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                }`}
+                title={active ? '点击取消该筛选' : `点击筛选「${chip.label}」的规则`}
+              >
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${chip.dot} ${
+                    chip.key === 'enabled' && count > 0 ? 'animate-pulse' : ''
+                  }`}
+                />
+                {chip.label}
+                <span className={`tabular-nums ${count > 0 ? '' : 'text-muted-foreground'}`}>{count}</span>
+              </button>
+            )
+          })}
+          <div className="ml-auto flex items-center gap-4 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5" title="启用规则占全部规则的比例">
+              <Layers className="h-3.5 w-3.5 text-primary/80" />
+              启用率
+              <span
+                className={`font-semibold tabular-nums ${
+                  stats.enabled > 0 ? 'text-foreground' : 'text-muted-foreground'
+                }`}
+              >
+                {`${Math.round((stats.enabled / rules.length) * 100)}%`}
+              </span>
+            </span>
+          </div>
+        </div>
+      )}
 
       <Card className="p-0" bodyClassName="p-0">
         <DataTable
+          className="table-stagger"
           columns={columns}
-          data={rules}
+          data={filtered}
           loading={loading}
           rowKey="id"
           selectable={false}
-          emptyText="暂无触发规则"
-          emptyDescription="创建规则后，入库告警命中条件将自动触发 IP 风险研判与封禁工作流"
+          onRowClick={canEdit ? (r) => openEdit(r) : undefined}
+          rowClickHint="点击编辑"
           emptyIcon={Inbox}
+          emptyText={rules.length === 0 ? '暂无触发规则' : '未找到匹配的规则'}
+          emptyDescription={
+            rules.length === 0
+              ? '创建规则后，入库告警命中条件将自动触发 IP 风险研判与封禁工作流'
+              : '当前筛选下没有规则，点击上方状态标签可查看全部'
+          }
+          emptyAction={
+            rules.length === 0
+              ? canEdit && (
+                <button type="button" onClick={openCreate} className="btn-primary btn-sm">
+                  <Plus className="mr-1 h-3.5 w-3.5" /> 新建规则
+                </button>
+              )
+              : (
+                <button type="button" onClick={() => setQuickFilter('')} className="btn-secondary btn-sm">
+                  清除筛选
+                </button>
+              )
+          }
         />
       </Card>
 
@@ -264,10 +382,10 @@ export default function BanTriggerRules() {
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">状态</label>
-                <select className={`${inputBaseCls} h-[34px] w-full`} value={form.status} onChange={(e) => setF({ status: e.target.value })}>
+                <CompactSelect block size="lg" value={form.status} onChange={(e) => setF({ status: e.target.value })}>
                   <option value="enabled">启用</option>
                   <option value="disabled">停用</option>
-                </select>
+                </CompactSelect>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">冷却期(分)</label>
@@ -281,7 +399,7 @@ export default function BanTriggerRules() {
           </div>
 
           {/* 触发条件 */}
-          <div className="rounded-lg border border-border bg-muted/20 p-3">
+          <div className="rounded-lg border border-border bg-muted p-3">
             <div className="mb-2.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
               <Filter className="h-3.5 w-3.5" /> 触发条件（全部为 AND 关系，未配置的条件视为通过）
             </div>

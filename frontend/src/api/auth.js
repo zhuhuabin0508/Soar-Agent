@@ -6,6 +6,14 @@ export const authApi = {
   getCaptcha: () =>
     request('/auth/captcha'),
 
+  // 滑块位置预校验（不消费验证码）：返回 { passed, expired }
+  // passed=位置在容差内；expired=验证码已失效（多次未对准/过期），前端应换图
+  checkCaptcha: (captchaId, x) =>
+    request('/auth/captcha/check', {
+      method: 'POST',
+      body: { captcha_id: captchaId, x },
+    }),
+
   // 获取密码复杂度策略（无需认证）：返回 { min_length, require_uppercase, ... }
   getPasswordPolicy: () =>
     request('/auth/password-policy'),

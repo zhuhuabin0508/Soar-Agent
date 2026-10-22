@@ -32,15 +32,15 @@ export default function About() {
   return (
     <div className="flex h-full w-full flex-col overflow-y-auto bg-background p-8 text-foreground">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-        {/* 头部 */}
-        <div className="flex items-center justify-between">
+        {/* 头部：科技网格装饰卡片 */}
+        <div className="flex items-center justify-between rounded-lg border border-border bg-card bg-tech-grid p-5">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/70 text-lg font-bold text-primary-foreground">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/70 text-lg font-bold text-primary-foreground shadow-md shadow-primary/20">
               S
             </div>
             <div>
-              <h1 className="text-2xl font-semibold">{platformName}</h1>
-              <p className="text-sm text-muted-foreground">安全编排自动化与响应平台</p>
+              <h1 className="text-[22px] font-bold tracking-tight">{platformName}</h1>
+              <p className="mt-1.5 text-sm text-muted-foreground">安全编排自动化与响应平台</p>
             </div>
           </div>
           <button type="button" onClick={load} className="btn-secondary btn-sm" title="刷新">
@@ -48,28 +48,29 @@ export default function About() {
           </button>
         </div>
 
-        {/* 版本信息卡片 */}
-        <div className="rounded-lg border border-border bg-card p-6">
+        {/* 版本信息卡片：顶缘主色线 + 版本号辉光大字号 */}
+        <div className="card-accent-top rounded-lg border border-border bg-card p-6">
           <div className="mb-4 flex items-center gap-2">
             <Info className="h-4 w-4 text-primary" />
             <span className="text-sm font-semibold">版本信息</span>
           </div>
-          <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="flex items-center justify-between rounded-md border border-border bg-secondary/40 px-4 py-3">
-              <dt className="text-xs text-muted-foreground">当前版本</dt>
-              <dd className="font-mono text-sm font-medium text-primary">
-                v{version || (loading ? '...' : '-')}
-              </dd>
-            </div>
-            <div className="flex items-center justify-between rounded-md border border-border bg-secondary/40 px-4 py-3">
+          {/* 版本号主展示：大字号 + 主色辉光 */}
+          <div className="mb-3 flex items-center justify-between rounded-md border border-border bg-secondary px-5 py-4">
+            <span className="text-xs text-muted-foreground">当前版本</span>
+            <span className="text-glow font-mono text-3xl font-bold tabular-nums text-primary">
+              v{version || (loading ? '...' : '-')}
+            </span>
+          </div>
+          <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="flex items-center justify-between rounded-md border border-border bg-secondary px-4 py-3">
               <dt className="text-xs text-muted-foreground">版本标识</dt>
               <dd className="text-sm font-medium">安全增强版</dd>
             </div>
-            <div className="flex items-center justify-between rounded-md border border-border bg-secondary/40 px-4 py-3">
+            <div className="flex items-center justify-between rounded-md border border-border bg-secondary px-4 py-3">
               <dt className="text-xs text-muted-foreground">平台名称</dt>
               <dd className="text-sm font-medium">{platformName}</dd>
             </div>
-            <div className="flex items-center justify-between rounded-md border border-border bg-secondary/40 px-4 py-3">
+            <div className="flex items-center justify-between rounded-md border border-border bg-secondary px-4 py-3">
               <dt className="text-xs text-muted-foreground">运行环境</dt>
               <dd className="text-sm font-medium">Docker 容器化部署</dd>
             </div>
@@ -105,19 +106,19 @@ export default function About() {
             <span className="text-sm font-semibold">技术栈</span>
           </div>
           <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
-            <div className="rounded-md border border-border bg-secondary/40 px-3 py-2">
+            <div className="rounded-md border border-border bg-secondary px-3 py-2">
               <span className="text-muted-foreground">前端：</span>
               <span className="font-medium text-foreground">React + Vite + TailwindCSS</span>
             </div>
-            <div className="rounded-md border border-border bg-secondary/40 px-3 py-2">
+            <div className="rounded-md border border-border bg-secondary px-3 py-2">
               <span className="text-muted-foreground">后端：</span>
               <span className="font-medium text-foreground">FastAPI + SQLAlchemy + PostgreSQL</span>
             </div>
-            <div className="rounded-md border border-border bg-secondary/40 px-3 py-2">
+            <div className="rounded-md border border-border bg-secondary px-3 py-2">
               <span className="text-muted-foreground">AI 框架：</span>
               <span className="font-medium text-foreground">LangChain + 自研 Hermes 引擎</span>
             </div>
-            <div className="rounded-md border border-border bg-secondary/40 px-3 py-2">
+            <div className="rounded-md border border-border bg-secondary px-3 py-2">
               <span className="text-muted-foreground">引擎：</span>
               <span className="font-medium text-foreground">Hermes ReAct 引擎</span>
             </div>
@@ -125,7 +126,7 @@ export default function About() {
         </div>
 
         {/* 底部 */}
-        <div className="flex items-center justify-center gap-2 pb-4 text-[11px] text-muted-foreground/60">
+        <div className="flex items-center justify-center gap-2 pb-4 text-[11px] text-muted-foreground">
           <Code className="h-3 w-3" />
           <span>SOAR Platform · 安全编排自动化与响应</span>
         </div>

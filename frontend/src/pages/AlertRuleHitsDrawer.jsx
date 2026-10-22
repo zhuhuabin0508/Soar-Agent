@@ -63,14 +63,14 @@ export default function AlertRuleHitsDrawer({ open, filter, onClose }) {
         <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
           <Inbox className="h-10 w-10 opacity-40" />
           <div className="text-[13px]">近 7 天无命中记录</div>
-          <div className="text-[11.5px] text-muted-foreground/70">
+          <div className="text-[11.5px] text-muted-foreground">
             命中记录保留最近 7 天；确认规则已启用且条件与到达的日志匹配
           </div>
         </div>
       ) : (
         <div className="space-y-2">
           {items.map((r) => (
-            <div key={r.id} className="rounded-lg border border-border/60 bg-muted/10 px-4 py-3">
+            <div key={r.id} className="rounded-lg border border-border bg-muted px-4 py-3">
               <div className="flex items-center justify-between gap-3">
                 <span className="truncate text-[13px] font-medium" title={r.alert_name || ''}>
                   {r.alert_name || '（未命名）'}

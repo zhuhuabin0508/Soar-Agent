@@ -39,6 +39,7 @@ PERMISSION_MODULES: dict[str, list[str]] = {
     "device": ["view", "edit"],
     "strategy": ["view", "edit", "delete"],
     "alert": ["view", "export", "handle"],
+    "alert_rule": ["view", "edit"],
     "monitor": ["view", "edit"],
     # 运行监控
     "execution": ["view", "export"],
@@ -90,6 +91,7 @@ MODULE_LABELS: dict[str, str] = {
     "device": "设备对接",
     "strategy": "解析策略",
     "alert": "告警列表",
+    "alert_rule": "告警规则",
     "monitor": "入库监控",
     # 运行监控
     "execution": "日志中心",
@@ -236,6 +238,7 @@ DEFAULT_ROLES: list[dict[str, Any]] = [
             "execution": ["view", "export"],
             "notification": ["view"],
             "alert": ["view", "handle"],
+            "alert_rule": ["view", "edit"],
             "monitor": ["view"],
             "feedback": ["view"],
             "system_monitor": ["view"],
@@ -276,6 +279,7 @@ DEFAULT_ROLES: list[dict[str, Any]] = [
             "execution": ["view"],
             "notification": ["view"],
             "alert": ["view"],
+            "alert_rule": ["view"],
             "monitor": ["view"],
             "feedback": ["view"],
             "system_monitor": ["view"],

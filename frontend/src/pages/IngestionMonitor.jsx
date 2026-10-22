@@ -7,14 +7,15 @@ import ReactECharts from 'echarts-for-react'
 import {
   Activity, CheckCircle2, XCircle, AlertTriangle, Gauge, Timer, Inbox,
   RotateCw, Trash2, FileJson, RefreshCw, Database, ServerCog, ListFilter, Play,
+  Zap, ShieldBan, Clock4,
 } from 'lucide-react'
 import { toast } from '../store/toastStore'
 import { confirm } from '../components/ConfirmDialog'
 import { Modal } from '../components/Dialog'
-import { Button, PageContainer, PageHeader, Card, DataTable, Badge, Pagination, EmptyState } from '../components/ui'
+import { Button, Card, DataTable, Badge, Pagination, EmptyState, CompactSelect } from '../components/ui'
 import { inputBaseCls } from '../components/property/FormControls'
 import { getChartTheme } from '../utils/chartTheme'
-import { hasPermission } from '../utils/permissions'
+import { hasPermission, guardNavPermission } from '../utils/permissions'
 import { monitorApi } from '../api/monitor'
 import banWorkflowApi from '../api/banWorkflow'
 import { useAutoRefresh } from '../hooks/useAutoRefresh'
@@ -22,13 +23,21 @@ import { useAutoRefresh } from '../hooks/useAutoRefresh'
 const fmtTime = (t) => (t ? String(t).replace('T', ' ').slice(0, 19) : '--')
 const fmtNum = (n) => (n == null ? '--' : Number(n).toLocaleString('zh-CN'))
 
+// 模板行状态派生（纯函数）：失败 > 部分解析 > 正常（有流量）> 无流量
+const strategyRowStatus = (r) => {
+  if ((r.fail ?? 0) > 0) return 'fail'
+  if ((r.partial ?? 0) > 0) return 'partial'
+  if ((r.today_total ?? 0) > 0) return 'ok'
+  return 'idle'
+}
+
 // 概览卡片配置（含昨日对比 + 近24小时迷你趋势线）
 function OverviewCard({ icon: Icon, label, value, suffix, delta, trend, tone }) {
   const points = (trend || []).map((p) => p.total)
   const max = Math.max(...points, 1)
   // 迷你趋势线（纯 CSS 柱形，无 ECharts 开销）
   return (
-    <div className="card px-5 py-4">
+    <div className="card card-hover px-5 py-4 transition-colors hover:border-primary/40">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Icon className={`h-4 w-4 ${tone || 'text-primary'}`} /> {label}
@@ -80,13 +89,13 @@ function VolumeChart({ data, window: win, strategies, strategyId, onStrategyChan
       description="按解析结果堆叠：成功 / 部分解析 / 失败"
       actions={(
         <div className="flex items-center gap-2">
-          <select className={`${inputBaseCls} h-8 w-[170px] text-xs`} value={strategyId} onChange={(e) => onStrategyChange(Number(e.target.value))}>
+          <CompactSelect value={strategyId} onChange={(e) => onStrategyChange(Number(e.target.value))} size="lg" className="w-[170px]">
             <option value={0}>全部模板</option>
             {strategies.filter((s) => s.strategy_id != null).map((s) => (
               <option key={s.strategy_id} value={s.strategy_id}>{s.strategy_name}</option>
             ))}
-          </select>
-          <div className="flex items-center gap-1 rounded-lg border border-border bg-muted/40 p-0.5">
+          </CompactSelect>
+          <div className="flex items-center gap-1 rounded-lg border border-border bg-muted p-0.5">
             {[['24h', '24小时'], ['7d', '7天']].map(([k, l]) => (
               <button key={k} className={`rounded-md px-2 py-1 text-xs transition ${win === k ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground'}`} onClick={() => onWindowChange(k)}>{l}</button>
             ))}
@@ -275,25 +284,25 @@ function ErrorQueueTab() {
     {
       key: 'retry_count', header: '重试次数', width: '110px', numeric: true,
       render: (r) => r.retry_count >= 3
-        ? <span className="font-medium text-destructive" title="重试超过 3 次，需人工处理">{r.retry_count} 次 · 需人工处理</span>
-        : <span className="tabular-nums text-muted-foreground">{r.retry_count} 次</span>,
+        ? <span className="font-medium tabular-nums text-destructive" title="重试超过 3 次，需人工处理">{r.retry_count.toLocaleString()} 次 · 需人工处理</span>
+        : <span className="tabular-nums text-muted-foreground">{(r.retry_count ?? 0).toLocaleString()} 次</span>,
     },
     { key: 'raw_summary', header: '原始数据摘要', render: (r) => <span className="block max-w-[220px] truncate font-mono text-xs text-muted-foreground" title={r.raw_summary}>{r.raw_summary || '--'}</span> },
     {
-      key: 'actions', header: '操作', width: '130px',
+      key: 'actions', header: '操作', width: '165px',
       render: (r) => (
         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
           {canEdit && (
-            <button className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-primary" title="重新解析" disabled={retrying === r.id} onClick={() => handleRetry(r)}>
-              <RotateCw className={`h-4 w-4 ${retrying === r.id ? 'animate-spin' : ''}`} />
+            <button className="btn-secondary btn-sm" title="重新解析" disabled={retrying === r.id} onClick={() => handleRetry(r)}>
+              <RotateCw className={`h-3 w-3 ${retrying === r.id ? 'animate-spin' : ''}`} />
             </button>
           )}
-          <button className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-primary" title="查看 JSON" onClick={() => viewRaw(r)}>
-            <FileJson className="h-4 w-4" />
+          <button className="btn-secondary btn-sm" title="查看 JSON" onClick={() => viewRaw(r)}>
+            <FileJson className="h-3 w-3" />
           </button>
           {canEdit && (
-            <button className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-destructive" title="删除" onClick={() => handleDelete(r)}>
-              <Trash2 className="h-4 w-4" />
+            <button className="btn-danger btn-sm" title="删除" onClick={() => handleDelete(r)}>
+              <Trash2 className="h-3 w-3" />
             </button>
           )}
         </div>
@@ -305,21 +314,23 @@ function ErrorQueueTab() {
     <div className="space-y-4">
       <Card className="p-4">
         <div className="flex flex-wrap items-center gap-2.5">
-          <select className={`${inputBaseCls} h-[34px] w-[170px]`} value={errorType} onChange={(e) => { setErrorType(e.target.value); setPage(1) }}>
+          <CompactSelect value={errorType} onChange={(e) => { setErrorType(e.target.value); setPage(1) }} size="lg" className="w-[170px]">
             <option value="">全部错误类型</option>
             <option value="json_parse_failed">JSON解析失败</option>
             <option value="no_strategy_matched">无匹配模板</option>
             <option value="unknown_log_type">未知日志类型</option>
             <option value="field_validation_failed">字段校验失败</option>
             <option value="db_write_failed">数据库写入失败</option>
-          </select>
+          </CompactSelect>
           <input
             className={`${inputBaseCls} h-[34px] w-[220px]`}
             placeholder="失败原因 / UUID 关键词"
             value={keyword}
             onChange={(e) => { setKeyword(e.target.value); setPage(1) }}
           />
-          <Button size="sm" variant="ghost" onClick={load}><RefreshCw className="h-3.5 w-3.5" /> 刷新</Button>
+          <Button size="sm" variant="secondary" onClick={load}>
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> 刷新
+          </Button>
           {canEdit && selected.length > 0 && (
             <Button size="sm" variant="primary" loading={retrying === -1} onClick={handleBatchRetry}>
               <Play className="h-3.5 w-3.5" /> 批量重试（{selected.length}）
@@ -330,6 +341,7 @@ function ErrorQueueTab() {
 
       <Card className="p-0" bodyClassName="p-0">
         <DataTable
+          className="table-stagger"
           columns={columns}
           data={list.items}
           loading={loading}
@@ -337,6 +349,8 @@ function ErrorQueueTab() {
           selectable={canEdit}
           selectedKeys={selected}
           onSelectChange={setSelected}
+          onRowClick={(r) => viewRaw(r)}
+          rowClickHint="点击查看原文"
           emptyText="错误队列为空"
           emptyDescription="没有待处理的解析失败记录"
           emptyIcon={Inbox}
@@ -352,7 +366,7 @@ function ErrorQueueTab() {
         {rawLoading ? (
           <div className="py-10 text-center text-sm text-muted-foreground">加载中…</div>
         ) : (
-          <pre className="max-h-[60vh] overflow-auto rounded-lg border border-border bg-muted/40 p-4 font-mono text-xs leading-relaxed text-foreground">
+          <pre className="max-h-[60vh] overflow-auto rounded-lg border border-border bg-muted p-4 font-mono text-xs leading-relaxed text-foreground">
             {formatRaw(rawView?.raw_data)}
           </pre>
         )}
@@ -397,20 +411,20 @@ function LogsTab() {
     <div className="space-y-4">
       <Card className="p-4">
         <div className="flex flex-wrap items-center gap-2.5">
-          <select className={`${inputBaseCls} h-[34px] w-[130px]`} value={level} onChange={(e) => setLevel(e.target.value)}>
+          <CompactSelect value={level} onChange={(e) => setLevel(e.target.value)} size="lg" className="w-[130px]">
             <option value="">全部级别</option>
             <option value="ERROR">ERROR</option>
             <option value="WARNING">WARNING</option>
             <option value="INFO">INFO</option>
             <option value="DEBUG">DEBUG</option>
-          </select>
+          </CompactSelect>
           <input
             className={`${inputBaseCls} h-[34px] w-[220px]`}
             placeholder="日志内容关键词"
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
           />
-          <Button size="sm" variant="ghost" onClick={() => fetchLogs(true)}>
+          <Button size="sm" variant="secondary" onClick={() => fetchLogs(true)}>
             <RefreshCw className="h-3.5 w-3.5" /> 刷新
           </Button>
           <button
@@ -419,10 +433,12 @@ function LogsTab() {
             }`}
             onClick={toggle}
           >
-            <span className={`h-1.5 w-1.5 rounded-full ${auto ? 'animate-pulse bg-primary' : 'bg-muted-foreground/40'}`} />
+            <span className={`h-1.5 w-1.5 rounded-full ${auto ? 'animate-pulse bg-primary' : 'bg-muted-foreground'}`} />
             自动刷新 {auto ? '开' : '关'}
           </button>
-          <span className="text-xs text-muted-foreground">每 5 秒增量拉取 · 共 {items.length} 条</span>
+          <span className="text-xs text-muted-foreground">
+            每 5 秒增量拉取 · 共 <span className="font-medium tabular-nums text-foreground">{items.length.toLocaleString()}</span> 条
+          </span>
         </div>
       </Card>
 
@@ -432,7 +448,7 @@ function LogsTab() {
         ) : (
           <div className="max-h-[560px] overflow-y-auto">
             {items.map((it) => (
-              <div key={it.id} className="flex items-start gap-3 border-b border-border/50 px-4 py-2 hover:bg-accent/30">
+              <div key={it.id} className="flex items-start gap-3 border-b border-border px-4 py-2 hover:bg-accent">
                 <span className="w-[140px] shrink-0 font-mono text-xs text-muted-foreground">{it.ts}</span>
                 <span className={`w-[64px] shrink-0 text-xs ${levelColor(it.level)}`}>{it.level}</span>
                 <span className="w-[150px] shrink-0 truncate font-mono text-xs text-muted-foreground" title={it.module}>{it.module}</span>
@@ -482,15 +498,15 @@ function HealthTab() {
       ok: health?.database?.status === 'connected',
       rows: [
         ['状态', health?.database?.status === 'connected' ? '连接正常' : `异常：${health?.database?.error || '未知错误'}`],
-        ['当前连接数', `${health?.database?.connections ?? '--'} 个`],
+        ['当前连接数', `${fmtNum(health?.database?.connections)} 个`],
       ],
     },
     {
       icon: ListFilter, title: '待处理积压',
       ok: (health?.backlog ?? 0) === 0,
       rows: [
-        ['错误队列待处理', `${health?.backlog ?? 0} 条`],
-        ['今日无匹配模板', `${overview?.no_match_today ?? 0} 条`],
+        ['错误队列待处理', `${fmtNum(health?.backlog)} 条`],
+        ['今日无匹配模板', `${fmtNum(overview?.no_match_today)} 条`],
       ],
     },
   ]
@@ -498,20 +514,20 @@ function HealthTab() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <Button size="sm" variant="ghost" onClick={load}><RefreshCw className="h-3.5 w-3.5" /> 刷新</Button>
+        <Button size="sm" variant="secondary" onClick={load}><RefreshCw className="h-3.5 w-3.5" /> 刷新</Button>
         <button
           className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs transition ${
             auto ? 'border-primary/60 text-primary' : 'border-border text-muted-foreground hover:text-foreground'
           }`}
           onClick={toggle}
         >
-          <span className={`h-1.5 w-1.5 rounded-full ${auto ? 'animate-pulse bg-primary' : 'bg-muted-foreground/40'}`} />
+          <span className={`h-1.5 w-1.5 rounded-full ${auto ? 'animate-pulse bg-primary' : 'bg-muted-foreground'}`} />
           自动刷新 {auto ? '开' : '关'}
         </button>
       </div>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="card-stagger grid grid-cols-1 gap-4 lg:grid-cols-3">
         {items.map(({ icon: Icon, title, ok, rows }) => (
-          <Card key={title}>
+          <Card key={title} hover className="transition-colors hover:border-primary/40">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                 <Icon className="h-4 w-4 text-primary" /> {title}
@@ -566,20 +582,20 @@ function WorkflowStatsRow({ navigate }) {
             className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition ${auto ? 'border-primary/60 text-primary' : 'border-border text-muted-foreground hover:text-foreground'}`}
             onClick={toggle}
           >
-            <span className={`h-1.5 w-1.5 rounded-full ${auto ? 'animate-pulse bg-primary' : 'bg-muted-foreground/40'}`} />
+            <span className={`h-1.5 w-1.5 rounded-full ${auto ? 'animate-pulse bg-primary' : 'bg-muted-foreground'}`} />
             自动刷新 {auto ? '开' : '关'}
           </button>
-          <Button size="sm" variant="ghost" onClick={() => navigate('/ban-workflow/instances')}>
+          <Button size="sm" variant="secondary" onClick={() => navigate('/ban-workflow/instances')}>
             实例管理
           </Button>
         </div>
       )}
     >
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+      <div className="card-stagger grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         {items.map(({ icon: Icon, label, value, tone }) => (
           <button
             key={label}
-            className="flex items-center gap-3 rounded-lg border border-border bg-muted/20 px-4 py-3 text-left transition hover:border-primary/40"
+            className="card-hover flex items-center gap-3 rounded-lg border border-border bg-muted px-4 py-3 text-left transition-colors hover:border-primary/40"
             onClick={() => navigate('/ban-workflow/instances')}
           >
             <Icon className={`h-[18px] w-[18px] shrink-0 ${tone || 'text-primary'}`} />
@@ -608,8 +624,11 @@ export default function IngestionMonitor() {
   const [riskData, setRiskData] = useState([])
   const [topThreats, setTopThreats] = useState([])
   const [loading, setLoading] = useState(false)
+  // 状态指标条当前激活的快捷筛选 key（'' | ok | partial | fail | idle）
+  const [statusChip, setStatusChip] = useState('')
 
   const loadOverview = useCallback(() => {
+    setLoading(true)
     Promise.all([
       monitorApi.overview(),
       monitorApi.strategyStats(),
@@ -623,9 +642,24 @@ export default function IngestionMonitor() {
       setRiskData(risk.items || [])
       setTopThreats(top.items || [])
     }).catch((e) => toast.error(e.message || '监控数据加载失败'))
+      .finally(() => setLoading(false))
   }, [trendWindow, strategyId])
 
   useEffect(() => { loadOverview() }, [loadOverview])
+
+  // 模板状态分布 + 解析总量汇总（指标条用：全部从现有 strategyStats 派生，不新增请求）
+  const monitorStats = useMemo(() => {
+    const s = { ok: 0, partial: 0, fail: 0, idle: 0, todayTotal: 0 }
+    strategyStats.forEach((r) => {
+      s[strategyRowStatus(r)] += 1
+      s.todayTotal += r.today_total || 0
+    })
+    return s
+  }, [strategyStats])
+  const visibleStrategies = useMemo(
+    () => (statusChip ? strategyStats.filter((r) => strategyRowStatus(r) === statusChip) : strategyStats),
+    [strategyStats, statusChip],
+  )
 
   const setTab = (t) => setSearchParams({ tab: t }, { replace: true })
 
@@ -642,29 +676,35 @@ export default function IngestionMonitor() {
     { icon: CheckCircle2, label: '入库成功数', value: fmtNum(today?.success), tone: 'text-success', delta: pctDelta(today?.success, yesterday?.success), trend },
     { icon: XCircle, label: '解析失败数', value: fmtNum(today?.fail), tone: 'text-destructive', delta: pctDelta(today?.fail, yesterday?.fail), trend },
     { icon: AlertTriangle, label: '部分解析数', value: fmtNum(today?.partial), tone: 'text-warning', delta: pctDelta(today?.partial, yesterday?.partial), trend },
-    { icon: Gauge, label: '入库成功率', value: today?.success_rate == null ? '--' : today.success_rate, suffix: '%', delta: today?.success_rate != null && yesterday?.success_rate != null ? Math.round((today.success_rate - yesterday.success_rate) * 10) / 10 : null, trend },
-    { icon: Timer, label: '平均解析耗时', value: today?.avg_parse_ms == null ? '--' : today.avg_parse_ms, suffix: 'ms', delta: pctDelta(today?.avg_parse_ms, yesterday?.avg_parse_ms), trend },
+    { icon: Gauge, label: '入库成功率', value: fmtNum(today?.success_rate), suffix: '%', delta: today?.success_rate != null && yesterday?.success_rate != null ? Math.round((today.success_rate - yesterday.success_rate) * 10) / 10 : null, trend },
+    { icon: Timer, label: '平均解析耗时', value: fmtNum(today?.avg_parse_ms), suffix: 'ms', delta: pctDelta(today?.avg_parse_ms, yesterday?.avg_parse_ms), trend },
   ]
 
   // 模板维度统计表（点击行跳转告警列表按设备类型过滤）
   const strategyColumns = [
     { key: 'strategy_name', header: '模板名称', width: '260px', render: (r) => <span className="max-w-[240px] truncate font-medium" title={r.strategy_name}>{r.strategy_name}</span> },
     { key: 'device_type', header: '设备类型', width: '130px', render: (r) => <span className="text-muted-foreground">{r.device_type || '--'}</span> },
-    { key: 'today_total', header: '今日解析量', width: '110px', numeric: true, render: (r) => <span className="tabular-nums">{r.today_total ?? 0}</span> },
-    { key: 'success', header: '成功', width: '80px', numeric: true, render: (r) => <span className="tabular-nums text-success">{r.success ?? 0}</span> },
-    { key: 'partial', header: '部分', width: '80px', numeric: true, render: (r) => <span className="tabular-nums text-warning">{r.partial ?? 0}</span> },
-    { key: 'fail', header: '失败', width: '80px', numeric: true, render: (r) => <span className={`tabular-nums ${(r.fail ?? 0) > 0 ? 'text-destructive' : ''}`}>{r.fail ?? 0}</span> },
+    { key: 'today_total', header: '今日解析量', width: '110px', numeric: true, render: (r) => <span className={`tabular-nums ${(r.today_total ?? 0) > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>{(r.today_total ?? 0).toLocaleString()}</span> },
+    { key: 'success', header: '成功', width: '80px', numeric: true, render: (r) => <span className={`tabular-nums ${(r.success ?? 0) > 0 ? 'text-success' : 'text-muted-foreground'}`}>{(r.success ?? 0).toLocaleString()}</span> },
+    { key: 'partial', header: '部分', width: '80px', numeric: true, render: (r) => <span className={`tabular-nums ${(r.partial ?? 0) > 0 ? 'text-warning' : 'text-muted-foreground'}`}>{(r.partial ?? 0).toLocaleString()}</span> },
+    { key: 'fail', header: '失败', width: '80px', numeric: true, render: (r) => <span className={`tabular-nums ${(r.fail ?? 0) > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>{(r.fail ?? 0).toLocaleString()}</span> },
     {
       key: 'success_rate', header: '成功率', width: '90px', numeric: true,
-      render: (r) => (r.success_rate == null ? <span className="text-muted-foreground">--</span> : <span className="tabular-nums">{r.success_rate}%</span>),
+      render: (r) => (r.success_rate == null
+        ? <span className="text-muted-foreground" title="未统计">--</span>
+        : <span className="tabular-nums">{r.success_rate.toLocaleString()}%</span>),
     },
     {
       key: 'avg_parse_ms', header: '平均耗时', width: '90px', numeric: true,
-      render: (r) => (r.avg_parse_ms == null ? <span className="text-muted-foreground">--</span> : <span className="tabular-nums">{r.avg_parse_ms}ms</span>),
+      render: (r) => (r.avg_parse_ms == null
+        ? <span className="text-muted-foreground" title="未统计">--</span>
+        : <span className="tabular-nums">{r.avg_parse_ms.toLocaleString()}ms</span>),
     },
     {
       key: 'no_match', header: '无匹配告警数', width: '110px', numeric: true,
-      render: (r) => <span className={`tabular-nums ${r.strategy_id == null && (r.no_match ?? 0) > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>{r.no_match ?? '--'}</span>,
+      render: (r) => (r.no_match == null
+        ? <span className="text-muted-foreground" title="未统计">--</span>
+        : <span className={`tabular-nums ${r.strategy_id == null && r.no_match > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>{r.no_match.toLocaleString()}</span>),
     },
   ]
 
@@ -676,15 +716,27 @@ export default function IngestionMonitor() {
   ]
 
   return (
-    <PageContainer>
-      <PageHeader
-        title="解析入库监控"
-        description="按模板/设备维度统计解析入库：趋势、错误队列、服务日志与健康状态"
-        actions={<Button size="sm" variant="ghost" onClick={loadOverview}><RefreshCw className="h-3.5 w-3.5" /> 刷新</Button>}
-      />
+    <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
+      <header className="flex items-center justify-between gap-4 border-b border-border bg-card px-6 py-4">
+        <div className="flex min-w-0 items-baseline gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">解析入库监控</h1>
+          {!loading && overview && (
+            <span className="text-xs text-muted-foreground">
+              今日接收 <span className="font-medium tabular-nums text-foreground">{fmtNum(today?.total)}</span> 条
+            </span>
+          )}
+          <span className="hidden text-xs text-muted-foreground xl:inline">趋势 · 错误队列 · 服务日志与健康状态</span>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <button type="button" onClick={loadOverview} className="btn-secondary btn-sm" title="刷新监控数据">
+            <RefreshCw className={`mr-1 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> 刷新
+          </button>
+        </div>
+      </header>
 
+      <div className="flex-1 overflow-y-auto p-6">
       {/* Tab 栏 */}
-      <div className="mb-4 flex items-center gap-1 rounded-lg border border-border bg-muted/40 p-1">
+      <div className="mb-4 flex items-center gap-1 rounded-lg border border-border bg-muted p-1">
         {TABS.map(({ key, label }) => (
           <button
             key={key}
@@ -698,47 +750,127 @@ export default function IngestionMonitor() {
 
       {tab === 'overview' && (
         <div className="space-y-4">
-          {/* 概览卡片（6 张） */}
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-            {cards.map((c) => <OverviewCard key={c.label} {...c} />)}
+          {/* 概览卡片（6 张；loading 时骨架占位） */}
+          <div className="card-stagger grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+            {loading ? (
+              Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="card px-5 py-4">
+                  <div className="flex items-center justify-between">
+                    <div className="h-3 w-20 rounded skeleton-shimmer" />
+                    <div className="h-3 w-8 rounded skeleton-shimmer" />
+                  </div>
+                  <div className="mt-2.5 h-7 w-24 rounded skeleton-shimmer" />
+                  <div className="mt-3 h-7 w-full rounded skeleton-shimmer" />
+                </div>
+              ))
+            ) : (
+              cards.map((c) => <OverviewCard key={c.label} {...c} />)
+            )}
           </div>
+
+          {/* 状态指标条：模板状态分布（点击快速筛选，再点取消）+ 解析汇总 */}
+          {!loading && strategyStats.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              {[
+                { key: 'ok', label: '正常', dot: 'bg-success', active: 'bg-success/15 text-success ring-success/40', pulse: true },
+                { key: 'partial', label: '部分解析', dot: 'bg-warning', active: 'bg-warning/15 text-warning ring-warning/40' },
+                { key: 'fail', label: '解析失败', dot: 'bg-destructive', active: 'bg-destructive/15 text-destructive ring-destructive/40' },
+                { key: 'idle', label: '无流量', dot: 'bg-zinc-500', active: 'bg-zinc-500/15 text-zinc-400 ring-zinc-500/40' },
+              ].map((chip) => {
+                const active = statusChip === chip.key
+                const count = monitorStats[chip.key]
+                return (
+                  <button
+                    key={chip.key} type="button"
+                    onClick={() => setStatusChip(active ? '' : chip.key)}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+                      active
+                        ? `border-transparent ring-1 ${chip.active}`
+                        : 'border-border bg-secondary text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                    }`}
+                    title={active ? '点击取消该筛选' : `点击筛选「${chip.label}」的模板`}
+                  >
+                    <span className={`h-1.5 w-1.5 rounded-full ${chip.dot} ${chip.pulse && count > 0 ? 'animate-pulse' : ''}`} />
+                    {chip.label}
+                    <span className={`tabular-nums ${count > 0 ? '' : 'text-muted-foreground'}`}>{count}</span>
+                  </button>
+                )
+              })}
+              <div className="ml-auto flex items-center gap-4 text-xs text-muted-foreground">
+                <span className="inline-flex items-center gap-1.5" title="全部模板今日解析入库总量">
+                  <Activity className="h-3.5 w-3.5 text-primary/80" />
+                  今日解析总量
+                  <span className={`font-semibold tabular-nums ${monitorStats.todayTotal > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+                    {monitorStats.todayTotal > 0 ? monitorStats.todayTotal.toLocaleString() : '--'}
+                  </span>
+                </span>
+                <span className="inline-flex items-center gap-1.5" title="已接入产生解析量的模板总数">
+                  <Database className="h-3.5 w-3.5 text-primary/80" />
+                  模板
+                  <span className={`font-semibold tabular-nums ${strategyStats.length > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+                    {strategyStats.length > 0 ? strategyStats.length.toLocaleString() : '--'}
+                  </span>
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* 模板维度统计表 */}
           <Card title="模板维度统计" description="点击行查看该模板的告警明细（跳转告警列表）" className="p-0" bodyClassName="p-0">
             <DataTable
+              className="table-stagger"
               columns={strategyColumns}
-              data={strategyStats}
+              data={visibleStrategies}
+              loading={loading}
               rowKey={(r) => (r.strategy_id == null ? 'none' : r.strategy_id)}
               onRowClick={(r) => {
+                if (!guardNavPermission('alert', 'view', '告警列表')) return
                 if (r.device_type) navigate(`/alerts?device_type=${encodeURIComponent(r.device_type)}`)
                 else if (r.strategy_id == null) navigate('/alerts')
               }}
-              emptyText="暂无模板统计"
-              emptyDescription="接入设备产生解析量后此处显示按模板聚合的统计"
+              rowClickHint="点击查看告警明细"
+              emptyText={statusChip ? '没有该状态的模板' : '暂无模板统计'}
+              emptyDescription={statusChip ? '该状态下暂无模板，清除筛选查看全部' : '接入设备产生解析量后此处显示按模板聚合的统计'}
               emptyIcon={Inbox}
+              emptyAction={statusChip ? (
+                <button type="button" onClick={() => setStatusChip('')} className="btn-secondary btn-sm">清除筛选</button>
+              ) : undefined}
             />
           </Card>
 
-          {/* 趋势图（4 张） */}
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            <VolumeChart
-              data={trendData}
-              window={trendWindow}
-              strategies={strategyStats}
-              strategyId={strategyId}
-              onStrategyChange={setStrategyId}
-              onWindowChange={setTrendWindow}
-            />
-            <RateChart data={trendData} />
-            <RiskChart data={riskData} />
-            <TopThreatChart data={topThreats} />
-          </div>
+          {/* 趋势图（4 张；loading 时骨架占位） */}
+          {loading ? (
+            <div className="card-stagger grid grid-cols-1 gap-4 xl:grid-cols-2">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="card p-4">
+                  <div className="h-4 w-32 rounded skeleton-shimmer" />
+                  <div className="mt-2 h-3 w-48 rounded skeleton-shimmer" />
+                  <div className="mt-5 h-[260px] rounded skeleton-shimmer" />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="card-stagger grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <VolumeChart
+                data={trendData}
+                window={trendWindow}
+                strategies={strategyStats}
+                strategyId={strategyId}
+                onStrategyChange={setStrategyId}
+                onWindowChange={setTrendWindow}
+              />
+              <RateChart data={trendData} />
+              <RiskChart data={riskData} />
+              <TopThreatChart data={topThreats} />
+            </div>
+          )}
         </div>
       )}
 
       {tab === 'errors' && <ErrorQueueTab />}
       {tab === 'logs' && <LogsTab />}
       {tab === 'health' && <HealthTab />}
-    </PageContainer>
+      </div>
+    </div>
   )
 }

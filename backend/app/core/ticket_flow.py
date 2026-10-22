@@ -15,7 +15,12 @@
           "fields": [               # 本节点需填写的字段（可为空数组）
             {"key": "src_ip", "label": "源IP地址", "type": "ip",
              "required": true, "options": [], "placeholder": "",
-             "default": "", "alert_field_mapping": "src_ip"}
+             "default": "", "alert_field_mapping": "src_ip",
+             "auto_enrich": true, "auto_agent": false}
+            # auto_enrich：仅 ip 类型字段有效，控制发起时资产匹配 +
+            # 威胁情报查询，默认 true（开启）
+            # auto_agent：仅 ip 类型字段有效，控制发起时智能体研判
+            #（IP 风险研判与封禁决策智能体），默认 false（关闭）
           ],
           "routes": [              # 流转路由（按序匹配，when=null 为默认路由）
             {"to": "n_judge", "label": "流转研判", "when": null},
@@ -209,6 +214,20 @@ def validate_flow_structure(
             for gid in start_groups:
                 if not group_ok(gid):
                     errors.append(f"发起分组 {gid} 不存在或已停用")
+
+    # 抄送配置（模板级全局，可选）：[{type: user|group, id, name}]
+    cc_targets = nodes_json.get("cc_targets")
+    if cc_targets not in (None, []):
+        if not isinstance(cc_targets, list):
+            errors.append("抄送配置必须为数组")
+        else:
+            for t in cc_targets:
+                if not isinstance(t, dict) or t.get("type") not in ("user", "group"):
+                    errors.append("抄送配置存在非法对象（type 仅支持 user/group）")
+                    break
+                if isinstance(t.get("id"), bool) or not isinstance(t.get("id"), int):
+                    errors.append(f"抄送对象 {t.get('name') or t.get('id')} 的 ID 必须为整数")
+                    break
 
     return errors
 

@@ -63,7 +63,7 @@ function HalfDrawer({ open, onClose, title, children, loading, footer }) {
         {/* 内容滚动区 */}
         <div data-allow-scroll className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-6">
           {loading ? (
-            <div className="flex h-40 items-center justify-center text-sm text-muted-foreground/70">
+            <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
               加载中...
             </div>
           ) : (
@@ -73,7 +73,7 @@ function HalfDrawer({ open, onClose, title, children, loading, footer }) {
 
         {/* 底部固定操作区（可选） */}
         {footer && (
-          <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border bg-card/60 px-6 py-3">
+          <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border bg-card px-6 py-3">
             {footer}
           </div>
         )}

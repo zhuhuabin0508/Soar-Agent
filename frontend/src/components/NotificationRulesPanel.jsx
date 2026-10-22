@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Bell, Plus, Pencil, Trash2, Power, Users, Tag, X, Loader2, ShieldCheck,
+  Bell, Plus, Pencil, Trash2, Power, Users, Tag, X, ShieldCheck,
 } from 'lucide-react'
 import { notificationRulesApi } from '../api/notifications'
 import { usersApi } from '../api/users'
@@ -20,6 +20,7 @@ import { rolesApi } from '../api/roles'
 import { toast } from '../store/toastStore'
 import { confirm } from './ConfirmDialog'
 import useLockBackgroundScroll from '../hooks/useLockBackgroundScroll'
+import { EmptyState, Skeleton, CompactSelect } from './ui'
 
 const EMPTY_FORM = {
   name: '',
@@ -238,14 +239,14 @@ export default function NotificationRulesPanel() {
     })
   }
 
-  const inputCls =
-    'w-full rounded-md border border-border bg-secondary px-3 py-2 text-sm text-foreground outline-none focus:border-primary'
+  // 表单控件：统一 input-base 风格（悬停边框反馈 + 聚焦主色环）
+  const inputCls = 'input-base'
   const labelCls = 'mb-1.5 block text-xs font-medium text-muted-foreground'
 
   return (
     <div className="space-y-4">
       {/* 说明条 */}
-      <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 text-xs text-muted-foreground">
+      <div className="card-accent-top rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 text-xs text-muted-foreground">
         <ShieldCheck className="mr-1.5 inline h-3.5 w-3.5 text-primary" />
         配置「<b className="text-foreground">哪些事件</b>需要通知」以及「<b className="text-foreground">通知给谁</b>」。
         事件发生时，系统按匹配的启用规则将通知投递给目标用户（指定用户 + 指定角色）。
@@ -254,7 +255,7 @@ export default function NotificationRulesPanel() {
 
       {/* 操作栏 */}
       <div className="flex items-center justify-between">
-        <span className="text-xs text-muted-foreground/70">共 {rules.length} 条规则</span>
+        <span className="text-xs text-muted-foreground">共 {rules.length} 条规则</span>
         <button type="button" onClick={handleOpenCreate} className="btn-primary btn-sm">
           <Plus className="h-3.5 w-3.5" />
           新建规则
@@ -263,29 +264,31 @@ export default function NotificationRulesPanel() {
 
       {/* 列表 */}
       {loading ? (
-        <div className="flex h-32 items-center justify-center text-sm text-muted-foreground/70">
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          加载中...
+        <div className="flex flex-col gap-3">
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-20 rounded-lg border border-border" />
+          ))}
         </div>
       ) : error ? (
         <div className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive">
           {error}
         </div>
       ) : rules.length === 0 ? (
-        <div className="flex h-48 flex-col items-center justify-center gap-2 text-muted-foreground/70">
-          <Bell className="h-10 w-10" />
-          <div className="text-sm">暂无通知规则</div>
-          <div className="text-xs">未配置规则时，所有通知将回退为全员广播</div>
-        </div>
+        <EmptyState
+          icon={Bell}
+          title="暂无通知规则"
+          description="未配置规则时，所有通知将回退为全员广播"
+          className="py-16"
+        />
       ) : (
         <div className="flex flex-col gap-3">
           {rules.map((rule) => (
             <div
               key={rule.id}
-              className={`rounded-lg border p-4 transition-colors ${
+              className={`rounded-lg border p-5 transition-colors ${
                 rule.enabled
                   ? 'border-border bg-card'
-                  : 'border-border bg-secondary/40 opacity-70'
+                  : 'border-border bg-secondary opacity-70'
               }`}
             >
               <div className="flex items-start justify-between gap-4">
@@ -306,7 +309,7 @@ export default function NotificationRulesPanel() {
                     </span>
                   </div>
                   {rule.description && (
-                    <div className="mt-1 text-xs text-muted-foreground/80">{rule.description}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{rule.description}</div>
                   )}
                   {/* 目标用户 */}
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -329,10 +332,10 @@ export default function NotificationRulesPanel() {
                     ) : null}
                     {(!rule.target_roles || rule.target_roles.length === 0) &&
                       (!rule.target_user_ids || rule.target_user_ids.length === 0) && (
-                        <span className="text-[11px] text-muted-foreground/60">（无目标，回退广播）</span>
+                        <span className="text-[11px] text-muted-foreground">（无目标，回退广播）</span>
                       )}
                   </div>
-                  <div className="mt-1.5 text-[11px] text-muted-foreground/60">
+                  <div className="mt-1.5 text-[11px] text-muted-foreground">
                     创建于 {fmtTime(rule.created_at)} · 由 {rule.created_by || '系统'} 创建
                   </div>
                 </div>
@@ -343,7 +346,7 @@ export default function NotificationRulesPanel() {
                     onClick={() => handleToggle(rule)}
                     disabled={togglingId === rule.id}
                     title={rule.enabled ? '停用规则' : '启用规则'}
-                    className={`rounded-md p-1.5 transition hover:bg-secondary ${
+                    className={`cursor-pointer rounded-md p-1.5 transition hover:bg-secondary ${
                       rule.enabled ? 'text-success' : 'text-muted-foreground'
                     }`}
                   >
@@ -353,7 +356,7 @@ export default function NotificationRulesPanel() {
                     type="button"
                     onClick={() => handleOpenEdit(rule)}
                     title="编辑规则"
-                    className="rounded-md p-1.5 text-muted-foreground transition hover:bg-secondary hover:text-primary"
+                    className="cursor-pointer rounded-md p-1.5 text-muted-foreground transition hover:bg-secondary hover:text-primary"
                   >
                     <Pencil className="h-4 w-4" />
                   </button>
@@ -361,7 +364,7 @@ export default function NotificationRulesPanel() {
                     type="button"
                     onClick={() => handleDelete(rule)}
                     title="删除规则"
-                    className="rounded-md p-1.5 text-muted-foreground transition hover:bg-destructive/15 hover:text-destructive"
+                    className="cursor-pointer rounded-md p-1.5 text-muted-foreground transition hover:bg-destructive/15 hover:text-destructive"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -396,10 +399,13 @@ export default function NotificationRulesPanel() {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            {/* 表单 */}
-            <div className="space-y-4 p-5">
-              <div>
-                <label className={labelCls}>规则名称 *</label>
+            {/* 表单：分区排版，分区标题统一 text-sm font-semibold */}
+            <div className="space-y-5 p-5">
+              {/* 分区：基础信息 */}
+              <section className="space-y-4">
+                <div className="text-sm font-semibold text-foreground">基础信息</div>
+                <div>
+                  <label className={labelCls}>规则名称 *</label>
                 <input
                   type="text"
                   value={form.name}
@@ -411,10 +417,11 @@ export default function NotificationRulesPanel() {
               </div>
               <div>
                 <label className={labelCls}>事件类型 *</label>
-                <select
+                <CompactSelect
+                  size="lg"
+                  block
                   value={form.event_type}
                   onChange={(e) => setForm((f) => ({ ...f, event_type: e.target.value }))}
-                  className={inputCls}
                 >
                   {eventTypes.length > 0 ? (
                     eventTypes.map((et) => (
@@ -425,8 +432,8 @@ export default function NotificationRulesPanel() {
                   ) : (
                     <option value={form.event_type}>{form.event_type}</option>
                   )}
-                </select>
-                <div className="mt-1 text-[11px] text-muted-foreground/70">
+                </CompactSelect>
+                <div className="mt-1 text-[11px] text-muted-foreground">
                   选择「*」匹配所有事件类型
                 </div>
               </div>
@@ -440,11 +447,15 @@ export default function NotificationRulesPanel() {
                   rows={2}
                 />
               </div>
-              {/* 目标角色（动态从后端加载，含自定义角色） */}
-              <div>
-                <label className={labelCls}>目标角色</label>
+              </section>
+              {/* 分区：通知目标 */}
+              <section className="space-y-4 border-t border-border pt-4">
+                <div className="text-sm font-semibold text-foreground">通知目标</div>
+                {/* 目标角色（动态从后端加载，含自定义角色） */}
+                <div>
+                  <label className={labelCls}>目标角色</label>
                 {roleOptions.length === 0 ? (
-                  <div className="text-xs text-muted-foreground/70">暂无可用角色</div>
+                  <div className="text-xs text-muted-foreground">暂无可用角色</div>
                 ) : (
                   <div className="flex flex-wrap gap-2">
                     {roleOptions.map((r) => {
@@ -454,7 +465,7 @@ export default function NotificationRulesPanel() {
                           type="button"
                           key={r.value}
                           onClick={() => toggleRole(r.value)}
-                          className={`rounded-md border px-2.5 py-1 text-xs transition ${
+                          className={`cursor-pointer rounded-md border px-2.5 py-1 text-xs transition ${
                             active
                               ? 'border-warning bg-warning/15 text-warning'
                               : 'border-border bg-secondary text-muted-foreground hover:border-warning/50'
@@ -467,7 +478,7 @@ export default function NotificationRulesPanel() {
                     })}
                   </div>
                 )}
-                <div className="mt-1 text-[11px] text-muted-foreground/70">
+                <div className="mt-1 text-[11px] text-muted-foreground">
                   选中角色的所有启用用户都会收到通知
                 </div>
               </div>
@@ -475,9 +486,9 @@ export default function NotificationRulesPanel() {
               <div>
                 <label className={labelCls}>目标用户（指定）</label>
                 {users.length === 0 ? (
-                  <div className="text-xs text-muted-foreground/70">暂无可用用户</div>
+                  <div className="text-xs text-muted-foreground">暂无可用用户</div>
                 ) : (
-                  <div className="max-h-40 overflow-y-auto rounded-md border border-border bg-secondary/50 p-2">
+                  <div className="max-h-40 overflow-y-auto rounded-md border border-border bg-secondary p-2">
                     <div className="flex flex-wrap gap-1.5">
                       {users.map((u) => {
                         const active = form.target_user_ids.includes(u.id)
@@ -487,7 +498,7 @@ export default function NotificationRulesPanel() {
                             type="button"
                             key={u.id}
                             onClick={() => toggleUserId(u.id)}
-                            className={`rounded border px-2 py-0.5 text-xs transition ${
+                            className={`cursor-pointer rounded border px-2 py-0.5 text-xs transition ${
                               active
                                 ? 'border-info bg-info/15 text-info'
                                 : 'border-border bg-secondary text-muted-foreground hover:border-info/50'
@@ -503,13 +514,14 @@ export default function NotificationRulesPanel() {
                   </div>
                 )}
               </div>
-              {/* 启用开关 */}
-              <div className="flex items-center gap-2">
+              </section>
+              {/* 分区：投递开关 */}
+              <div className="flex items-center gap-2 border-t border-border pt-4">
                 <button
                   type="button"
                   onClick={() => setForm((f) => ({ ...f, enabled: !f.enabled }))}
-                  className={`inline-flex h-5 w-9 items-center rounded-full p-0.5 transition ${
-                    form.enabled ? 'bg-success' : 'bg-muted-foreground/30'
+                  className={`inline-flex h-5 w-9 cursor-pointer items-center rounded-full p-0.5 transition hover:ring-2 hover:ring-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                    form.enabled ? 'bg-success' : 'bg-input'
                   }`}
                 >
                   <span

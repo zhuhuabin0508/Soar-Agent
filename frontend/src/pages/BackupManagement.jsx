@@ -8,7 +8,7 @@ import {
 import { backupApi } from '../api/backup'
 import { confirm } from '../components/ConfirmDialog'
 import { toast } from '../store/toastStore'
-import { DataTable, Pagination } from '../components/ui'
+import { DataTable, Pagination, CompactSelect, DatePicker } from '../components/ui'
 import FilterBar from '../components/FilterBar'
 import BatchActions from '../components/BatchActions'
 import { usePagination } from '../hooks/usePagination'
@@ -53,22 +53,28 @@ function fmtCountdown(target) {
 }
 
 // ============ 通用小组件 ============
+// 备份状态徽章：圆点 + 语义色，进行中（info）圆点带呼吸动画
 function StatusBadge({ status }) {
   const map = {
-    completed: { cls: 'bg-success/20 text-success', label: '已完成' },
-    failed: { cls: 'bg-destructive/20 text-destructive', label: '失败' },
-    running: { cls: 'bg-warning/20 text-warning', label: '进行中' },
-    expired: { cls: 'bg-muted-foreground/20 text-muted-foreground', label: '已过期' },
+    completed: { dot: 'bg-success', text: 'text-success', label: '已完成' },
+    failed: { dot: 'bg-destructive', text: 'text-destructive', label: '失败' },
+    running: { dot: 'bg-info dot-pulse', text: 'text-info', label: '进行中' },
+    expired: { dot: 'bg-muted-foreground', text: 'text-muted-foreground', label: '已过期' },
   }
-  const item = map[status] || { cls: 'bg-muted-foreground/20 text-muted-foreground', label: status || '-' }
-  return <span className={`rounded px-2 py-0.5 text-[11px] font-medium ${item.cls}`}>{item.label}</span>
+  const item = map[status] || { dot: 'bg-muted-foreground', text: 'text-muted-foreground', label: status || '-' }
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs">
+      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${item.dot}`} />
+      <span className={`font-medium ${item.text}`}>{item.label}</span>
+    </span>
+  )
 }
 function TypeBadge({ type }) {
   const map = {
     manual: { cls: 'bg-primary/20 text-primary', label: '手动' },
     scheduled: { cls: 'bg-info/20 text-info', label: '自动' },
   }
-  const item = map[type] || { cls: 'bg-muted-foreground/20 text-muted-foreground', label: type || '-' }
+  const item = map[type] || { cls: 'bg-muted text-muted-foreground', label: type || '-' }
   return <span className={`rounded px-2 py-0.5 text-[11px] font-medium ${item.cls}`}>{item.label}</span>
 }
 function ScopeBadge({ scope }) {
@@ -226,10 +232,10 @@ function BackupManagement() {
     { key: 'name', header: '备份名称', render: (b) => (
       <div className="flex flex-col">
         <span className="font-medium text-foreground">{b.name || '-'}</span>
-        {b.note && <span className="text-[10px] text-muted-foreground/70 truncate max-w-[180px]" title={b.note}>{b.note}</span>}
+        {b.note && <span className="text-[10px] text-muted-foreground truncate max-w-[180px]" title={b.note}>{b.note}</span>}
       </div>
     ) },
-    { key: 'created_at', header: '备份时间', width: '150px', render: (b) => <span className="text-muted-foreground">{fmtTime(b.created_at)}</span> },
+    { key: 'created_at', header: '备份时间', width: '150px', render: (b) => <span className="text-xs tabular-nums text-muted-foreground">{fmtTime(b.created_at)}</span> },
     { key: 'duration', header: '耗时', width: '80px', render: (b) => <span className="font-mono text-[11px] text-muted-foreground">{fmtDuration(b.duration_seconds)}</span> },
     { key: 'backup_type', header: '类型', width: '70px', render: (b) => <TypeBadge type={b.backup_type} /> },
     { key: 'scope', header: '范围', width: '100px', render: (b) => <ScopeBadge scope={b.scope} /> },
@@ -250,18 +256,18 @@ function BackupManagement() {
     ) },
     { key: 'checksum', header: '校验', width: '60px', render: (b) => b.checksum ? (
       <span className="inline-flex items-center text-success" title={b.checksum}><CheckCircle2 className="h-3 w-3" /></span>
-    ) : <span className="text-muted-foreground/40">-</span> },
+    ) : <span className="text-muted-foreground">-</span> },
     { key: 'created_by', header: '创建者', width: '90px', render: (b) => <span className="truncate text-muted-foreground">{b.created_by || '-'}</span> },
     {
-      key: '__actions', header: '操作', width: '260px',
+      key: '__actions', header: '操作', width: '355px',
       render: (b) => {
         const act = actioning[b.id]
         return (
-          <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-            <button type="button" onClick={() => setDetailId(b.id)} className="inline-flex items-center gap-1 rounded-md border border-border bg-secondary px-2 py-1 text-[11px] text-muted-foreground hover:bg-secondary/70">
+          <div className="flex items-center gap-1.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+            <button type="button" onClick={() => setDetailId(b.id)} className="inline-flex items-center gap-1 rounded-md border border-border bg-secondary px-2 py-1 text-[11px] text-muted-foreground hover:bg-secondary">
               <FileText className="h-3 w-3" /> 详情
             </button>
-            <button type="button" onClick={() => handleDownload(b.id)} disabled={b.status !== 'completed' || b.expired || !!act} className="inline-flex items-center gap-1 rounded-md border border-border bg-secondary px-2 py-1 text-[11px] text-muted-foreground hover:bg-secondary/70 disabled:opacity-50">
+            <button type="button" onClick={() => handleDownload(b.id)} disabled={b.status !== 'completed' || b.expired || !!act} className="inline-flex items-center gap-1 rounded-md border border-border bg-secondary px-2 py-1 text-[11px] text-muted-foreground hover:bg-secondary disabled:opacity-50">
               <Download className="h-3 w-3" /> 下载
             </button>
             <button type="button" onClick={() => handleVerify(b.id)} disabled={b.status !== 'completed' || b.expired || !!act} className={iconBtnCls} title="校验完整性">
@@ -274,7 +280,7 @@ function BackupManagement() {
             <button type="button" onClick={() => handleDelete(b.id)} disabled={!!act} className="inline-flex items-center gap-1 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1 text-[11px] text-destructive hover:bg-destructive/20 disabled:opacity-50">
               <Trash2 className="h-3 w-3" /> 删除
             </button>
-            {act && act !== 'verify' && <span className="ml-1 text-[11px] text-muted-foreground/70">{act === 'download' ? '下载中' : act === 'restore' ? '恢复中' : '删除中'}</span>}
+            {act && act !== 'verify' && <span className="ml-1 text-[11px] text-muted-foreground">{act === 'download' ? '下载中' : act === 'restore' ? '恢复中' : '删除中'}</span>}
           </div>
         )
       },
@@ -288,10 +294,10 @@ function BackupManagement() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
-      <header className="flex items-center justify-between border-b border-border bg-card/60 px-6 py-5">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">数据备份与恢复</h1>
-          <span className="text-xs text-muted-foreground/70">备份 · 策略 · 恢复 · 校验 · 上传</span>
+      <header className="flex items-center justify-between border-b border-border bg-card px-6 py-5">
+        <div className="min-w-0">
+          <h1 className="text-[22px] font-bold tracking-tight">数据备份与恢复</h1>
+          <p className="mt-1.5 text-sm text-muted-foreground">备份 · 策略 · 恢复 · 校验 · 上传</p>
         </div>
         <div className="flex items-center gap-2">
           <button type="button" onClick={() => setUploadOpen(true)} className="btn-secondary btn-sm">
@@ -303,7 +309,7 @@ function BackupManagement() {
         </div>
       </header>
 
-      <div className="flex items-center gap-1 border-b border-border bg-card/30 px-6 pt-3">
+      <div className="flex items-center gap-1 border-b border-border bg-card px-6 pt-3">
         {tabs.map((t) => (
           <button key={t.key} type="button" onClick={() => setActiveTab(t.key)}
             className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition ${activeTab === t.key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
@@ -468,11 +474,11 @@ function OverviewCards({ stats, onCleanup }) {
             <span className="text-xs text-muted-foreground">{c.label}</span>
             <c.icon className={`h-4 w-4 ${c.color}`} />
           </div>
-          <div className={`text-lg font-semibold ${c.color}`}>{c.value}</div>
-          <div className="mt-1 text-[11px] text-muted-foreground/70">{c.sub}</div>
+          <div className={`text-lg font-semibold tabular-nums ${c.color}`}>{c.value}</div>
+          <div className="mt-1 text-[11px] text-muted-foreground">{c.sub}</div>
           {c.progress != null && (
             <div className="mt-3">
-              <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground/60">
+              <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
                 <span>{c.progressLabel}</span>
               </div>
               <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
@@ -481,7 +487,7 @@ function OverviewCards({ stats, onCleanup }) {
             </div>
           )}
           {c.footer && (
-            <div className="mt-2 border-t border-border/50 pt-2 text-[10px] text-muted-foreground/60">{c.footer}</div>
+            <div className="mt-2 border-t border-border pt-2 text-[10px] text-muted-foreground">{c.footer}</div>
           )}
           {c.onCleanup && c.progress > 60 && (
             <button type="button" onClick={c.onCleanup} className="mt-2 text-[10px] text-primary hover:underline">清理过期备份</button>
@@ -496,7 +502,7 @@ function OverviewCards({ stats, onCleanup }) {
 function StrategySection({ strategy, loading, saving, onSave }) {
   const [form, setForm] = useState(null)
   useEffect(() => { if (strategy) setForm({ ...strategy }) }, [strategy])
-  if (loading || !form) return <div className="flex h-40 items-center justify-center text-sm text-muted-foreground/70">加载中...</div>
+  if (loading || !form) return <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">加载中...</div>
   const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }))
 
   return (
@@ -505,60 +511,60 @@ function StrategySection({ strategy, loading, saving, onSave }) {
         <div className="mb-4 flex items-center gap-2">
           <SettingsIcon className="h-4 w-4 text-primary" />
           <h3 className="text-sm font-semibold">自动备份策略</h3>
-          <span className="text-[11px] text-muted-foreground/70">开启后系统按计划自动执行 pg_dump 备份</span>
+          <span className="text-[11px] text-muted-foreground">开启后系统按计划自动执行 pg_dump 备份</span>
         </div>
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-          <div className="flex items-center justify-between rounded-md border border-border bg-secondary/40 p-3.5 sm:col-span-2">
+          <div className="flex items-center justify-between rounded-md border border-border bg-secondary p-3.5 sm:col-span-2">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium">启用自动备份</span>
-              <span className="text-[11px] text-muted-foreground/70">关闭后仅支持手动备份</span>
+              <span className="text-[11px] text-muted-foreground">关闭后仅支持手动备份</span>
             </div>
             <Toggle checked={!!form.enabled} onChange={setF('enabled')} />
           </div>
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">备份周期</label>
-            <select value={form.period} onChange={(e) => setF('period')(e.target.value)} className="w-full rounded-md border border-border bg-secondary px-2.5 py-2 text-sm outline-none focus:border-primary">
+            <CompactSelect size="lg" block value={form.period} onChange={(e) => setF('period')(e.target.value)}>
               <option value="daily">每天</option>
               <option value="weekly">每周</option>
               <option value="monthly">每月</option>
-            </select>
+            </CompactSelect>
           </div>
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">备份时间</label>
-            <input type="time" value={form.time} onChange={(e) => setF('time')(e.target.value)} className="w-full rounded-md border border-border bg-secondary px-2.5 py-2 text-sm outline-none focus:border-primary" />
-            <p className="mt-1.5 text-[10px] text-muted-foreground/70">建议选择业务低峰期，如凌晨 2:00</p>
+            <DatePicker type="time" block value={form.time} onChange={(e) => setF('time')(e.target.value)} />
+            <p className="mt-1.5 text-[10px] text-muted-foreground">建议选择业务低峰期，如凌晨 2:00</p>
           </div>
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">保留份数</label>
             <input type="number" min={1} value={form.retention_count} onChange={(e) => setF('retention_count')(Number(e.target.value))} className="w-full rounded-md border border-border bg-secondary px-2.5 py-2 text-sm outline-none focus:border-primary" />
-            <p className="mt-1.5 text-[10px] text-muted-foreground/70">超出自动清理最早的备份</p>
+            <p className="mt-1.5 text-[10px] text-muted-foreground">超出自动清理最早的备份</p>
           </div>
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">保留天数</label>
             <input type="number" min={1} value={form.retention_days} onChange={(e) => setF('retention_days')(Number(e.target.value))} className="w-full rounded-md border border-border bg-secondary px-2.5 py-2 text-sm outline-none focus:border-primary" />
-            <p className="mt-1.5 text-[10px] text-muted-foreground/70">超过该天数的备份标记过期</p>
+            <p className="mt-1.5 text-[10px] text-muted-foreground">超过该天数的备份标记过期</p>
           </div>
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">备份范围</label>
-            <select value={form.scope} onChange={(e) => setF('scope')(e.target.value)} className="w-full rounded-md border border-border bg-secondary px-2.5 py-2 text-sm outline-none focus:border-primary">
+            <CompactSelect size="lg" block value={form.scope} onChange={(e) => setF('scope')(e.target.value)}>
               <option value="full">全量备份</option>
               <option value="agents,workflows,tools">核心业务（智能体/工作流/工具）</option>
-            </select>
+            </CompactSelect>
           </div>
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">存储位置</label>
-            <select value={form.storage_location} onChange={(e) => setF('storage_location')(e.target.value)} className="w-full rounded-md border border-border bg-secondary px-2.5 py-2 text-sm outline-none focus:border-primary">
+            <CompactSelect size="lg" block value={form.storage_location} onChange={(e) => setF('storage_location')(e.target.value)}>
               <option value="local">本地磁盘</option>
               <option value="oss" disabled>远程 OSS（待对接）</option>
               <option value="s3" disabled>S3（待对接）</option>
               <option value="nfs" disabled>NFS（待对接）</option>
-            </select>
+            </CompactSelect>
           </div>
-          <div className="flex items-center justify-between rounded-md border border-border bg-secondary/40 p-3.5 sm:col-span-2">
+          <div className="flex items-center justify-between rounded-md border border-border bg-secondary p-3.5 sm:col-span-2">
             <div className="flex items-center gap-2">
               <Lock className="h-3.5 w-3.5 text-primary" />
               <span className="text-sm font-medium">加密存储</span>
-              <span className="text-[11px] text-muted-foreground/70">对备份文件加密存储（增强安全）</span>
+              <span className="text-[11px] text-muted-foreground">对备份文件加密存储（增强安全）</span>
             </div>
             <Toggle checked={!!form.is_encrypted} onChange={setF('is_encrypted')} />
           </div>
@@ -575,8 +581,8 @@ function StrategySection({ strategy, loading, saving, onSave }) {
           <HardDrive className="h-4 w-4 text-primary" />
           <h3 className="text-sm font-semibold">存储管理</h3>
         </div>
-        <p className="text-[11px] text-muted-foreground/70 leading-relaxed">
-          当前所有备份文件存储于容器内 <code className="rounded bg-secondary px-1 text-primary">/app/backups/</code> 目录。
+        <p className="text-[11px] text-muted-foreground leading-relaxed">
+          当前所有备份文件存储于容器内 <code className="rounded bg-secondary px-1.5 py-0.5 font-mono text-xs text-primary">/app/backups/</code> 目录。
           建议定期将备份文件同步到外部存储（如对象存储、NAS）以防止单点故障。
         </p>
       </div>
@@ -726,18 +732,18 @@ function CreateBackupModal({ onClose, onConfirm, onCompleted }) {
               <div className="grid grid-cols-2 gap-2">
                 <button type="button" onClick={() => setScope('full')} className={`rounded-md border p-2 text-left text-xs transition ${scope === 'full' ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/50'}`}>
                   <div className="font-medium">全量备份</div>
-                  <div className="text-[10px] text-muted-foreground/70">导出整个数据库</div>
+                  <div className="text-[10px] text-muted-foreground">导出整个数据库</div>
                 </button>
                 <button type="button" onClick={() => setScope('partial')} className={`rounded-md border p-2 text-left text-xs transition ${scope === 'partial' ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/50'}`}>
                   <div className="font-medium">自定义备份</div>
-                  <div className="text-[10px] text-muted-foreground/70">选择要备份的模块</div>
+                  <div className="text-[10px] text-muted-foreground">选择要备份的模块</div>
                 </button>
               </div>
             </div>
             {scope === 'partial' && (
               <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">备份模块</label>
-                <div className="grid grid-cols-2 gap-1.5 rounded-md border border-border bg-secondary/40 p-2">
+                <div className="grid grid-cols-2 gap-1.5 rounded-md border border-border bg-secondary p-2">
                   {BACKUP_MODULES.map((m) => (
                     <label key={m.key} className="flex items-center gap-1.5 text-xs">
                       <input type="checkbox" checked={modules.includes(m.key)} onChange={() => toggleModule(m.key)} className="accent-primary" />
@@ -745,14 +751,14 @@ function CreateBackupModal({ onClose, onConfirm, onCompleted }) {
                     </label>
                   ))}
                 </div>
-                <p className="mt-1 text-[10px] text-muted-foreground/70">注：当前底层为全库 pg_dump，模块选择作为范围元数据记录</p>
+                <p className="mt-1 text-[10px] text-muted-foreground">注：当前底层为全库 pg_dump，模块选择作为范围元数据记录</p>
               </div>
             )}
             <div>
               <label className="mb-1 block text-xs font-medium text-muted-foreground">备注说明</label>
               <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="记录备份原因..." className="w-full rounded-md border border-border bg-secondary px-2.5 py-1.5 text-sm outline-none focus:border-primary" />
             </div>
-            <div className="flex items-center justify-between rounded-md border border-border bg-secondary/40 p-2.5">
+            <div className="flex items-center justify-between rounded-md border border-border bg-secondary p-2.5">
               <div className="flex items-center gap-2">
                 <Lock className="h-3.5 w-3.5 text-primary" />
                 <span className="text-xs">加密存储</span>
@@ -772,7 +778,7 @@ function CreateBackupModal({ onClose, onConfirm, onCompleted }) {
             {/* 旋转图标 */}
             <div className="relative flex h-16 w-16 items-center justify-center">
               <svg className="h-16 w-16 -rotate-90" viewBox="0 0 64 64">
-                <circle cx="32" cy="32" r="28" fill="none" stroke="currentColor" strokeWidth="4" className="text-muted/30" />
+                <circle cx="32" cy="32" r="28" fill="none" stroke="currentColor" strokeWidth="4" className="text-muted" />
                 <circle
                   cx="32" cy="32" r="28" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round"
                   className="text-primary transition-all duration-500"
@@ -795,7 +801,7 @@ function CreateBackupModal({ onClose, onConfirm, onCompleted }) {
               />
             </div>
             {/* 提示 */}
-            <div className="text-center text-[11px] text-muted-foreground/60">
+            <div className="text-center text-[11px] text-muted-foreground">
               {backupRecord?.name && <div>备份名称：{backupRecord.name}</div>}
               <div className="mt-0.5">pg_dump 正在导出数据库，请勿关闭页面</div>
             </div>
@@ -859,7 +865,7 @@ function RestoreModal({ backup, onClose, onConfirm }) {
         </div>
 
         {/* 备份信息 */}
-        <div className="mb-3 rounded-md border border-border bg-secondary/40 p-3 text-xs">
+        <div className="mb-3 rounded-md border border-border bg-secondary p-3 text-xs">
           <div className="grid grid-cols-2 gap-2">
             <div><span className="text-muted-foreground">备份名称：</span>{backup.name || '-'}</div>
             <div><span className="text-muted-foreground">备份时间：</span>{fmtTime(backup.created_at)}</div>
@@ -887,18 +893,18 @@ function RestoreModal({ backup, onClose, onConfirm }) {
           <div className="grid grid-cols-2 gap-2">
             <button type="button" onClick={() => setMode('full')} className={`rounded-md border p-2 text-left text-xs transition ${mode === 'full' ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/50'}`}>
               <div className="font-medium">完全恢复</div>
-              <div className="text-[10px] text-muted-foreground/70">覆盖全部数据</div>
+              <div className="text-[10px] text-muted-foreground">覆盖全部数据</div>
             </button>
             <button type="button" onClick={() => setMode('partial')} className={`rounded-md border p-2 text-left text-xs transition ${mode === 'partial' ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/50'}`}>
               <div className="font-medium">部分恢复</div>
-              <div className="text-[10px] text-muted-foreground/70">仅恢复选定模块</div>
+              <div className="text-[10px] text-muted-foreground">仅恢复选定模块</div>
             </button>
           </div>
         </div>
         {mode === 'partial' && (
           <div className="mb-3">
             <label className="mb-1 block text-xs font-medium text-muted-foreground">选择恢复模块</label>
-            <div className="grid grid-cols-2 gap-1.5 rounded-md border border-border bg-secondary/40 p-2">
+            <div className="grid grid-cols-2 gap-1.5 rounded-md border border-border bg-secondary p-2">
               {BACKUP_MODULES.map((m) => (
                 <label key={m.key} className="flex items-center gap-1.5 text-xs">
                   <input type="checkbox" checked={modules.includes(m.key)} onChange={() => toggleModule(m.key)} className="accent-primary" />
@@ -951,9 +957,9 @@ function DetailDrawer({ id, onClose, onDownload, onRestore, onDelete }) {
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
         </div>
         {loading ? (
-          <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground/70">加载中...</div>
+          <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">加载中...</div>
         ) : !detail ? (
-          <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground/70">加载失败</div>
+          <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">加载失败</div>
         ) : (
           <div data-allow-scroll className="flex-1 overflow-y-auto overscroll-contain p-5">
             {/* 基本信息 */}
@@ -972,16 +978,16 @@ function DetailDrawer({ id, onClose, onDownload, onRestore, onDelete }) {
                 <Info label="版本" value={r?.version || '-'} />
                 <Info label="创建者" value={r?.created_by || '-'} />
               </div>
-              {r?.note && <div className="mt-2 rounded-md border border-border bg-secondary/40 p-2 text-[11px] text-muted-foreground">备注：{r.note}</div>}
+              {r?.note && <div className="mt-2 rounded-md border border-border bg-secondary p-2 text-[11px] text-muted-foreground">备注：{r.note}</div>}
             </Section>
 
             {/* 备份范围 */}
             <Section title="备份范围">
               <div className="flex flex-col gap-1.5">
                 {detail.modules?.map((m) => (
-                  <div key={m.module} className="rounded-md border border-border bg-secondary/40 p-2 text-xs">
+                  <div key={m.module} className="rounded-md border border-border bg-secondary p-2 text-xs">
                     <div className="font-medium text-foreground">{BACKUP_MODULES.find((bm) => bm.key === m.module)?.label || m.module}</div>
-                    <div className="mt-0.5 text-[10px] text-muted-foreground/70">表：{m.tables.join(', ')}</div>
+                    <div className="mt-0.5 text-[10px] text-muted-foreground">表：{m.tables.join(', ')}</div>
                   </div>
                 ))}
               </div>
@@ -990,7 +996,7 @@ function DetailDrawer({ id, onClose, onDownload, onRestore, onDelete }) {
             {/* 文件清单 */}
             <Section title="文件清单">
               {detail.file_info ? (
-                <div className="rounded-md border border-border bg-secondary/40 p-2 text-xs">
+                <div className="rounded-md border border-border bg-secondary p-2 text-xs">
                   <div className="flex items-center gap-2">
                     <FileText className="h-3.5 w-3.5 text-primary" />
                     <span className="font-mono text-foreground">{detail.file_info.filename}</span>
@@ -1001,12 +1007,12 @@ function DetailDrawer({ id, onClose, onDownload, onRestore, onDelete }) {
                   </div>
                   {!detail.file_exists && <div className="mt-1 text-[11px] text-destructive">⚠ 文件不存在</div>}
                 </div>
-              ) : <div className="text-xs text-muted-foreground/70">备份文件不存在</div>}
+              ) : <div className="text-xs text-muted-foreground">备份文件不存在</div>}
             </Section>
 
             {/* 校验信息 */}
             <Section title="校验信息">
-              <div className="rounded-md border border-border bg-secondary/40 p-2 text-xs">
+              <div className="rounded-md border border-border bg-secondary p-2 text-xs">
                 <div className="mb-1 flex items-center gap-2">
                   {r?.checksum ? <CheckCircle2 className="h-3.5 w-3.5 text-success" /> : <X className="h-3.5 w-3.5 text-muted-foreground" />}
                   <span className="font-medium">{r?.checksum ? `${r.checksum_algo || 'sha256'} 校验值` : '未计算校验值'}</span>
@@ -1019,11 +1025,11 @@ function DetailDrawer({ id, onClose, onDownload, onRestore, onDelete }) {
             <Section title="操作日志">
               <div className="flex flex-col gap-1">
                 {detail.logs?.map((log, i) => (
-                  <div key={i} className="flex items-start gap-2 rounded-md border border-border bg-secondary/40 p-2 text-[11px]">
+                  <div key={i} className="flex items-start gap-2 rounded-md border border-border bg-secondary p-2 text-[11px]">
                     <span className={`mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full ${log.level === 'error' ? 'bg-destructive' : 'bg-success'}`} />
                     <div className="flex-1">
                       <div className={log.level === 'error' ? 'text-destructive' : 'text-muted-foreground'}>{log.message}</div>
-                      {log.at && <div className="text-[10px] text-muted-foreground/60">{fmtTime(log.at)}</div>}
+                      {log.at && <div className="text-[10px] text-muted-foreground">{fmtTime(log.at)}</div>}
                     </div>
                   </div>
                 ))}
@@ -1105,9 +1111,9 @@ function UploadModal({ onClose, onUploaded }) {
           onClick={() => inputRef.current?.click()}
           className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition ${dragOver ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/50'}`}
         >
-          <Upload className="h-8 w-8 text-muted-foreground/50" />
+          <Upload className="h-8 w-8 text-muted-foreground" />
           <p className="mt-2 text-xs text-muted-foreground">拖拽文件到此处或点击选择</p>
-          <p className="mt-1 text-[10px] text-muted-foreground/60">支持 .sql / .bak / .tar.gz / .zip / .dump</p>
+          <p className="mt-1 text-[10px] text-muted-foreground">支持 .sql / .bak / .tar.gz / .zip / .dump</p>
           {file && <p className="mt-2 text-xs text-primary">已选择：{file.name} ({fmtSize(file.size)})</p>}
           <input ref={inputRef} type="file" className="hidden" onChange={(e) => handleFile(e.target.files[0])} />
         </div>
@@ -1126,7 +1132,7 @@ function UploadModal({ onClose, onUploaded }) {
 function Toggle({ checked, onChange }) {
   return (
     <button type="button" onClick={() => onChange(!checked)}
-      className={`relative h-5 w-9 rounded-full transition ${checked ? 'bg-primary' : 'bg-muted-foreground/40'}`}>
+      className={`relative h-5 w-9 rounded-full transition ${checked ? 'bg-primary' : 'bg-input'}`}>
       <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${checked ? 'left-[18px]' : 'left-0.5'}`} />
     </button>
   )

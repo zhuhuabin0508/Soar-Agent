@@ -3,7 +3,7 @@
  *
  * 统一处理 Hermes 引擎的 SSE 事件解析，消除 AgentEditor.jsx 和 ChatPage.jsx
  * 之间的重复逻辑。支持所有事件类型：start / thinking / token / status /
- * tool_start / tool_end / delegate / log / done / error。
+ * tool_start / tool_end / clarify / delegate / log / done / error。
  *
  * 用法：
  *   const { reply, thinking, toolCalls, isStreaming, parseChunk, reset } = useHermesSSE()
@@ -22,6 +22,7 @@ export const SSE_EVENT_TYPES = {
   STATUS: 'status',
   TOOL_START: 'tool_start',
   TOOL_END: 'tool_end',
+  CLARIFY: 'clarify',
   DELEGATE: 'delegate',
   LOG: 'log',
   DONE: 'done',
@@ -45,6 +46,7 @@ export function useHermesSSE() {
   const [reply, setReply] = useState('')
   const [thinking, setThinking] = useState('')
   const [toolCalls, setToolCalls] = useState([])
+  const [clarifies, setClarifies] = useState([])
   const [delegateGroups, setDelegateGroups] = useState([])
   const [statusMsgs, setStatusMsgs] = useState([])
   const [logs, setLogs] = useState([])
@@ -56,6 +58,7 @@ export function useHermesSSE() {
     setReply('')
     setThinking('')
     setToolCalls([])
+    setClarifies([])
     setDelegateGroups([])
     setStatusMsgs([])
     setLogs([])
@@ -106,6 +109,18 @@ export function useHermesSSE() {
           )
         )
         break
+      case SSE_EVENT_TYPES.CLARIFY:
+        // 澄清提问：智能体无法确定目标时向用户提问（question + choices），
+        // 调用方据此渲染选项卡片，用户点击选项进入下一轮
+        setClarifies((prev) => [
+          ...prev,
+          {
+            question: data.question || '',
+            choices: Array.isArray(data.choices) ? data.choices : [],
+            answered: null,
+          },
+        ])
+        break
       case SSE_EVENT_TYPES.DELEGATE:
         setDelegateGroups((prev) => [...prev, data])
         break
@@ -133,6 +148,7 @@ export function useHermesSSE() {
     reply,
     thinking,
     toolCalls,
+    clarifies,
     delegateGroups,
     statusMsgs,
     logs,

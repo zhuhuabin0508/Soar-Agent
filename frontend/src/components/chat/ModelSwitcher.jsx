@@ -10,7 +10,8 @@
  * - llmConfigs: LLM 配置列表（来自 llmConfigsApi.list()）
  * - agentDefaultModelId: 智能体配置的默认 model_config_id（用于显示标签）
  */
-import { ChevronDown, Cpu } from 'lucide-react'
+import { Cpu } from 'lucide-react'
+import { CompactSelect } from '../ui'
 
 export default function ModelSwitcher({
   value = null,
@@ -41,15 +42,17 @@ export default function ModelSwitcher({
     : '智能体默认'
 
   return (
-    <div className="relative inline-flex items-center">
-      <Cpu className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground/60" />
-      <select
+    <div className="inline-flex items-center gap-1">
+      <Cpu className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <CompactSelect
+        size="sm"
+        variant="ghost"
+        className="max-w-[180px]"
         value={selectedId}
         onChange={(e) => {
           const v = e.target.value
           onChange && onChange(v ? Number(v) : null)
         }}
-        className="h-8 cursor-pointer appearance-none rounded-md border border-border bg-secondary pl-7 pr-7 text-xs text-foreground transition hover:bg-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
         title="切换模型（仅本次会话生效）"
       >
         <option value="">智能体默认</option>
@@ -58,8 +61,7 @@ export default function ModelSwitcher({
             {formatLabel(c)}
           </option>
         ))}
-      </select>
-      <ChevronDown className="pointer-events-none absolute right-2 h-3 w-3 text-muted-foreground/60" />
+      </CompactSelect>
       {/* 选中值预览标签（紧凑显示，避免 select 宽度跳变） */}
       <span className="sr-only">{selectedLabel}</span>
     </div>

@@ -1,9 +1,10 @@
-// 工单流程模板列表页：模板 CRUD + 发布 + 启停
+// 工单流程模板列表页：模板 CRUD + 发布 + 启停 + 导入导出
 // - 发布前必须通过服务端结构校验（节点/字段/路由/分组绑定）
 // - 已发布的模板被编辑后自动回到草稿态，需重新发布才能发起工单
-import { useState, useEffect, useCallback } from 'react'
+// - 导出：模板名称/描述/nodes 导出为 JSON；导入：JSON 创建为草稿副本，检查后重新发布
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { GitGraph, Plus, Pencil, Trash2, Rocket, FileJson, Power } from 'lucide-react'
+import { GitGraph, Plus, Pencil, Trash2, Rocket, FileJson, Power, Download, Upload, RefreshCw, ChevronDown } from 'lucide-react'
 import { toast } from '../store/toastStore'
 import { confirm } from '../components/ConfirmDialog'
 import { Button, PageContainer, DataTable, Pagination, EmptyState } from '../components/ui'
@@ -22,6 +23,20 @@ export default function TicketFlowList() {
   const [publishingId, setPublishingId] = useState(null)
   const [togglingId, setTogglingId] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
+
+  // 头部「更多」下拉菜单（ref + document 监听点击外部关闭，不用全屏遮罩避免拦截交互）
+  const [dataMenuOpen, setDataMenuOpen] = useState(false)
+  const dataMenuRef = useRef(null)
+  useEffect(() => {
+    if (!dataMenuOpen) return
+    const onDocMouseDown = (e) => {
+      if (dataMenuRef.current && !dataMenuRef.current.contains(e.target)) {
+        setDataMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDocMouseDown)
+    return () => document.removeEventListener('mousedown', onDocMouseDown)
+  }, [dataMenuOpen])
 
   const load = useCallback(() => {
     setLoading(true)
@@ -76,6 +91,62 @@ export default function TicketFlowList() {
     })
   }
 
+  // 导出：拉取模板详情，名称/描述/nodes 序列化为 JSON 文件下载
+  const exportFlow = (row) => {
+    ticketApi.getFlow(row.id)
+      .then((f) => {
+        const payload = { name: f.name, description: f.description || '', nodes: f.nodes || {} }
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `流程模板-${f.name}.json`
+        a.click()
+        URL.revokeObjectURL(url)
+        toast.success(`模板「${f.name}」已导出`)
+      })
+      .catch((e) => toast.error(e.message || '导出失败'))
+  }
+
+  // 导入：解析 JSON → 结构校验 → 重名加后缀 → 创建为草稿副本（检查后手动发布）
+  const importRef = useRef(null)
+  const [importing, setImporting] = useState(false)
+
+  const handleImportFile = (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // 允许重复选择同一文件
+    if (!file) return
+    if (!file.name.toLowerCase().endsWith('.json')) return toast.error('请选择 .json 模板文件')
+    const reader = new FileReader()
+    reader.onload = () => {
+      let data
+      try { data = JSON.parse(reader.result) } catch { return toast.error('文件不是合法的 JSON，无法导入') }
+      const name = typeof data?.name === 'string' ? data.name.trim() : ''
+      const nodes = data?.nodes
+      if (!name) return toast.error('模板文件缺少 name 字段，无法导入')
+      if (!nodes || typeof nodes !== 'object' || !Array.isArray(nodes.nodes)) {
+        return toast.error('模板文件缺少节点定义（nodes.nodes 数组），无法导入')
+      }
+      // 与现有模板重名时自动加后缀，避免混淆
+      const names = new Set(list.map((r) => r.name))
+      const finalName = names.has(name) ? `${name}（导入）` : name
+      confirm({
+        title: '导入流程模板',
+        message: `将导入模板「${name}」为草稿副本「${finalName}」。导入后请检查节点与分组配置，确认无误后手动发布。`,
+        confirmText: '导入',
+      }).then((ok) => {
+        if (!ok) return
+        setImporting(true)
+        ticketApi.createFlow({ name: finalName, description: typeof data.description === 'string' ? data.description : '', nodes })
+          .then(() => { toast.success(`模板「${finalName}」已导入（草稿），请检查后发布`); load() })
+          .catch((err) => toast.error(err.message || '导入失败'))
+          .finally(() => setImporting(false))
+      })
+    }
+    reader.onerror = () => toast.error('读取文件失败')
+    reader.readAsText(file, 'utf-8')
+  }
+
   const columns = [
     {
       key: 'name', header: '模板名称',
@@ -97,12 +168,20 @@ export default function TicketFlowList() {
       ),
     },
     {
-      key: 'node_count', header: '节点数', width: '90px', align: 'right',
-      render: (r) => <span className="tabular-nums">{r.node_count ?? '--'}</span>,
+      key: 'node_count', header: '节点数', width: '90px', numeric: true,
+      render: (r) => (
+        <span className={r.node_count ? '' : 'text-muted-foreground'} title={r.node_count == null ? '未统计' : undefined}>
+          {r.node_count == null ? '--' : r.node_count.toLocaleString()}
+        </span>
+      ),
     },
     {
-      key: 'ticket_count', header: '工单数', width: '90px', align: 'right',
-      render: (r) => <span className="tabular-nums">{r.ticket_count ?? 0}</span>,
+      key: 'ticket_count', header: '工单数', width: '90px', numeric: true,
+      render: (r) => (
+        <span className={r.ticket_count ? '' : 'text-muted-foreground'} title={r.ticket_count == null ? '未统计' : undefined}>
+          {r.ticket_count == null ? '--' : r.ticket_count.toLocaleString()}
+        </span>
+      ),
     },
     {
       key: 'enabled', header: '状态', width: '90px',
@@ -117,40 +196,36 @@ export default function TicketFlowList() {
       render: (r) => <span className="tabular-nums text-muted-foreground">{r.updated_at ? new Date(r.updated_at).toLocaleString('zh-CN', { hour12: false }) : '--'}</span>,
     },
     {
-      key: 'actions', header: '操作', width: '230px',
-      render: (r) => {
-        if (!canEdit) return <span className="text-xs text-muted-foreground">--</span>
-        return (
-          <div className="flex items-center gap-1.5 whitespace-nowrap">
-            <button onClick={() => openEdit(r)} className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-foreground hover:bg-muted" title="编辑流程">
-              <Pencil className="h-3.5 w-3.5" />编辑
-            </button>
-            {!r.is_draft && (
-              <button onClick={() => handleToggle(r)} disabled={togglingId === r.id}
-                className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
-                title={r.enabled ? '停用（停用后不能发起工单）' : '启用'}>
-                <Power className="h-3.5 w-3.5" />{r.enabled ? '停用' : '启用'}
+      key: 'actions', header: '操作', width: '415px',
+      render: (r) => (
+        <div className="flex items-center gap-1.5 whitespace-nowrap">
+          <button onClick={(e) => { e.stopPropagation(); exportFlow(r) }}
+            className="btn-secondary btn-sm" title="导出为 JSON 文件（可在其他环境导入）">
+            <Download className="h-3 w-3" />导出
+          </button>
+          {canEdit && (
+            <>
+              <button onClick={(e) => { e.stopPropagation(); openEdit(r) }} className="btn-secondary btn-sm" title="编辑流程">
+                <Pencil className="h-3 w-3" />编辑
               </button>
-            )}
-            {!r.is_draft && (
-              <button onClick={() => handlePublish(r)} disabled={publishingId === r.id}
-                className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50" title="重新发布">
-                <Rocket className="h-3.5 w-3.5" />{publishingId === r.id ? '发布中' : '发布'}
+              {!r.is_draft && (
+                <button onClick={(e) => { e.stopPropagation(); handleToggle(r) }} disabled={togglingId === r.id}
+                  className="btn-secondary btn-sm" title={r.enabled ? '停用（停用后不能发起工单）' : '启用'}>
+                  <Power className="h-3 w-3" />{r.enabled ? '停用' : '启用'}
+                </button>
+              )}
+              <button onClick={(e) => { e.stopPropagation(); handlePublish(r) }} disabled={publishingId === r.id}
+                className="btn-secondary btn-sm" title={r.is_draft ? '发布后才能发起工单' : '重新发布'}>
+                <Rocket className="h-3 w-3" />{publishingId === r.id ? '发布中' : '发布'}
               </button>
-            )}
-            {r.is_draft && (
-              <button onClick={() => handlePublish(r)} disabled={publishingId === r.id}
-                className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50" title="发布后才能发起工单">
-                <Rocket className="h-3.5 w-3.5" />{publishingId === r.id ? '发布中' : '发布'}
+              <button onClick={(e) => { e.stopPropagation(); handleDelete(r) }} disabled={deletingId === r.id}
+                className="btn-danger btn-sm" title="删除模板">
+                <Trash2 className="h-3 w-3" />{deletingId === r.id ? '删除中' : '删除'}
               </button>
-            )}
-            <button onClick={() => handleDelete(r)} disabled={deletingId === r.id}
-              className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50" title="删除模板">
-              <Trash2 className="h-3.5 w-3.5" />{deletingId === r.id ? '删除中' : '删除'}
-            </button>
-          </div>
-        )
-      },
+            </>
+          )}
+        </div>
+      ),
     },
   ]
 
@@ -158,31 +233,75 @@ export default function TicketFlowList() {
     <PageContainer>
       <div className="mb-6 flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="text-[22px] font-bold text-foreground">流程模板</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">流程模板</h1>
+            {!loading && (
+              <span className="text-sm font-medium tabular-nums text-foreground">
+                共 {total.toLocaleString()} 个模板
+              </span>
+            )}
+          </div>
           <p className="mt-2 text-[13px] text-muted-foreground">自定义工单流转程序：节点绑定处理分组、节点字段自定义、流转路由支持条件判断；模板发布后即可发起工单</p>
         </div>
-        {canEdit && (
-          <Button variant="primary" size="sm" onClick={openNew}>
-            <Plus className="mr-1 h-3.5 w-3.5" />新建模板
-          </Button>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          <button type="button" onClick={load} className="btn-secondary btn-sm" title="刷新流程模板列表">
+            <RefreshCw className={`mr-1 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />刷新
+          </button>
+          {canEdit && (
+            <div className="relative" ref={dataMenuRef}>
+              <button
+                type="button"
+                onClick={() => setDataMenuOpen((v) => !v)}
+                disabled={importing}
+                className={`btn-secondary btn-sm ${dataMenuOpen ? 'ring-1 ring-ring' : ''}`}
+                title="从 JSON 文件导入模板"
+              >
+                <Upload className="mr-1 h-3.5 w-3.5" />{importing ? '导入中' : '导入'}
+                <ChevronDown className={`ml-1 h-3 w-3 transition-transform ${dataMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {dataMenuOpen && (
+                <div className="absolute right-0 top-full z-20 mt-1 w-44 rounded-md border border-border bg-popover p-1 shadow-lg">
+                  <button
+                    type="button"
+                    onClick={() => { importRef.current?.click(); setDataMenuOpen(false) }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground transition hover:bg-accent"
+                  >
+                    <FileJson className="h-3.5 w-3.5 text-muted-foreground" />
+                    导入 JSON 模板
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          {canEdit && (
+            <Button variant="primary" size="sm" onClick={openNew}>
+              <Plus className="mr-1 h-3.5 w-3.5" />新建模板
+            </Button>
+          )}
+          <input ref={importRef} type="file" accept=".json,application/json" className="hidden" onChange={handleImportFile} />
+        </div>
       </div>
 
-      <DataTable
-        columns={columns}
-        data={list.slice((page - 1) * size, page * size)}
-        loading={loading}
-        rowKey="id"
-        rowClassName={() => 'h-14'}
-        emptyText="暂无流程模板"
-        emptyIcon={GitGraph}
-        emptyDescription="创建并发布流程模板后，即可在工单中心发起工单"
-        emptyAction={canEdit && (
-          <Button variant="primary" size="sm" onClick={openNew}>
-            <Plus className="mr-1 h-3.5 w-3.5" />新建模板
-          </Button>
-        )}
-      />
+      <div className="overflow-hidden rounded-lg border border-border">
+        <DataTable
+          className="table-stagger"
+          columns={columns}
+          data={list.slice((page - 1) * size, page * size)}
+          loading={loading}
+          rowKey="id"
+          onRowClick={canEdit ? (r) => openEdit(r) : undefined}
+          rowClickHint="点击编辑"
+          rowClassName={() => 'h-14'}
+          emptyText="暂无流程模板"
+          emptyIcon={GitGraph}
+          emptyDescription="创建并发布流程模板后，即可在工单中心发起工单"
+          emptyAction={canEdit && (
+            <Button variant="primary" size="sm" onClick={openNew}>
+              <Plus className="mr-1 h-3.5 w-3.5" />新建模板
+            </Button>
+          )}
+        />
+      </div>
       <Pagination page={page} pageSize={size} total={total} onPageChange={setPage} onPageSizeChange={(s) => { setSize(s); setPage(1) }} />
     </PageContainer>
   )

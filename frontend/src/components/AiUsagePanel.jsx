@@ -42,7 +42,7 @@ function fmtNum(n) {
 
 // 0 值样式：灰色
 function zeroClass(val) {
-  return val === 0 ? 'text-muted-foreground/50' : ''
+  return val === 0 ? 'text-muted-foreground' : ''
 }
 
 // 成功率等级颜色（≥99% 绿 / 95-99% 黄 / <95% 红）
@@ -193,7 +193,7 @@ function ChartCard({ title, icon: Icon, loading, isEmpty, emptyText, emptyDesc, 
           )}
         </div>
         {updatedAt && !loading && !isEmpty && (
-          <span className="flex items-center gap-1 text-[10px] text-muted-foreground/50">
+          <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
             <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
             更新于 {updatedAt}
           </span>
@@ -520,7 +520,7 @@ function AiUsagePanel() {
       {/* 顶部控制区：时间范围 + 刷新 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground/70">统计范围：</span>
+          <span className="text-xs text-muted-foreground">统计范围：</span>
           {[7, 14, 30].map((d) => (
             <button
               key={d}
@@ -544,7 +544,7 @@ function AiUsagePanel() {
               {autoRefresh && (
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
               )}
-              <span className={`relative inline-flex h-2 w-2 rounded-full ${autoRefresh ? 'bg-success' : 'bg-muted-foreground/50'}`} />
+              <span className={`relative inline-flex h-2 w-2 rounded-full ${autoRefresh ? 'bg-success' : 'bg-border'}`} />
             </span>
             <span>{autoRefresh ? '实时 · 每 30 秒' : '已暂停'}</span>
           </div>
@@ -558,7 +558,7 @@ function AiUsagePanel() {
           >
             <Radio className={`h-3.5 w-3.5 ${autoRefresh ? 'text-success' : ''}`} />
             <span>自动</span>
-            <span className={`ml-0.5 inline-flex h-3.5 w-6 items-center rounded-full p-0.5 transition ${autoRefresh ? 'bg-success' : 'bg-muted-foreground/30'}`}>
+            <span className={`ml-0.5 inline-flex h-3.5 w-6 items-center rounded-full p-0.5 transition ${autoRefresh ? 'bg-success' : 'bg-input'}`}>
               <span className={`h-2.5 w-2.5 rounded-full bg-white transition ${autoRefresh ? 'translate-x-2.5' : ''}`} />
             </span>
           </button>
@@ -576,7 +576,7 @@ function AiUsagePanel() {
 
           {/* 最后更新时间 */}
           {lastUpdate && (
-            <span className="text-[10px] text-muted-foreground/50">
+            <span className="text-[10px] text-muted-foreground">
               最后更新 {lastUpdate}
             </span>
           )}
@@ -708,12 +708,12 @@ function AiUsagePanel() {
             <Bot className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm font-medium text-foreground">智能体使用排行</span>
           </div>
-          <span className="text-xs text-muted-foreground/60">共 {agentUsage.length} 条数据</span>
+          <span className="text-xs text-muted-foreground">共 {agentUsage.length} 条数据</span>
         </div>
         <div className="w-full overflow-x-auto">
           <table className="w-full text-sm" style={{ fontFamily: "'Inter', 'Roboto Mono', monospace" }}>
             <thead>
-              <tr className="border-b border-border text-left text-xs text-muted-foreground/70">
+              <tr className="border-b border-border text-left text-xs text-muted-foreground">
                 <th className="py-2.5 pr-4 font-medium">智能体</th>
                 <th className="py-2.5 pr-4 font-medium">引擎</th>
                 <th className="py-2.5 pr-4 text-right font-medium">对话数</th>
@@ -746,7 +746,7 @@ function AiUsagePanel() {
                   <tr
                     key={a.agent_id}
                     onClick={() => a.agent_id && navigate(`/agents/${a.agent_id}/monitor`)}
-                    className="cursor-pointer border-b border-border/40 transition-colors last:border-0 hover:bg-primary/5"
+                    className="cursor-pointer border-b border-border transition-colors last:border-0 hover:bg-primary/5"
                   >
                     <td className="py-2.5 pr-4 text-foreground">{a.agent_name}</td>
                     <td className="py-2.5 pr-4 text-muted-foreground">
@@ -759,7 +759,7 @@ function AiUsagePanel() {
                     <td className={`py-2.5 pr-4 text-right tabular-nums ${zeroClass(a.execution_count)} text-muted-foreground`}>{fmtNum(a.execution_count)}</td>
                     <td className={`py-2.5 pr-4 text-right tabular-nums ${zeroClass(a.model_call_count)}`}>{fmtNum(a.model_call_count)}</td>
                     <td className={`py-2.5 pr-4 text-right tabular-nums ${zeroClass(a.total_tokens)} text-muted-foreground`}>{fmtTokens(a.total_tokens)}</td>
-                    <td className="py-2.5 pr-4 text-xs text-muted-foreground/70">{fmtTime(a.last_active_at)}</td>
+                    <td className="py-2.5 pr-4 text-xs text-muted-foreground">{fmtTime(a.last_active_at)}</td>
                   </tr>
                 ))
               )}
@@ -775,12 +775,12 @@ function AiUsagePanel() {
             <Cpu className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm font-medium text-foreground">大模型使用排行</span>
           </div>
-          <span className="text-xs text-muted-foreground/60">共 {modelUsage.length} 条数据</span>
+          <span className="text-xs text-muted-foreground">共 {modelUsage.length} 条数据</span>
         </div>
         <div className="w-full overflow-x-auto">
           <table className="w-full text-sm" style={{ fontFamily: "'Inter', 'Roboto Mono', monospace" }}>
             <thead>
-              <tr className="border-b border-border text-left text-xs text-muted-foreground/70">
+              <tr className="border-b border-border text-left text-xs text-muted-foreground">
                 <th className="py-2.5 pr-4 font-medium">配置名称</th>
                 <th className="py-2.5 pr-4 font-medium">模型</th>
                 <th className="py-2.5 pr-4 font-medium">供应商</th>
@@ -818,7 +818,7 @@ function AiUsagePanel() {
                   return (
                     <tr
                       key={`${m.model_config_id ?? 'none'}`}
-                      className="cursor-pointer border-b border-border/40 transition-colors last:border-0 hover:bg-primary/5"
+                      className="cursor-pointer border-b border-border transition-colors last:border-0 hover:bg-primary/5"
                     >
                       <td className="py-2.5 pr-4 text-foreground">
                         {m.config_name}

@@ -31,6 +31,7 @@ import { useUnsavedChanges } from '../hooks/useUnsavedChanges'
 import { toast } from '../store/toastStore'
 import { canEditResource } from '../utils/permissions'
 import MarkdownRenderer from '../components/MarkdownRenderer'
+import { CompactSelect } from '../components/ui'
 
 const NAV_ITEMS = [
   { id: 'config', label: '配置', icon: Settings },
@@ -147,7 +148,7 @@ function AddPicker({ title, options, value, onChange, onClose, kind, onCreateSki
               <button type="button" className="ml-1 text-primary hover:underline" onClick={() => { onClose(); navigate('/skills') }}>
                 技能库
               </button>
-              <span className="mx-1 text-muted-foreground/40">·</span>
+              <span className="mx-1 text-muted-foreground">·</span>
               <button type="button" className="text-primary hover:underline" onClick={() => { onClose(); navigate('/tools') }}>
                 前往工具
               </button>
@@ -345,7 +346,7 @@ function DebugTrace({ tools, statuses, logs, files, thinking, live }) {
     <div className="mb-2 flex flex-col gap-1.5 rounded-md border border-dashed border-primary/30 bg-primary/5 p-2">
       <div className="text-[10px] font-semibold uppercase tracking-wide text-primary/80">调试明细</div>
       {(thinking || live) && (
-        <details className="rounded border border-border bg-card/70">
+        <details className="rounded border border-border bg-card">
           <summary className="cursor-pointer px-2 py-1 text-[11px] text-muted-foreground">思考过程</summary>
           {live ? (
             <div ref={live.thinkingEl} className="max-h-48 overflow-auto whitespace-pre-wrap border-t border-border px-2 py-1.5 font-mono text-[11px] leading-relaxed text-muted-foreground" />
@@ -355,17 +356,17 @@ function DebugTrace({ tools, statuses, logs, files, thinking, live }) {
         </details>
       )}
       {statuses?.length > 0 && (
-        <div className="rounded border border-border bg-card/70 px-2 py-1 font-mono text-[11px] text-muted-foreground">
+        <div className="rounded border border-border bg-card px-2 py-1 font-mono text-[11px] text-muted-foreground">
           {statuses.map((s, i) => <div key={i}>[状态] {s}</div>)}
         </div>
       )}
       {logs?.length > 0 && (
-        <div className="max-h-32 overflow-auto rounded border border-border bg-card/70 px-2 py-1 font-mono text-[11px] text-muted-foreground">
+        <div className="max-h-32 overflow-auto rounded border border-border bg-card px-2 py-1 font-mono text-[11px] text-muted-foreground">
           {logs.map((s, i) => <div key={i}>{s}</div>)}
         </div>
       )}
       {tools?.map((t, i) => (
-        <details key={t.call_id || i} className="rounded border border-border bg-card/80">
+        <details key={t.call_id || i} className="rounded border border-border bg-card">
           <summary className="flex cursor-pointer items-center gap-1.5 px-2 py-1 text-[11px]">
             <Wrench className="h-3 w-3 text-primary" />
             <span className="font-mono text-primary">{t.name}</span>
@@ -377,13 +378,13 @@ function DebugTrace({ tools, statuses, logs, files, thinking, live }) {
             {t.message && <div className="text-[11px] text-muted-foreground">{t.message}</div>}
             {t.argsText && (
               <div>
-                <div className="text-[10px] uppercase text-muted-foreground/70">参数</div>
+                <div className="text-[10px] uppercase text-muted-foreground">参数</div>
                 <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] text-foreground">{t.argsText}</pre>
               </div>
             )}
             {t.resultText && (
               <div>
-                <div className="text-[10px] uppercase text-muted-foreground/70">返回</div>
+                <div className="text-[10px] uppercase text-muted-foreground">返回</div>
                 <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] text-foreground">{t.resultText}</pre>
               </div>
             )}
@@ -630,14 +631,14 @@ function AgentPreviewPane({ agentId, engine, ensureSaved }) {
                     thinking={live ? '' : m.thinking}
                     live={live && (thinkingNotedRef.current || m.thinking) ? { thinkingEl: thinkingElRef } : null}
                   />
-                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground/70">回复</div>
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground">回复</div>
                   {live ? (
                     <div ref={streamElRef} className="mt-1 whitespace-pre-wrap break-words" />
                   ) : (
                     <div className="mt-1"><MarkdownRenderer content={m.content || ''} /></div>
                   )}
                   {m.usage && (
-                    <div className="mt-1 text-[10px] text-muted-foreground/60">
+                    <div className="mt-1 text-[10px] text-muted-foreground">
                       入 {m.usage.input_tokens ?? 0} · 出 {m.usage.output_tokens ?? 0}
                     </div>
                   )}
@@ -987,7 +988,7 @@ export default function AgentWorkspace() {
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-background text-foreground">
-      <aside className="flex w-[200px] shrink-0 flex-col border-r border-border bg-card/40">
+      <aside className="flex w-[200px] shrink-0 flex-col border-r border-border bg-card">
         <button
           type="button"
           onClick={() => navigate('/studio?tab=agent')}
@@ -1080,11 +1081,13 @@ export default function AgentWorkspace() {
               <h2 className="mb-5 text-base font-semibold">配置</h2>
               <div className="mb-6">
                 <div className="mb-1.5 text-xs font-medium text-muted-foreground">模型</div>
-                <select
+                <CompactSelect
                   value={form.model_config_id}
                   onChange={(e) => setField('model_config_id')(e.target.value)}
                   disabled={!canEdit}
-                  className="h-9 w-full max-w-md rounded-md border border-border bg-secondary px-2 text-sm"
+                  size="lg"
+                  block
+                  className="max-w-md"
                 >
                   <option value="">选择模型</option>
                   {llmOptions.map((m) => (
@@ -1092,20 +1095,22 @@ export default function AgentWorkspace() {
                       {m.label}
                     </option>
                   ))}
-                </select>
+                </CompactSelect>
               </div>
               <div className="mb-6">
                 <div className="mb-1.5 text-xs font-medium text-muted-foreground">输出模式</div>
-                <select
+                <CompactSelect
                   value={form.output_mode || 'chat'}
                   onChange={(e) => setField('output_mode')(e.target.value)}
                   disabled={!canEdit}
-                  className="h-9 w-full max-w-md rounded-md border border-border bg-secondary px-2 text-sm"
+                  size="lg"
+                  block
+                  className="max-w-md"
                 >
                   <option value="chat">对话</option>
                   <option value="soc_decision">研判决策</option>
                   <option value="ban_risk_analyze">封禁研判</option>
-                </select>
+                </CompactSelect>
                 <p className="mt-1 text-[11px] text-muted-foreground">
                   工作流和同步测试按这里取值。对话页始终返回对话流。
                 </p>
@@ -1241,7 +1246,7 @@ export default function AgentWorkspace() {
               </div>
             </section>
 
-            <aside className="flex w-[420px] shrink-0 flex-col bg-card/30">
+            <aside className="flex w-[420px] shrink-0 flex-col bg-card">
               <div className="flex items-center gap-4 border-b border-border px-5">
                 {[
                   { id: 'build', label: '构建', icon: Sparkles },

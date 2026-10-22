@@ -308,7 +308,7 @@ function AgentQuickCreate() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
-      <header className="flex shrink-0 items-center justify-between border-b border-border bg-card/60 px-6 py-4">
+      <header className="flex shrink-0 items-center justify-between border-b border-border bg-card px-6 py-4">
         <div className="flex items-center gap-3">
           <button type="button" onClick={() => navigate('/studio')} className="btn-secondary btn-sm">
             <ArrowLeft className="h-4 w-4" />
@@ -333,7 +333,7 @@ function AgentQuickCreate() {
                 {i < step ? <Check className="h-3.5 w-3.5" /> : i + 1}
               </span>
               <span className={`text-sm ${i === step ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>{label}</span>
-              {i < STEPS.length - 1 && <span className="mx-1 text-muted-foreground/30">→</span>}
+              {i < STEPS.length - 1 && <span className="mx-1 text-muted-foreground">→</span>}
             </div>
           ))}
         </div>
@@ -356,7 +356,7 @@ function AgentQuickCreate() {
                     key={ex}
                     type="button"
                     onClick={() => setDescription(ex)}
-                    className="rounded-full border border-border bg-secondary/50 px-3 py-1 text-[11px] text-muted-foreground transition hover:border-primary/40 hover:text-foreground"
+                    className="rounded-full border border-border bg-secondary px-3 py-1 text-[11px] text-muted-foreground transition hover:border-primary/40 hover:text-foreground"
                   >
                     {ex.slice(0, 28)}…
                   </button>
@@ -406,7 +406,7 @@ function AgentQuickCreate() {
             <TextInput label="智能体名称" value={name} onChange={setName} required maxLength={50} />
             <SelectInput label="模型" value={modelConfigId} onChange={setModelConfigId} options={llmOptions} required />
 
-            <div className="rounded-lg border border-border bg-card/40 p-3">
+            <div className="rounded-lg border border-border bg-card p-3">
               <div className="mb-2 flex items-center gap-2 text-xs font-medium">
                 <Wrench className="h-3.5 w-3.5 text-primary" />
                 已自动选配工具（{enabledTools.length} 个）
@@ -461,7 +461,7 @@ function AgentQuickCreate() {
         {/* Step 2: 测试 & 发布 */}
         {step === 2 && (
           <div className="flex flex-col gap-4">
-            <div className="rounded-lg border border-border bg-card/40 p-4">
+            <div className="rounded-lg border border-border bg-card p-4">
               <div className="mb-2 flex items-center gap-2 text-sm font-medium">
                 <MessageSquare className="h-4 w-4 text-primary" />
                 试运行
@@ -492,7 +492,7 @@ function AgentQuickCreate() {
               )}
 
               {(testing || testResult) && (
-                <div className="mt-4 rounded-lg border border-border bg-background/80">
+                <div className="mt-4 rounded-lg border border-border bg-background">
                   <div className="flex border-b border-border">
                     {[
                       { id: 'reply', label: '回复' },
@@ -558,7 +558,7 @@ function AgentQuickCreate() {
                               </div>
                               {tc.message && <div className="mt-1 text-muted-foreground">{tc.message}</div>}
                               {tc.result != null && (
-                                <pre className="mt-1 max-h-32 overflow-auto rounded bg-muted/50 p-2 text-[10px]">
+                                <pre className="mt-1 max-h-32 overflow-auto rounded bg-muted p-2 text-[10px]">
                                   {typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result, null, 2)}
                                 </pre>
                               )}
@@ -574,7 +574,7 @@ function AgentQuickCreate() {
                       (testResult?.logs?.length > 0) ? (
                         <div className="flex flex-col gap-1 font-mono text-[11px]">
                           {testResult.logs.map((log, i) => (
-                            <div key={i} className="border-b border-border/50 pb-1 last:border-0">
+                            <div key={i} className="border-b border-border pb-1 last:border-0">
                               <span className="text-muted-foreground">[{log.level || 'info'}]</span>
                               {' '}{log.message || JSON.stringify(log)}
                               {log.detail != null && (

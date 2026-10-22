@@ -35,13 +35,20 @@ from app.core.log_receiver_manager.pipeline.filter_stage import _match_op
 from app.core.log_receiver_manager.events import NormalizedEvent
 from app.core.timezone import beijing_now
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, require_permission
 from app.models.alert_event import AlertEvent
 from app.models.alert_rule import AlertRule
 from app.models.alert_rule_group import AlertRuleGroup
 from app.models.alert_rule_hit import AlertRuleHit
 
-router = APIRouter(prefix="/alert-rules", tags=["alert-rules"])
+# 路由级基线：强制登录；权限按接口单独声明
+# （list/export/stats/hits/templates/test=alert_rule:view，
+#   import/create/update/delete/publish/toggle/duplicate/reorder/batch=alert_rule:edit）
+router = APIRouter(
+    prefix="/alert-rules",
+    tags=["alert-rules"],
+    dependencies=[Depends(get_current_user)],
+)
 
 VALID_OPS = {
     "eq", "ne", "in", "not_in", "gte", "lte", "gt", "lt",
@@ -481,13 +488,16 @@ _TEMPLATES = [
 
 # ===== 静态段路由（必须注册在 /{rule_id} 之前）=====
 @router.get("/templates")
-def list_templates():
+def list_templates(current_user=Depends(require_permission("alert_rule", "view"))):
     """空状态模板快速开始（前端不硬编码，便于扩展）。"""
     return {"items": _TEMPLATES}
 
 
 @router.get("/export")
-def export_rules(db: Session = Depends(get_db)):
+def export_rules(
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("alert_rule", "view")),
+):
     """导出全部规则（JSON 全量配置，含草稿）。"""
     rules = db.query(AlertRule).order_by(AlertRule.priority.asc(), AlertRule.id.asc()).all()
     payload = {
@@ -504,7 +514,7 @@ def export_rules(db: Session = Depends(get_db)):
 
 
 @router.post("/import")
-def import_rules(payload: ImportBody, request: Request, db: Session = Depends(get_db), current_user: str = Depends(get_current_user)):
+def import_rules(payload: ImportBody, request: Request, db: Session = Depends(get_db), current_user=Depends(require_permission("alert_rule", "edit"))):
     """批量导入规则（JSON；重名跳过；校验同新建）。"""
     imported, skipped, errors = [], [], []
     seen_names = set()
@@ -528,7 +538,11 @@ def import_rules(payload: ImportBody, request: Request, db: Session = Depends(ge
 
 
 @router.post("/test")
-def test_rules(payload: TestBody, db: Session = Depends(get_db)):
+def test_rules(
+    payload: TestBody,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("alert_rule", "view")),
+):
     """规则测试（只读不落库、不产生真实告警）。
 
     - 匹配链：线上启用规则 + 草稿（按优先级），逐规则展示作用域判定与
@@ -677,7 +691,12 @@ def test_rules(payload: TestBody, db: Session = Depends(get_db)):
 
 # ===== CRUD =====
 @router.get("")
-def list_rules(search: str = "", group: str = "", db: Session = Depends(get_db)):
+def list_rules(
+    search: str = "",
+    group: str = "",
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("alert_rule", "view")),
+):
     """规则列表（含草稿；条件摘要由前端渲染）。"""
     q = db.query(AlertRule).order_by(AlertRule.priority.asc(), AlertRule.id.asc())
     if search:
@@ -714,7 +733,7 @@ def list_rules(search: str = "", group: str = "", db: Session = Depends(get_db))
 
 
 @router.post("")
-def create_rule(payload: RuleCreate, request: Request, db: Session = Depends(get_db), current_user: str = Depends(get_current_user)):
+def create_rule(payload: RuleCreate, request: Request, db: Session = Depends(get_db), current_user=Depends(require_permission("alert_rule", "edit"))):
     """新建规则（draft=1 存为草稿，不参与线上匹配）。"""
     rule = _rule_from_body(payload, db, current_user)
     db.add(rule)
@@ -726,7 +745,7 @@ def create_rule(payload: RuleCreate, request: Request, db: Session = Depends(get
 
 
 @router.put("/{rule_id}")
-def update_rule(rule_id: int, payload: RuleUpdate, request: Request, db: Session = Depends(get_db), current_user: str = Depends(get_current_user)):
+def update_rule(rule_id: int, payload: RuleUpdate, request: Request, db: Session = Depends(get_db), current_user=Depends(require_permission("alert_rule", "edit"))):
     """更新规则（全量 PUT；draft=1 转为草稿下线）。"""
     rule = db.query(AlertRule).filter(AlertRule.id == rule_id).first()
     if not rule:
@@ -740,7 +759,7 @@ def update_rule(rule_id: int, payload: RuleUpdate, request: Request, db: Session
 
 
 @router.delete("/{rule_id}")
-def delete_rule(rule_id: int, request: Request, db: Session = Depends(get_db), current_user: str = Depends(get_current_user)):
+def delete_rule(rule_id: int, request: Request, db: Session = Depends(get_db), current_user=Depends(require_permission("alert_rule", "edit"))):
     """删除规则（命中记录随规则清理；统计窗口随缓存失效清零）。"""
     rule = db.query(AlertRule).filter(AlertRule.id == rule_id).first()
     if not rule:
@@ -755,7 +774,7 @@ def delete_rule(rule_id: int, request: Request, db: Session = Depends(get_db), c
 
 
 @router.post("/{rule_id}/publish")
-def publish_rule(rule_id: int, payload: PublishBody, request: Request, db: Session = Depends(get_db), current_user: str = Depends(get_current_user)):
+def publish_rule(rule_id: int, payload: PublishBody, request: Request, db: Session = Depends(get_db), current_user=Depends(require_permission("alert_rule", "edit"))):
     """发布规则（草稿门禁：服务端用测试样例复验，通过才上线）。
 
     - 匹配类规则：任一样例命中（作用域 + 条件）即通过；
@@ -787,7 +806,7 @@ def publish_rule(rule_id: int, payload: PublishBody, request: Request, db: Sessi
 
 
 @router.post("/{rule_id}/toggle")
-def toggle_rule(rule_id: int, request: Request, db: Session = Depends(get_db), current_user: str = Depends(get_current_user)):
+def toggle_rule(rule_id: int, request: Request, db: Session = Depends(get_db), current_user=Depends(require_permission("alert_rule", "edit"))):
     """启停规则（停用后不再命中；草稿规则启停仅在发布后生效）。"""
     rule = db.query(AlertRule).filter(AlertRule.id == rule_id).first()
     if not rule:
@@ -802,7 +821,7 @@ def toggle_rule(rule_id: int, request: Request, db: Session = Depends(get_db), c
 
 
 @router.post("/{rule_id}/duplicate")
-def duplicate_rule(rule_id: int, request: Request, db: Session = Depends(get_db), current_user: str = Depends(get_current_user)):
+def duplicate_rule(rule_id: int, request: Request, db: Session = Depends(get_db), current_user=Depends(require_permission("alert_rule", "edit"))):
     """复制规则（新名称后缀「（副本）」，草稿状态）。"""
     rule = db.query(AlertRule).filter(AlertRule.id == rule_id).first()
     if not rule:
@@ -841,7 +860,7 @@ def duplicate_rule(rule_id: int, request: Request, db: Session = Depends(get_db)
 
 
 @router.post("/reorder")
-def reorder_rules(payload: dict, request: Request, db: Session = Depends(get_db), current_user: str = Depends(get_current_user)):
+def reorder_rules(payload: dict, request: Request, db: Session = Depends(get_db), current_user=Depends(require_permission("alert_rule", "edit"))):
     """批量保存优先级（按传入 id 顺序重排 priority）。"""
     ids = payload.get("ids") or []
     if not ids:
@@ -857,7 +876,7 @@ def reorder_rules(payload: dict, request: Request, db: Session = Depends(get_db)
 
 
 @router.post("/batch")
-def batch_rules(payload: dict, request: Request, db: Session = Depends(get_db), current_user: str = Depends(get_current_user)):
+def batch_rules(payload: dict, request: Request, db: Session = Depends(get_db), current_user=Depends(require_permission("alert_rule", "edit"))):
     """批量启用/停用/删除（ids + op=enable|disable|delete）。"""
     ids = payload.get("ids") or []
     op = payload.get("op")
@@ -882,7 +901,10 @@ def batch_rules(payload: dict, request: Request, db: Session = Depends(get_db), 
 
 # ===== 统计卡 / 命中记录 =====
 @router.get("/stats")
-def rules_stats(db: Session = Depends(get_db)):
+def rules_stats(
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("alert_rule", "view")),
+):
     """列表页统计卡：总数（启用数）/ 今日告警生成数 / 今日抑制数 / 24h 无命中启用规则数。
 
     口径：启用数 = enabled 且非草稿（线上生效）；今日 = 北京时间自然日；
@@ -925,6 +947,7 @@ def rule_hits(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
+    current_user=Depends(require_permission("alert_rule", "view")),
 ):
     """单规则命中记录（近 7 天；服务端分页）。"""
     q = db.query(AlertRuleHit).filter(AlertRuleHit.rule_id == rule_id)

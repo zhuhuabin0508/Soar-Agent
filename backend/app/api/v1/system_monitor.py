@@ -584,4 +584,4 @@ def get_service_logs(
         }
     except Exception as exc:  # noqa: BLE001
         logger.exception("获取容器日志失败: %s", exc)
-        raise HTTPException(status_code=500, detail=f"获取日志失败: {exc}")
+        raise HTTPException(status_code=500, detail=f"获取日志失败（{type(exc).__name__}），详情见服务日志")

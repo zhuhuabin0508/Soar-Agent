@@ -16,11 +16,17 @@ from sqlalchemy.orm import Session
 from app.api.v1.alert_rules import _log_audit
 from app.core.timezone import beijing_now
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, require_permission
 from app.models.alert_rule import AlertRule
 from app.models.alert_rule_group import AlertRuleGroup
 
-router = APIRouter(prefix="/alert-rule-groups", tags=["alert-rule-groups"])
+# 路由级基线：强制登录；权限按接口单独声明
+# （列表=alert_rule:view，新建/重命名/删除=alert_rule:edit）
+router = APIRouter(
+    prefix="/alert-rule-groups",
+    tags=["alert-rule-groups"],
+    dependencies=[Depends(get_current_user)],
+)
 
 DEFAULT_GROUP = "其他"
 
@@ -36,7 +42,10 @@ def _ensure_default_group(db: Session) -> None:
 
 
 @router.get("")
-def list_groups(db: Session = Depends(get_db)):
+def list_groups(
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("alert_rule", "view")),
+):
     """分组列表（含规则计数；按 sort_order 排序，「其他」固定最后）。"""
     _ensure_default_group(db)
     db.commit()
@@ -64,7 +73,7 @@ def list_groups(db: Session = Depends(get_db)):
 
 
 @router.post("")
-def create_group(payload: GroupBody, request: Request, db: Session = Depends(get_db), current_user: str = Depends(get_current_user)):
+def create_group(payload: GroupBody, request: Request, db: Session = Depends(get_db), current_user=Depends(require_permission("alert_rule", "edit"))):
     """新建分组（名称唯一）。"""
     name = payload.name.strip()
     if not name:
@@ -81,7 +90,7 @@ def create_group(payload: GroupBody, request: Request, db: Session = Depends(get
 
 
 @router.put("/{group_id}")
-def rename_group(group_id: int, payload: GroupBody, request: Request, db: Session = Depends(get_db), current_user: str = Depends(get_current_user)):
+def rename_group(group_id: int, payload: GroupBody, request: Request, db: Session = Depends(get_db), current_user=Depends(require_permission("alert_rule", "edit"))):
     """重命名分组（同步更新关联规则的分组名）。"""
     group = db.query(AlertRuleGroup).filter(AlertRuleGroup.id == group_id).first()
     if not group:
@@ -106,7 +115,7 @@ def rename_group(group_id: int, payload: GroupBody, request: Request, db: Sessio
 
 
 @router.delete("/{group_id}")
-def delete_group(group_id: int, request: Request, db: Session = Depends(get_db), current_user: str = Depends(get_current_user)):
+def delete_group(group_id: int, request: Request, db: Session = Depends(get_db), current_user=Depends(require_permission("alert_rule", "edit"))):
     """删除分组（关联规则移入「其他」；「其他」本身不可删除）。"""
     group = db.query(AlertRuleGroup).filter(AlertRuleGroup.id == group_id).first()
     if not group:

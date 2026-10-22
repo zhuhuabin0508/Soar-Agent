@@ -8,6 +8,7 @@ import { authApi } from '../api/auth'
 import { useAuthStore } from '../store/authStore'
 import { toast } from '../store/toastStore'
 import { confirm } from '../components/ConfirmDialog'
+import { CompactSelect } from '../components/ui'
 import { useUnsavedChanges } from '../hooks/useUnsavedChanges'
 
 // ============ 工具函数 ============
@@ -82,7 +83,7 @@ function ProfileInput({ label, value, onChange, placeholder, type = 'text', icon
       <label className="mb-1.5 block text-xs font-normal text-muted-foreground">{label}</label>
       <div className="relative">
         {Icon && (
-          <Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/50" />
+          <Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         )}
         <input
           type={type}
@@ -91,7 +92,7 @@ function ProfileInput({ label, value, onChange, placeholder, type = 'text', icon
           onBlur={onBlur}
           placeholder={placeholder}
           disabled={disabled}
-          className={`w-full rounded-md border border-border bg-secondary py-2.5 text-sm text-foreground transition-all placeholder:text-muted-foreground/40 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 ${Icon ? 'pl-9' : 'pl-3'} ${suffix ? 'pr-10' : 'pr-3'} disabled:opacity-50`}
+          className={`w-full rounded-md border border-border bg-secondary py-2.5 text-sm text-foreground transition-all placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 ${Icon ? 'pl-9' : 'pl-3'} ${suffix ? 'pr-10' : 'pr-3'} disabled:opacity-50`}
         />
         {suffix && (
           <div className="absolute right-3 top-1/2 -translate-y-1/2">{suffix}</div>
@@ -119,7 +120,7 @@ function PasswordInput({ label, value, onChange, placeholder, onBlur, suffix }) 
           <button
             type="button"
             onClick={() => setShow((s) => !s)}
-            className="text-muted-foreground/50 transition hover:text-foreground"
+            className="text-muted-foreground transition hover:text-foreground"
           >
             {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </button>
@@ -136,22 +137,17 @@ function ProfileSelect({ label, value, onChange, icon: Icon, children }) {
       <label className="mb-1.5 block text-xs font-normal text-muted-foreground">{label}</label>
       <div className="relative">
         {Icon && (
-          <Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/50" />
+          <Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         )}
-        <select
+        <CompactSelect
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className={`w-full appearance-none rounded-md border border-border bg-secondary py-2.5 text-sm text-foreground transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 ${Icon ? 'pl-9' : 'pl-3'} pr-9`}
+          size="lg"
+          block
+          className={Icon ? 'pl-9' : ''}
         >
           {children}
-        </select>
-        <svg
-          className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/50"
-          viewBox="0 0 20 20"
-          fill="currentColor"
-        >
-          <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-        </svg>
+        </CompactSelect>
       </div>
     </div>
   )
@@ -366,7 +362,7 @@ function ProfileTab({ user, onSaved }) {
           onChange={(e) => setProfile((p) => ({ ...p, bio: e.target.value }))}
           placeholder="一句话介绍自己（可选）"
           rows={3}
-          className="w-full resize-none rounded-md border border-border bg-secondary px-3 py-2.5 text-sm text-foreground transition-all placeholder:text-muted-foreground/40 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+          className="w-full resize-none rounded-md border border-border bg-secondary px-3 py-2.5 text-sm text-foreground transition-all placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
         />
       </div>
 
@@ -570,7 +566,7 @@ function SecurityTab() {
                 {strength.checks.map((c, i) => (
                   <span
                     key={i}
-                    className={`flex items-center gap-1 text-[10px] ${c.pass ? 'text-success' : 'text-muted-foreground/50'}`}
+                    className={`flex items-center gap-1 text-[10px] ${c.pass ? 'text-success' : 'text-muted-foreground'}`}
                   >
                     {c.pass ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
                     {c.label}
@@ -631,7 +627,7 @@ function SecurityTab() {
             <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">未启用</span>
           )}
         </div>
-        <p className="mb-3 text-[11px] text-muted-foreground/70">
+        <p className="mb-3 text-[11px] text-muted-foreground">
           启用后，每次登录密码验证通过后需输入 Authenticator 应用中的 6 位动态码，防止密码泄露导致账号被盗。
         </p>
         {user?.otp_enabled ? (
@@ -675,7 +671,7 @@ function SecurityTab() {
                 <div className="inline-block rounded-lg border border-border bg-white p-3">
                   <img src={otpSetup.qr_code} alt="OTP 二维码" className="h-40 w-40" />
                 </div>
-                <p className="mt-2 text-[10px] text-muted-foreground/60">
+                <p className="mt-2 text-[10px] text-muted-foreground">
                   无法扫码？手动输入密钥：
                   <code className="ml-1 rounded bg-secondary px-1.5 py-0.5 font-mono text-primary">{otpSetup.secret}</code>
                 </p>
@@ -690,7 +686,7 @@ function SecurityTab() {
                   value={otpCode}
                   onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
                   placeholder="000000"
-                  className="w-full rounded-lg border border-border bg-muted/60 py-2.5 text-center text-xl font-bold tracking-[0.4em] text-foreground outline-none focus:border-primary/80 focus:ring-2 focus:ring-primary/30"
+                  className="w-full rounded-lg border border-border bg-muted py-2.5 text-center text-xl font-bold tracking-[0.4em] text-foreground outline-none focus:border-primary/80 focus:ring-2 focus:ring-primary/30"
                 />
               </div>
               {/* 操作按钮 */}
@@ -727,7 +723,7 @@ function SecurityTab() {
               </button>
             </div>
             <div className="space-y-3 p-5">
-              <p className="text-xs text-muted-foreground/70">
+              <p className="text-xs text-muted-foreground">
                 解绑后登录将不再需要动态验证码。为安全起见，请输入当前 Authenticator 中的 6 位动态码确认。
               </p>
               <input
@@ -738,7 +734,7 @@ function SecurityTab() {
                 onChange={(e) => setOtpDisableCode(e.target.value.replace(/\D/g, ''))}
                 placeholder="000000"
                 autoFocus
-                className="w-full rounded-lg border border-border bg-muted/60 py-2.5 text-center text-xl font-bold tracking-[0.4em] text-foreground outline-none focus:border-primary/80 focus:ring-2 focus:ring-primary/30"
+                className="w-full rounded-lg border border-border bg-muted py-2.5 text-center text-xl font-bold tracking-[0.4em] text-foreground outline-none focus:border-primary/80 focus:ring-2 focus:ring-primary/30"
               />
               <div className="flex justify-end gap-2">
                 <button
@@ -775,7 +771,7 @@ function DevicesTab({ sessions, loading, currentSid, onRevoke, onRevokeAll, onRe
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">共 {sessions.length} 台设备</span>
           {otherCount > 0 && (
-            <span className="text-xs text-muted-foreground/60">· 其他设备 {otherCount} 台</span>
+            <span className="text-xs text-muted-foreground">· 其他设备 {otherCount} 台</span>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -804,7 +800,7 @@ function DevicesTab({ sessions, loading, currentSid, onRevoke, onRevokeAll, onRe
 
       {/* 设备列表 */}
       {sessions.length === 0 && !loading ? (
-        <div className="py-12 text-center text-sm text-muted-foreground/70">
+        <div className="py-12 text-center text-sm text-muted-foreground">
           暂无活跃会话记录
         </div>
       ) : (
@@ -819,7 +815,7 @@ function DevicesTab({ sessions, loading, currentSid, onRevoke, onRevokeAll, onRe
                 className={`relative flex items-center gap-3 overflow-hidden rounded-lg border p-4 ${
                   isCurrent
                     ? 'border-primary/50 bg-primary/5'
-                    : 'border-border bg-secondary/30'
+                    : 'border-border bg-secondary'
                 }`}
               >
                 {/* 当前设备左侧青色竖线 */}
@@ -916,7 +912,7 @@ function AvatarUploadModal({ open, onClose, onUpload, uploading }) {
             选择图片
             <input type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={uploading} />
           </label>
-          <p className="text-[11px] text-muted-foreground/60">支持 JPG / PNG / GIF，大小不超过 2MB</p>
+          <p className="text-[11px] text-muted-foreground">支持 JPG / PNG / GIF，大小不超过 2MB</p>
         </div>
         <div className="mt-6 flex justify-end gap-3">
           <button
@@ -1048,10 +1044,10 @@ function Profile() {
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
       {/* 页面标题 */}
-      <header className="flex shrink-0 items-center justify-between border-b border-border bg-card/60 px-6 py-4">
+      <header className="flex shrink-0 items-center justify-between border-b border-border bg-card px-6 py-4">
         <div>
           <h1 className="text-xl font-semibold text-foreground">个人中心</h1>
-          <p className="mt-0.5 text-xs text-muted-foreground/60">账号设置 / 个人中心</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">账号设置 / 个人中心</p>
         </div>
       </header>
 

@@ -5,6 +5,7 @@ import { useState, useMemo, useRef, useEffect } from 'react'
 import { Paperclip, X } from 'lucide-react'
 import { useWorkflowStore } from '../../store/workflowStore'
 import InfoTip from '../InfoTip'
+import { CompactSelect } from '../ui'
 
 // 基础样式（不含宽度），用于 flex 行内需要自定义宽度的元素
 // 避免 w-full 与 flex-1 / w-24 同行时产生宽度冲突导致溢出
@@ -16,13 +17,13 @@ export const inputBaseCls =
 export const inputCls = `${inputBaseCls} w-full`
 export const textareaCls = `${inputCls} resize-y font-mono`
 export const labelCls = 'mb-1 block text-xs font-medium text-muted-foreground'
-export const hintCls = 'mt-1 text-[11px] leading-relaxed text-muted-foreground/70'
+export const hintCls = 'mt-1 text-[11px] leading-relaxed text-muted-foreground'
 
 // 带可选 InfoTip 的 label 渲染辅助函数
 // 将原来的 label 下方小字 hint 改为 label 右侧圆圈感叹号 tooltip
 function LabelWithTip({ label, hint, required }) {
   if (!label) return null
-  const requiredMark = required ? <span className="text-red-500">*</span> : null
+  const requiredMark = required ? <span className="text-destructive">*</span> : null
   if (!hint) return <label className={labelCls}>{label}{requiredMark}</label>
   return (
     <label className={`${labelCls} flex items-center gap-1.5`}>
@@ -123,15 +124,15 @@ export function VariableRefButton({ currentNodeId, onPick }) {
       </button>
       {open && (
         <div className="absolute right-0 top-full z-50 mt-1 max-h-[300px] w-60 overflow-y-auto rounded-md border border-border bg-secondary shadow-xl">
-          <div className="border-b border-border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+          <div className="border-b border-border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             选择上游节点输出
           </div>
           {upstreamNodes.map((n) => {
             const fields = NODE_OUTPUT_FIELDS[n.type] || [{ field: 'output', label: 'output' }]
             const label = n.data?.label || n.data?.name || NODE_TYPE_LABELS[n.type] || n.type
             return (
-              <div key={n.id} className="border-b border-border/50 last:border-0">
-                <div className="truncate px-3 py-1.5 text-[11px] font-medium text-foreground/90">
+              <div key={n.id} className="border-b border-border last:border-0">
+                <div className="truncate px-3 py-1.5 text-[11px] font-medium text-foreground">
                   {label}
                 </div>
                 {fields.map((f) => (
@@ -159,8 +160,8 @@ export function VariableRefButton({ currentNodeId, onPick }) {
 // 带标题的分区块容器
 export function Section({ title, children, hint }) {
   return (
-    <div className="rounded-md border border-border bg-muted/40 p-3">
-      <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-foreground/90">
+    <div className="rounded-md border border-border bg-muted p-3">
+      <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-foreground">
         {title}
         {hint && <InfoTip text={hint} />}
       </div>
@@ -183,7 +184,7 @@ export function TextInput({ label, value, onChange, placeholder, hint, required,
         onChange={(e) => onChange(e.target.value)}
       />
       {maxLength && (
-        <div className={`mt-1 text-right text-[11px] ${len >= maxLength ? 'text-destructive' : 'text-muted-foreground/60'}`}>
+        <div className={`mt-1 text-right text-[11px] ${len >= maxLength ? 'text-destructive' : 'text-muted-foreground'}`}>
           {len}/{maxLength}
         </div>
       )}
@@ -214,8 +215,9 @@ export function SelectInput({ label, value, onChange, options, hint }) {
   return (
     <div>
       <LabelWithTip label={label} hint={hint} />
-      <select
-        className={inputCls}
+      <CompactSelect
+        size="lg"
+        block
         value={value ?? ''}
         onChange={(e) => onChange(e.target.value)}
       >
@@ -228,7 +230,7 @@ export function SelectInput({ label, value, onChange, options, hint }) {
             </option>
           )
         })}
-      </select>
+      </CompactSelect>
     </div>
   )
 }
@@ -248,7 +250,7 @@ export function TextArea({ label, value, onChange, rows = 4, placeholder, hint, 
         onChange={(e) => onChange(e.target.value)}
       />
       {maxLength && (
-        <div className={`mt-1 text-right text-[11px] ${len >= maxLength ? 'text-destructive' : 'text-muted-foreground/60'}`}>
+        <div className={`mt-1 text-right text-[11px] ${len >= maxLength ? 'text-destructive' : 'text-muted-foreground'}`}>
           {len}/{maxLength}
         </div>
       )}
@@ -266,7 +268,7 @@ export function CheckRow({ label, checked, onChange, hint }) {
         checked={!!checked}
         onChange={(e) => onChange(e.target.checked)}
       />
-      <span className="flex items-center gap-1 text-sm text-foreground/90">
+      <span className="flex items-center gap-1 text-sm text-foreground">
         {label}
         {hint && <InfoTip text={hint} />}
       </span>
@@ -295,7 +297,7 @@ export function CheckboxGroup({ label, options, value, onChange, columns = 1 }) 
           return (
             <label
               key={val}
-              className="flex cursor-pointer items-center gap-2 rounded-md border border-border bg-muted/50 px-2 py-1.5 hover:border-border"
+              className="flex cursor-pointer items-center gap-2 rounded-md border border-border bg-muted px-2 py-1.5 transition-colors hover:border-primary/40 hover:bg-accent"
             >
               <input
                 type="checkbox"
@@ -303,7 +305,7 @@ export function CheckboxGroup({ label, options, value, onChange, columns = 1 }) 
                 checked={value?.includes(val) || false}
                 onChange={() => toggle(val)}
               />
-              <span className="truncate text-xs text-foreground/90">{text}</span>
+              <span className="truncate text-xs text-foreground">{text}</span>
             </label>
           )
         })}
@@ -329,7 +331,7 @@ export function KeyValueEditor({ label, value = [], onChange, keyPlaceholder = '
       {label && <label className={labelCls}>{label}</label>}
       <div className="flex flex-col gap-1.5">
         {value.length === 0 && (
-          <p className="text-[11px] text-muted-foreground/60">暂无配置项</p>
+          <p className="text-[11px] text-muted-foreground">暂无配置项</p>
         )}
         {value.map((item, idx) => (
           <div key={idx} className="flex gap-1.5">
@@ -383,12 +385,12 @@ export function TypedParamEditor({ label, value = [], onChange }) {
       {label && <label className={labelCls}>{label}</label>}
       <div className="flex flex-col gap-1.5">
         {value.length === 0 && (
-          <p className="text-[11px] text-muted-foreground/60">暂无参数</p>
+          <p className="text-[11px] text-muted-foreground">暂无参数</p>
         )}
         {value.map((item, idx) => (
           <div
             key={idx}
-            className="flex flex-col gap-1 rounded-md border border-border bg-muted/40 p-1.5"
+            className="flex flex-col gap-1 rounded-md border border-border bg-muted p-1.5"
           >
             {/* 第一行：变量名 + 删除按钮 */}
             <div className="flex gap-1.5">
@@ -409,8 +411,10 @@ export function TypedParamEditor({ label, value = [], onChange }) {
             </div>
             {/* 第二行：类型选择 + 必填复选框 */}
             <div className="flex items-center gap-1.5">
-              <select
-                className={`${inputCls} min-w-0 flex-1`}
+              <CompactSelect
+                size="lg"
+                block
+                className="min-w-0 flex-1"
                 value={item.type}
                 onChange={(e) => update(idx, { type: e.target.value })}
               >
@@ -419,7 +423,7 @@ export function TypedParamEditor({ label, value = [], onChange }) {
                     {t}
                   </option>
                 ))}
-              </select>
+              </CompactSelect>
               <label
                 className="flex shrink-0 cursor-pointer items-center gap-1 px-1 text-[11px] text-muted-foreground"
                 title="是否必填"
@@ -476,7 +480,7 @@ export function ConditionEditor({ value = [], onChange, logic = 'AND', onLogicCh
       <div className="mb-1.5 flex items-center justify-between">
         <label className={labelCls + ' mb-0'}>条件列表</label>
         <div className="flex items-center gap-1 text-[11px]">
-          <span className="text-muted-foreground/70">连接符：</span>
+          <span className="text-muted-foreground">连接符：</span>
           {['AND', 'OR'].map((l) => (
             <button
               key={l}
@@ -495,10 +499,10 @@ export function ConditionEditor({ value = [], onChange, logic = 'AND', onLogicCh
       </div>
       <div className="flex flex-col gap-1.5">
         {value.length === 0 && (
-          <p className="text-[11px] text-muted-foreground/60">暂无条件，默认走「否」分支</p>
+          <p className="text-[11px] text-muted-foreground">暂无条件，默认走「否」分支</p>
         )}
         {value.map((item, idx) => (
-          <div key={idx} className="flex flex-col gap-1 rounded-md border border-border bg-muted/40 p-1.5">
+          <div key={idx} className="flex flex-col gap-1 rounded-md border border-border bg-muted p-1.5">
             {/* 第一行：变量名 + 引用按钮 */}
             <div className="flex gap-1.5">
               <input
@@ -516,8 +520,10 @@ export function ConditionEditor({ value = [], onChange, logic = 'AND', onLogicCh
             </div>
             {/* 第二行：操作符 + 删除按钮 */}
             <div className="flex gap-1.5">
-              <select
-                className={`${inputBaseCls} min-w-0 flex-1`}
+              <CompactSelect
+                size="lg"
+                block
+                className="min-w-0 flex-1"
                 value={item.operator}
                 onChange={(e) => update(idx, { operator: e.target.value })}
               >
@@ -526,7 +532,7 @@ export function ConditionEditor({ value = [], onChange, logic = 'AND', onLogicCh
                     {o.label}
                   </option>
                 ))}
-              </select>
+              </CompactSelect>
               <button
                 type="button"
                 onClick={() => remove(idx)}
@@ -574,7 +580,7 @@ export function SwitchEditor({ value = [], onChange, currentNodeId }) {
       <label className={labelCls}>分支列表（每条匹配一个出口）</label>
       <div className="flex flex-col gap-2">
         {value.map((c, idx) => (
-          <div key={idx} className="rounded-md border border-border bg-muted/40 p-2">
+          <div key={idx} className="rounded-md border border-border bg-muted p-2">
             <div className="mb-1.5 flex items-center gap-1.5">
               <input
                 className={`${inputBaseCls} min-w-0 flex-1`}
@@ -628,14 +634,14 @@ export function VariableIOEditor({ value = [], onChange, direction = 'output' })
     <div>
       <div className="flex flex-col gap-1.5">
         {value.length === 0 && (
-          <p className="text-[11px] text-muted-foreground/60">
+          <p className="text-[11px] text-muted-foreground">
             暂无{direction === 'input' ? '输入' : '输出'}变量
           </p>
         )}
         {value.map((item, idx) => (
           <div
             key={idx}
-            className="flex flex-col gap-1 rounded-md border border-border bg-muted/40 p-1.5"
+            className="flex flex-col gap-1 rounded-md border border-border bg-muted p-1.5"
           >
             <div className="flex gap-1.5">
               <input
@@ -644,8 +650,9 @@ export function VariableIOEditor({ value = [], onChange, direction = 'output' })
                 value={item.name}
                 onChange={(e) => update(idx, { name: e.target.value })}
               />
-              <select
-                className={`${inputBaseCls} w-24 shrink-0`}
+              <CompactSelect
+                size="md"
+                className="shrink-0"
                 value={item.type}
                 onChange={(e) => update(idx, { type: e.target.value })}
               >
@@ -654,7 +661,7 @@ export function VariableIOEditor({ value = [], onChange, direction = 'output' })
                     {t}
                   </option>
                 ))}
-              </select>
+              </CompactSelect>
               <button
                 type="button"
                 onClick={() => remove(idx)}

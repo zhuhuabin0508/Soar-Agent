@@ -86,7 +86,7 @@ export function Switch({ checked, onChange, disabled, size = 'md' }) {
 export function Section({ title, hint, children, defaultOpen = true }) {
   const [open, setOpen] = useState(defaultOpen)
   return (
-    <div className="rounded-md border border-border bg-card/30">
+    <div className="rounded-md border border-border bg-card">
       <button
         type="button"
         onClick={() => setOpen((p) => !p)}
@@ -96,7 +96,7 @@ export function Section({ title, hint, children, defaultOpen = true }) {
           {open ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
           <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</span>
         </div>
-        {hint && <span className="text-[10px] text-muted-foreground/60">{hint}</span>}
+        {hint && <span className="text-[10px] text-muted-foreground">{hint}</span>}
       </button>
       {open && <div className="border-t border-border p-3">{children}</div>}
     </div>

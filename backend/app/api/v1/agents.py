@@ -715,7 +715,7 @@ async def test_agent(
         )
     except Exception as exc:
         logger.exception("智能体测试失败: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Agent 测试失败: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"Agent 测试失败（{type(exc).__name__}），详情见服务日志") from exc
 
     if output_mode == OUTPUT_MODE_CHAT:
         try:
@@ -869,7 +869,7 @@ async def _resume_workflow_run(agent_id: int, run_id: str, body: ResumeRequest, 
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("工作流运行恢复失败: %s", exc)
-        raise HTTPException(status_code=500, detail=f"工作流运行恢复失败: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"工作流运行恢复失败（{type(exc).__name__}），详情见服务日志") from exc
 
 
 @router.post("/{agent_id}/skills/{skill_run_id}/resume")
@@ -1037,7 +1037,7 @@ def agent_tool_search_status(agent_id: int, db: Session = Depends(get_db)) -> di
         tool_engine = HermesToolEngine(db, agent)
     except Exception as exc:  # noqa: BLE001
         logger.exception("tool_engine 初始化失败: %s", exc)
-        raise HTTPException(status_code=500, detail=f"工具引擎初始化失败: {exc}")
+        raise HTTPException(status_code=500, detail=f"工具引擎初始化失败（{type(exc).__name__}），详情见服务日志")
 
     cfg = tool_engine.tool_search_config
 

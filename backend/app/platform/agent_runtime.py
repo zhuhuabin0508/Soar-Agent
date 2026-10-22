@@ -175,7 +175,11 @@ def adapt_ban_risk_analyze(content: str) -> dict:
     try:
         data = json.loads(candidate)
     except (json.JSONDecodeError, TypeError) as exc:
-        raise AgentCallError(f"响应 JSON 解析失败: {exc}") from exc
+        # 附实际输出片段便于定位智能体输出不符合契约的问题
+        snippet = candidate if len(candidate) <= 120 else f"{candidate[:120]}…"
+        raise AgentCallError(
+            f"响应 JSON 解析失败: {exc}（输出前120字符: {snippet!r}）"
+        ) from exc
     if not isinstance(data, dict):
         raise AgentCallError("响应不是 JSON 对象")
     missing = [f for f in BAN_RISK_REQUIRED_FIELDS if f not in data]

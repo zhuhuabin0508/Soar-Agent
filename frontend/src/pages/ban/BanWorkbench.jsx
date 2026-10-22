@@ -7,10 +7,10 @@ import {
 } from 'lucide-react'
 import { toast } from '../../store/toastStore'
 import { confirm } from '../../components/ConfirmDialog'
-import { Button, PageContainer, PageHeader, Card, DataTable, Badge, Pagination } from '../../components/ui'
+import { Button, PageContainer, PageHeader, Card, DataTable, Badge, Pagination, CompactSelect } from '../../components/ui'
 import { Modal } from '../../components/Dialog'
 import { inputBaseCls } from '../../components/property/FormControls'
-import { hasPermission, isAdmin } from '../../utils/permissions'
+import { hasPermission, isAdmin, guardNavPermission } from '../../utils/permissions'
 import banWorkflowApi from '../../api/banWorkflow'
 
 const STATUS_OPTIONS = [
@@ -48,7 +48,7 @@ function DetailSection({ title, data }) {
   return (
     <div>
       <div className="mb-1.5 text-xs font-medium text-muted-foreground">{title}</div>
-      <pre className="max-h-52 overflow-auto rounded-lg border border-border bg-muted/30 p-3 font-mono text-[11px] leading-relaxed text-foreground/80">
+      <pre className="max-h-52 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-[11px] leading-relaxed text-foreground">
         {typeof data === 'string' ? data : JSON.stringify(data, null, 2)}
       </pre>
     </div>
@@ -159,7 +159,7 @@ export default function BanWorkbench({ embedded = false }) {
     {
       key: 'ip', header: 'IP', width: '150px',
       render: (r) => (
-        <button className="font-mono text-[13px] font-medium text-foreground transition hover:text-primary" onClick={() => openDetail(r.id)}>
+        <button className="font-mono text-[13px] font-medium text-foreground transition hover:text-primary" onClick={(e) => { e.stopPropagation(); openDetail(r.id) }}>
           {r.ip}
         </button>
       ),
@@ -187,7 +187,7 @@ export default function BanWorkbench({ embedded = false }) {
     },
     { key: 'alert_count', header: '关联告警', width: '85px', render: (r) => <span className="tabular-nums">{r.alert_count}</span> },
     {
-      key: 'actions', header: '操作', width: canEdit || admin ? '110px' : '70px',
+      key: 'actions', header: '操作', width: canEdit && admin ? '145px' : (canEdit || admin ? '110px' : '70px'),
       render: (r) => (
         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
           <button className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-primary" title="详情" onClick={() => openDetail(r.id)}>
@@ -216,10 +216,10 @@ export default function BanWorkbench({ embedded = false }) {
       {/* 筛选区 */}
       <Card className="mb-4">
         <div className="flex flex-wrap items-center gap-2.5">
-          <select className={`${inputBaseCls} h-[34px] w-[130px]`} value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }}>
+          <CompactSelect size="lg" className="w-[130px]" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1) }}>
             <option value="">全部状态</option>
             {STATUS_OPTIONS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
-          </select>
+          </CompactSelect>
           <input
             className={`${inputBaseCls} h-[34px] w-[220px]`}
             placeholder="IP 关键词"
@@ -248,6 +248,7 @@ export default function BanWorkbench({ embedded = false }) {
           loading={loading}
           rowKey="id"
           selectable={false}
+          onRowClick={(r) => openDetail(r.id)}
           emptyText="暂无封禁记录"
           emptyDescription="工作流自动封禁或审批通过的 IP 将出现在这里"
           emptyIcon={Inbox}
@@ -264,7 +265,7 @@ export default function BanWorkbench({ embedded = false }) {
           <div className="flex items-center justify-center py-16 text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> 加载中…</div>
         ) : (
           <div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1">
-            <div className="grid grid-cols-2 gap-x-6 gap-y-2 rounded-lg border border-border bg-muted/30 p-3 text-sm lg:grid-cols-3">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-2 rounded-lg border border-border bg-muted p-3 text-sm lg:grid-cols-3">
               <div><span className="text-muted-foreground">状态：</span><Badge variant={STATUS_VARIANT[t.status] || 'neutral'}>{t.status_label}</Badge></div>
               <div><span className="text-muted-foreground">封禁方式：</span><Badge variant={SOURCE_VARIANT[t.ban_source] || 'neutral'}>{t.ban_source_label || t.ban_source || '--'}</Badge></div>
               <div><span className="text-muted-foreground">风险等级：</span><Badge variant={riskVariant(t.risk_level)}>{t.risk_level || '未知'}</Badge></div>
@@ -277,12 +278,12 @@ export default function BanWorkbench({ embedded = false }) {
               {t.unban_operator && <div><span className="text-muted-foreground">解封操作人：</span>{t.unban_operator}</div>}
             </div>
             {t.reason && (
-              <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
+              <div className="rounded-lg border border-border bg-muted px-3 py-2 text-sm">
                 <span className="text-muted-foreground">封禁原因：</span>{t.reason}
               </div>
             )}
             {t.unban_reason && (
-              <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
+              <div className="rounded-lg border border-border bg-muted px-3 py-2 text-sm">
                 <span className="text-muted-foreground">解封原因：</span>{t.unban_reason}
               </div>
             )}
@@ -303,17 +304,17 @@ export default function BanWorkbench({ embedded = false }) {
                 <span className="text-xs font-medium text-muted-foreground">关联告警（{t.related_alerts?.length || 0}）</span>
                 <button
                   className="flex items-center gap-1 text-xs text-primary transition hover:underline"
-                  onClick={() => navigate(`/alerts?keyword=${encodeURIComponent(t.ip)}`)}
+                  onClick={() => { if (!guardNavPermission('alert', 'view', '告警列表')) return; navigate(`/alerts?keyword=${encodeURIComponent(t.ip)}`) }}
                 >
                   <ExternalLink className="h-3 w-3" /> 跳转告警列表
                 </button>
               </div>
               {(t.related_alerts || []).length === 0 ? (
-                <div className="rounded-lg border border-border bg-muted/30 py-6 text-center text-sm text-muted-foreground">暂无关联告警</div>
+                <div className="rounded-lg border border-border bg-muted py-6 text-center text-sm text-muted-foreground">暂无关联告警</div>
               ) : (
                 <div className="max-h-56 space-y-1.5 overflow-y-auto">
                   {t.related_alerts.map((a) => (
-                    <div key={a.id} className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
+                    <div key={a.id} className="flex items-center gap-3 rounded-lg border border-border bg-muted px-3 py-2 text-sm">
                       <Badge variant={riskVariant(a.risk_level_name)}>{a.risk_level_name || '未知'}</Badge>
                       <span className="min-w-0 flex-1 truncate" title={a.alert_name}>{a.alert_name || '--'}</span>
                       <span className="shrink-0 font-mono text-xs text-muted-foreground">{fmtTime(a.occur_timestamp)}</span>
@@ -378,20 +379,22 @@ export default function BanWorkbench({ embedded = false }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="mb-1 block text-xs text-muted-foreground">封禁等级</label>
-              <select
-                className={`${inputBaseCls} h-[38px] w-full`}
+              <CompactSelect
+                block
+                size="lg"
                 value={manualForm.ban_level}
                 onChange={(e) => setManualForm((f) => ({ ...f, ban_level: e.target.value }))}
               >
                 {Object.entries(LEVEL_LABELS).map(([v, label]) => (
                   <option key={v} value={v}>{label}</option>
                 ))}
-              </select>
+              </CompactSelect>
             </div>
             <div>
               <label className="mb-1 block text-xs text-muted-foreground">封禁时长</label>
-              <select
-                className={`${inputBaseCls} h-[38px] w-full`}
+              <CompactSelect
+                block
+                size="lg"
                 value={manualForm.ban_duration}
                 disabled={manualForm.is_permanent}
                 onChange={(e) => setManualForm((f) => ({ ...f, ban_duration: Number(e.target.value) }))}
@@ -399,7 +402,7 @@ export default function BanWorkbench({ embedded = false }) {
                 {DURATION_OPTIONS.map((o) => (
                   <option key={o.v} value={o.v}>{o.label}</option>
                 ))}
-              </select>
+              </CompactSelect>
             </div>
           </div>
           <label className="flex cursor-pointer items-center gap-2 text-sm">
@@ -429,7 +432,7 @@ export default function BanWorkbench({ embedded = false }) {
               onChange={(e) => setManualForm((f) => ({ ...f, region: e.target.value }))}
             />
           </div>
-          <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          <div className="rounded-lg border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
             下发后将调用封禁工具执行，记录标记为「手动封禁」，到期由定时任务自动解封。
           </div>
         </div>

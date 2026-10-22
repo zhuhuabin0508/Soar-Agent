@@ -25,10 +25,13 @@ from app.schemas.notification import (
 
 logger = logging.getLogger(__name__)
 
+# 路由级基线：强制登录；权限按接口单独声明
+# （列表/未读计数/已读/删除自己的通知=notification:view，
+#   创建通知/发布公告=system_config:edit）
 router = APIRouter(
     prefix="/notifications",
     tags=["notifications"],
-    dependencies=[Depends(require_permission("notification", "view"))],
+    dependencies=[Depends(get_current_user)],
 )
 
 
@@ -37,7 +40,7 @@ def list_notifications(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("notification", "view")),
 ) -> NotificationListResponse:
     """获取当前用户的通知列表（含全员广播）。"""
     visibility = (Notification.user_id == current_user.id) | (Notification.user_id.is_(None))
@@ -68,7 +71,7 @@ def list_notifications(
 @router.get("/unread-count")
 def get_unread_count(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("notification", "view")),
 ) -> dict:
     """获取当前用户未读通知数量（含全员广播）。"""
     visibility = (Notification.user_id == current_user.id) | (Notification.user_id.is_(None))
@@ -83,7 +86,7 @@ def get_unread_count(
 @router.put("/read-all")
 def mark_all_as_read(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("notification", "view")),
 ) -> dict:
     """标记当前用户所有通知（含广播）为已读。"""
     visibility = (Notification.user_id == current_user.id) | (Notification.user_id.is_(None))
@@ -100,7 +103,7 @@ def mark_all_as_read(
 def mark_as_read(
     notification_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("notification", "view")),
 ) -> dict:
     """标记单条通知为已读（需验证归属当前用户或为广播）。"""
     n = db.query(Notification).filter(Notification.id == notification_id).first()
@@ -119,7 +122,7 @@ def mark_as_read(
 def delete_notification(
     notification_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("notification", "view")),
 ) -> None:
     """删除单条通知（需验证归属当前用户或为广播）。"""
     n = db.query(Notification).filter(Notification.id == notification_id).first()

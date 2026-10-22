@@ -2,7 +2,9 @@
 // 统一按钮 / 卡片 / 页面容器 / 页面标题 / 徽章 / 数据表格 / 状态组件
 // 所有组件遵循语义令牌（bg-background / text-foreground / border-border 等），
 // 明暗主题切换零改动。提炼自 soar-ui-design skill。
-import { isValidElement, createElement, useState } from 'react'
+import { isValidElement, createElement, Fragment, useState, useRef, useEffect, useMemo, Children } from 'react'
+import { createPortal } from 'react-dom'
+import { ChevronDown, ChevronLeft, ChevronRight, Calendar, Clock } from 'lucide-react'
 import { useDensityStore, DENSITY_CLASS } from '../store/densityStore'
 import DensitySwitcher from './DensitySwitcher'
 
@@ -78,8 +80,10 @@ export function PageHeader({ title, description, actions, className = '' }) {
   return (
     <div className={`mb-6 flex items-start justify-between gap-4 ${className}`}>
       <div className="min-w-0">
-        <h1 className="text-xl font-semibold text-foreground">{title}</h1>
-        {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
+        <h1 className="text-[22px] font-bold tracking-tight text-foreground">{title}</h1>
+        {description && (
+          <p className="mt-1.5 text-sm text-muted-foreground">{description}</p>
+        )}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
     </div>
@@ -210,9 +214,11 @@ export function StatusBadge({ color = 'neutral', label, status, className = '' }
     label = labelFromStatus(status)
   }
   const dotCls = STATUS_COLOR_BG[color] || STATUS_COLOR_BG.neutral
+  // 进行中类状态（info）圆点带呼吸动画，直观传达“活跃”
+  const pulse = color === 'info'
   return (
     <span className={`inline-flex items-center gap-1.5 text-xs ${className}`}>
-      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotCls}`} />
+      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotCls} ${pulse ? 'dot-pulse' : ''}`} />
       <span className="text-muted-foreground">{label}</span>
     </span>
   )
@@ -349,7 +355,7 @@ export function ErrorState({ title = '加载失败', description, onRetry, class
 // columns: [{ key, header, render?, className?, width?, numeric? }]
 // data: 行数据数组
 // loading / emptyText / emptyDescription / emptyIcon / emptyAction（带图标+引导按钮的空态）
-// onRowClick / stickyHeader
+// onRowClick / rowClickHint（行点击的 hover 提示文案，默认「点击查看详情」）/ stickyHeader
 // selectable: 开启行选择列；selectedKeys: 当前选中 rowKey 集合；onSelectChange: (keys)=>void
 // 复选框点击区域：整列单元格可点击（用 label 包装），点整行不触发选择
 export function DataTable({
@@ -361,6 +367,7 @@ export function DataTable({
   emptyIcon,
   emptyAction,
   onRowClick,
+  rowClickHint = '点击查看详情',
   rowKey = 'id',
   stickyHeader = false,
   selectable = false,
@@ -427,10 +434,10 @@ export function DataTable({
           >
             {selectable && (
               <th key="__select" className={`px-3 ${dCls.header}`} style={{ width: '44px' }}>
-                <label className="flex h-7 w-7 cursor-pointer items-center justify-center rounded hover:bg-accent">
+                <label className="flex h-8 w-8 cursor-pointer items-center justify-center rounded hover:bg-accent">
                   <input
                     type="checkbox"
-                    className="h-4 w-4 cursor-pointer rounded border-border accent-primary"
+                    className="h-[18px] w-[18px] cursor-pointer rounded border-border accent-primary"
                     checked={allSelected}
                     ref={(el) => {
                       if (el) el.indeterminate = someSelected
@@ -504,14 +511,15 @@ export function DataTable({
                   }}
                   onDragEnd={() => { setDragIndex(null); setDragOverIndex(null) }}
                   onClick={() => handleRowClick(row)}
-                  className={`table-row-hover border-b border-border/60 ${clickable ? 'cursor-pointer' : ''} ${draggable ? 'cursor-grab active:cursor-grabbing' : ''} ${checked ? 'bg-primary/5' : ''} ${isDragging ? 'opacity-40' : ''} ${isDragOver ? 'ring-2 ring-inset ring-primary/50 bg-primary/5' : ''} ${extraRowCls}`}
+                  title={clickable ? rowClickHint : undefined}
+                  className={`table-row-hover border-b border-border ${clickable ? 'cursor-pointer' : ''} ${draggable ? 'cursor-grab active:cursor-grabbing' : ''} ${checked ? 'bg-primary/5' : ''} ${isDragging ? 'opacity-40' : ''} ${isDragOver ? 'ring-2 ring-inset ring-primary/50 bg-primary/5' : ''} ${extraRowCls}`}
                 >
                   {selectable && (
                     <td key="__select" className={`px-3 ${dCls.cell}`} style={{ width: '44px' }} onClick={(e) => e.stopPropagation()}>
-                      <label className="flex h-7 w-7 cursor-pointer items-center justify-center rounded hover:bg-accent">
+                      <label className="flex h-8 w-8 cursor-pointer items-center justify-center rounded hover:bg-accent">
                         <input
                           type="checkbox"
-                          className="h-4 w-4 cursor-pointer rounded border-border accent-primary"
+                          className="h-[18px] w-[18px] cursor-pointer rounded border-border accent-primary"
                           checked={checked}
                           onChange={(e) => toggleRow(row[rowKey], e.target.checked)}
                           aria-label="选择该行"
@@ -568,17 +576,17 @@ export function Pagination({
         {showPageSize && onPageSizeChange && (
           <label className="flex items-center gap-1.5">
             <span>每页</span>
-            <select
-              className="rounded border border-border bg-background px-1.5 py-0.5 text-xs text-foreground outline-none focus:border-primary"
-              value={pageSize}
+            <CompactSelect
+              size="sm"
+              value={String(pageSize)}
               onChange={(e) => onPageSizeChange(Number(e.target.value))}
             >
               {pageSizeOptions.map((opt) => (
-                <option key={opt} value={opt}>
+                <option key={opt} value={String(opt)}>
                   {opt} 条
                 </option>
               ))}
-            </select>
+            </CompactSelect>
           </label>
         )}
         {showDensity && <DensitySwitcher />}
@@ -618,4 +626,513 @@ export function Pagination({
   )
 }
 
-export default { Button, Card, PageContainer, PageHeader, Badge, StatusBadge, Skeleton, LoadingState, EmptyState, ErrorState, DataTable, Pagination }
+// ===== CompactSelect：主题化下拉（Portal 自绘菜单，替代原生 select） =====
+// 背景：原生 select 弹层由系统渲染——深色主题下弹浅色列表且错位，Windows Chromium
+// 打开首帧还会黑闪（color-scheme 无法修复）。菜单 portal 到 body 并跟随主题令牌渲染。
+// children 传 <option>（与原生一致）；size: sm | md | lg；variant: field | ghost。
+export function CompactSelect({
+  value,
+  onChange,
+  disabled,
+  children,
+  size = 'sm',
+  variant = 'field',
+  block = false,
+  className = '',
+  title,
+  onClick,
+  onMouseDown,
+}) {
+  const [open, setOpen] = useState(false)
+  const btnRef = useRef(null)
+  const [pos, setPos] = useState({ top: 0, left: 0, minWidth: 0 })
+  const ghost = variant === 'ghost'
+  const empty = value === '' || value == null
+
+  // 解析 <option>（含 <optgroup> 分组：子项带 group 标签，渲染时插入分组标题）
+  const options = useMemo(() => {
+    const toOpt = (el, group = null) => ({
+      value: el.props.value == null ? '' : String(el.props.value),
+      label: el.props.children,
+      disabled: Boolean(el.props.disabled),
+      group,
+    })
+    return Children.toArray(children).flatMap((child) => {
+      if (!child) return []
+      if (child.type === 'option') return [toOpt(child)]
+      if (child.type === 'optgroup') {
+        return Children.toArray(child.props.children)
+          .filter((c) => c && c.type === 'option')
+          .map((c) => toOpt(c, child.props.label || null))
+      }
+      return []
+    })
+  }, [children])
+
+  const selected = options.find((o) => o.value === String(value ?? ''))
+  const label = selected?.label ?? '请选择'
+
+  const chrome = ghost
+    ? `border-transparent bg-transparent hover:border-border hover:bg-muted focus:border-border focus:bg-muted ${
+        empty ? 'text-muted-foreground' : 'text-foreground'
+      }`
+    : variant === 'input'
+      ? 'border-border bg-background text-foreground hover:border-primary/45 focus:border-primary'
+      : 'border-border bg-secondary text-secondary-foreground hover:bg-accent focus:border-primary'
+
+  const triggerSizeCls = size === 'xs'
+    ? 'h-7 min-w-[3.5rem] py-0 pl-2 pr-6 text-xs'
+    : size === 'sm'
+      ? 'h-7 min-w-[6.25rem] max-w-[8rem] py-0 pl-2 pr-7 text-xs'
+      : size === 'lg'
+        ? 'h-9 min-w-[8rem] py-0 pl-2.5 pr-9 text-sm'
+        : 'h-8 min-w-[7.5rem] py-0 pl-2.5 pr-8 text-sm'
+  const chevCls = size === 'xs'
+    ? 'right-1 h-3 w-3'
+    : size === 'sm'
+      ? 'right-1.5 h-3 w-3'
+      : size === 'lg'
+        ? 'right-2.5 h-3.5 w-3.5'
+        : 'right-2 h-3.5 w-3.5'
+
+  const close = () => setOpen(false)
+
+  const toggle = (e) => {
+    e.stopPropagation()
+    onClick?.(e)
+    if (disabled) return
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect()
+      const menuH = Math.min(options.length * 32 + 8, 280)
+      let top = rect.bottom + 4
+      if (top + menuH > window.innerHeight - 8) {
+        top = Math.max(8, rect.top - menuH - 4)
+      }
+      let left = rect.left
+      const minWidth = Math.max(rect.width, size === 'xs' ? 72 : size === 'sm' ? 112 : size === 'lg' ? 148 : 132)
+      if (left + minWidth > window.innerWidth - 8) {
+        left = Math.max(8, window.innerWidth - minWidth - 8)
+      }
+      setPos({ top, left, minWidth })
+    }
+    setOpen((v) => !v)
+  }
+
+  useEffect(() => {
+    if (!open) return undefined
+    const onDoc = (e) => {
+      if (btnRef.current?.contains(e.target)) return
+      if (e.target.closest?.('[data-compact-select-menu]')) return
+      close()
+    }
+    const onKey = (e) => { if (e.key === 'Escape') close() }
+    const onScroll = () => close()
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', close)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('resize', close)
+    }
+  }, [open])
+
+  const pick = (opt) => {
+    if (opt.disabled) return
+    close()
+    if (String(opt.value) === String(value ?? '')) return
+    onChange?.({ target: { value: opt.value }, stopPropagation() {} })
+  }
+
+  return (
+    <div
+      className={`relative inline-flex items-center ${block ? 'w-full' : ''} ${className}`}
+      onMouseDown={onMouseDown}
+    >
+      <button
+        ref={btnRef}
+        type="button"
+        disabled={disabled}
+        title={title}
+        onClick={toggle}
+        className={`inline-flex flex-1 items-center rounded-md border text-left outline-none transition disabled:cursor-not-allowed disabled:opacity-60 ${chrome} ${triggerSizeCls} ${block ? 'w-full' : ''}`}
+      >
+        <span className="block min-w-0 flex-1 truncate">{label}</span>
+      </button>
+      <ChevronDown
+        className={`pointer-events-none absolute top-1/2 -translate-y-1/2 transition ${chevCls} ${open ? 'rotate-180' : ''} text-muted-foreground`}
+      />
+      {open && createPortal(
+        <div
+          data-compact-select-menu
+          data-allow-scroll
+          className="fixed z-[10000] max-h-[280px] overflow-y-auto overscroll-contain rounded-md border border-border bg-card py-1 text-foreground shadow-2xl"
+          style={{ top: pos.top, left: pos.left, minWidth: pos.minWidth }}
+          role="listbox"
+        >
+          {options.map((opt, i) => {
+            const active = opt.value === String(value ?? '')
+            const showGroup = opt.group && opt.group !== options[i - 1]?.group
+            return (
+              <Fragment key={`${opt.group || ''}-${opt.value || '__empty'}`}>
+                {showGroup && (
+                  <div className="px-3 pb-0.5 pt-2 text-[10px] font-medium tracking-wide text-muted-foreground">{opt.group}</div>
+                )}
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  disabled={opt.disabled}
+                  onClick={() => pick(opt)}
+                  className={`flex w-full items-center px-3 py-1.5 text-left text-xs transition disabled:opacity-50 ${
+                    opt.group ? 'pl-5' : ''
+                  } ${
+                    active
+                      ? 'bg-primary/20 text-primary'
+                      : 'text-foreground hover:bg-accent'
+                  }`}
+                >
+                  <span className="truncate">{opt.label}</span>
+                </button>
+              </Fragment>
+            )
+          })}
+        </div>,
+        document.body,
+      )}
+    </div>
+  )
+}
+
+// ===== DatePicker：自绘弹层日期/日期时间/时间选择（替代原生 input） =====
+// 背景：Windows Chromium 原生日历/时间弹层打开首帧黑闪，color-scheme 亦无法修复；
+// 改为 portal 自绘弹层，跟随主题令牌渲染。onChange 与原生事件签名一致：
+// type="date"（默认）value 'YYYY-MM-DD'；type="datetime" value 'YYYY-MM-DDTHH:mm'
+//（与 datetime-local 格式一致）；type="time" value 'HH:mm'。清空时 e.target.value 为 ''。
+const pad2 = (n) => String(n).padStart(2, '0')
+const isoDate = (y, m, d) => `${y}-${pad2(m + 1)}-${pad2(d)}`
+const parseDatePart = (s) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s || ''))
+  return m ? { y: +m[1], m: +m[2] - 1, d: +m[3] } : null
+}
+const parseTimePart = (s) => {
+  const m = /(?:^|T)(\d{2}):(\d{2})/.exec(String(s || ''))
+  return m ? { h: +m[1], mi: +m[2] } : null
+}
+const DATE_WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日']
+const TIME_HOURS = Array.from({ length: 24 }, (_, i) => i)
+const TIME_MINUTES = Array.from({ length: 60 }, (_, i) => i)
+
+export function DatePicker({
+  value = '',
+  onChange,
+  type = 'date',
+  placeholder,
+  disabled = false,
+  block = false,
+  className = '',
+  title,
+  onClick,
+  onMouseDown,
+}) {
+  const [open, setOpen] = useState(false)
+  const btnRef = useRef(null)
+  const [pos, setPos] = useState({ top: 0, left: 0 })
+  const withTime = type === 'datetime'
+  const timeOnly = type === 'time'
+  const ph = placeholder ?? (timeOnly ? '选择时间' : withTime ? '选择日期时间' : '选择日期')
+  const panelW = timeOnly ? 176 : 252
+  const panelH = timeOnly ? 132 : withTime ? 396 : 336
+
+  const datePart = timeOnly ? null : parseDatePart(value)
+  const timePart = timeOnly || withTime ? parseTimePart(value) : null
+  const selDateIso = datePart ? isoDate(datePart.y, datePart.m, datePart.d) : ''
+
+  const [view, setView] = useState(() => {
+    const p = parseDatePart(value)
+    const n = new Date()
+    return p ? { y: p.y, m: p.m } : { y: n.getFullYear(), m: n.getMonth() }
+  })
+
+  const close = () => setOpen(false)
+  const fire = (v) => {
+    if (v === value) return
+    onChange?.({ target: { value: v }, stopPropagation() {} })
+  }
+
+  const toggle = (e) => {
+    e.stopPropagation()
+    onClick?.(e)
+    if (disabled) return
+    if (!open && btnRef.current) {
+      // 打开时视图对齐已选日期（无则当前月）
+      const p = parseDatePart(value)
+      const n = new Date()
+      setView(p ? { y: p.y, m: p.m } : { y: n.getFullYear(), m: n.getMonth() })
+      const rect = btnRef.current.getBoundingClientRect()
+      let top = rect.bottom + 4
+      if (top + panelH > window.innerHeight - 8) {
+        top = Math.max(8, rect.top - panelH - 4)
+      }
+      let left = rect.left
+      if (left + panelW > window.innerWidth - 8) {
+        left = Math.max(8, window.innerWidth - panelW - 8)
+      }
+      setPos({ top, left })
+    }
+    setOpen((v) => !v)
+  }
+
+  useEffect(() => {
+    if (!open) return undefined
+    const onDoc = (e) => {
+      if (btnRef.current?.contains(e.target)) return
+      // 面板及面板内嵌套的时间下拉菜单点击不关闭
+      if (e.target.closest?.('[data-datepicker-panel]')) return
+      if (e.target.closest?.('[data-compact-select-menu]')) return
+      close()
+    }
+    const onKey = (e) => { if (e.key === 'Escape') close() }
+    const onScroll = (e) => {
+      // 面板内部滚动（含嵌套菜单滚动）不关闭
+      if (e.target?.closest?.('[data-datepicker-panel]')) return
+      if (e.target?.closest?.('[data-compact-select-menu]')) return
+      close()
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', close)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('resize', close)
+    }
+  }, [open])
+
+  const todayIso = useMemo(() => {
+    const n = new Date()
+    return isoDate(n.getFullYear(), n.getMonth(), n.getDate())
+  }, [])
+
+  // 42 格月网格（周一为首，含上下月补位；末整行为下月时裁掉）
+  const grid = useMemo(() => {
+    const offset = (new Date(view.y, view.m, 1).getDay() + 6) % 7
+    const cells = []
+    for (let i = 0; i < 42; i++) {
+      const dt = new Date(view.y, view.m, i - offset + 1)
+      cells.push({
+        iso: isoDate(dt.getFullYear(), dt.getMonth(), dt.getDate()),
+        day: dt.getDate(),
+        inMonth: dt.getMonth() === view.m,
+      })
+    }
+    while (cells.length > 35 && cells.slice(-7).every((c) => !c.inMonth)) cells.length -= 7
+    return cells
+  }, [view.y, view.m])
+
+  const shiftMonth = (delta) => {
+    setView((v) => {
+      const d = new Date(v.y, v.m + delta, 1)
+      return { y: d.getFullYear(), m: d.getMonth() }
+    })
+  }
+
+  // 选日期：date 选完即关；datetime 更新日期部分并保持打开（继续选时间）
+  const pickDate = (iso) => {
+    if (withTime) {
+      const t = timePart ? `${pad2(timePart.h)}:${pad2(timePart.mi)}` : '00:00'
+      fire(`${iso}T${t}`)
+    } else {
+      close()
+      fire(iso)
+    }
+  }
+
+  // 设时间：time 直接写；datetime 与日期部分（无则今天）合成
+  const setTime = (h, mi) => {
+    if (timeOnly) {
+      fire(`${pad2(h)}:${pad2(mi)}`)
+      return
+    }
+    const d = datePart ? selDateIso : todayIso
+    fire(`${d}T${pad2(h)}:${pad2(mi)}`)
+  }
+
+  // 快捷：今天（含当前时间）
+  const pickNow = () => {
+    const n = new Date()
+    const t = `${pad2(n.getHours())}:${pad2(n.getMinutes())}`
+    if (timeOnly) {
+      fire(t)
+      return
+    }
+    fire(`${todayIso}T${t}`)
+    setView({ y: n.getFullYear(), m: n.getMonth() })
+  }
+
+  const clear = () => {
+    close()
+    if (value !== '') fire('')
+  }
+
+  const empty = value === '' || value == null
+  const display = timeOnly ? value : withTime ? String(value).replace('T', ' ') : value
+  const trigW = block ? 'w-full' : timeOnly ? 'w-[104px]' : withTime ? 'w-[176px]' : 'w-[136px]'
+  const selHour = timePart ? timePart.h : 0
+  const selMinute = timePart ? timePart.mi : 0
+
+  // 时间行：datetime / time 模式下的时分选择（嵌套 CompactSelect，portal 菜单）
+  const timeRow = (
+    <div className={`flex items-center justify-center gap-1 pt-1.5 ${timeOnly ? '' : 'mt-1 border-t border-border'}`}>
+      <CompactSelect
+        size="xs"
+        value={String(selHour)}
+        onChange={(e) => setTime(Number(e.target.value), selMinute)}
+      >
+        {TIME_HOURS.map((h) => (
+          <option key={h} value={String(h)}>{pad2(h)} 时</option>
+        ))}
+      </CompactSelect>
+      <span className="text-xs text-muted-foreground">:</span>
+      <CompactSelect
+        size="xs"
+        value={String(selMinute)}
+        onChange={(e) => setTime(selHour, Number(e.target.value))}
+      >
+        {TIME_MINUTES.map((mi) => (
+          <option key={mi} value={String(mi)}>{pad2(mi)} 分</option>
+        ))}
+      </CompactSelect>
+    </div>
+  )
+
+  return (
+    <div
+      className={`relative inline-flex items-center ${block ? 'w-full' : ''} ${className}`}
+      onMouseDown={onMouseDown}
+    >
+      <button
+        ref={btnRef}
+        type="button"
+        disabled={disabled}
+        title={title || ph}
+        aria-label={title || ph}
+        onClick={toggle}
+        className={`inline-flex h-9 items-center justify-between gap-1 rounded-md border border-border bg-background px-2.5 text-left text-sm outline-none transition hover:border-primary/45 focus:border-primary disabled:cursor-not-allowed disabled:opacity-60 ${trigW}`}
+      >
+        <span className={`min-w-0 truncate tabular-nums ${empty ? 'text-muted-foreground' : 'text-foreground'}`}>
+          {empty ? ph : display}
+        </span>
+        {timeOnly ? (
+          <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        ) : (
+          <Calendar className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        )}
+      </button>
+      {open && createPortal(
+        <div
+          data-datepicker-panel
+          data-allow-scroll
+          className="fixed z-[10000] rounded-md border border-border bg-card p-2 text-foreground shadow-2xl"
+          style={{ top: pos.top, left: pos.left, width: panelW }}
+        >
+          {/* 月份导航（time 模式无日历） */}
+          {!timeOnly && (
+            <>
+              <div className="mb-1 flex items-center justify-between">
+                <button
+                  type="button"
+                  aria-label="上个月"
+                  onClick={() => shiftMonth(-1)}
+                  className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </button>
+                <div className="text-xs font-medium text-foreground">
+                  {view.y} 年 {view.m + 1} 月
+                </div>
+                <button
+                  type="button"
+                  aria-label="下个月"
+                  onClick={() => shiftMonth(1)}
+                  className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              {/* 星期行（周一为首） */}
+              <div className="grid grid-cols-7">
+                {DATE_WEEKDAYS.map((w) => (
+                  <div key={w} className="flex h-6 items-center justify-center text-[11px] text-muted-foreground">
+                    {w}
+                  </div>
+                ))}
+              </div>
+              {/* 日期网格 */}
+              <div className="grid grid-cols-7">
+                {grid.map((c) => {
+                  const sel = c.iso === selDateIso
+                  const isToday = c.iso === todayIso
+                  return (
+                    <button
+                      key={c.iso}
+                      type="button"
+                      onClick={() => pickDate(c.iso)}
+                      aria-selected={sel}
+                      className={`mx-auto flex h-8 w-8 items-center justify-center rounded text-xs transition-colors ${
+                        sel
+                          ? 'bg-primary font-semibold text-primary-foreground'
+                          : isToday
+                            ? 'font-semibold text-primary hover:bg-accent'
+                            : c.inMonth
+                              ? 'text-foreground hover:bg-accent'
+                              : 'text-muted-foreground hover:bg-accent'
+                      }`}
+                    >
+                      {c.day}
+                    </button>
+                  )
+                })}
+              </div>
+            </>
+          )}
+          {/* 时间行（datetime / time 模式） */}
+          {(withTime || timeOnly) && timeRow}
+          {/* 底部快捷操作 */}
+          <div className="mt-1 flex items-center justify-between border-t border-border pt-1.5">
+            <button
+              type="button"
+              onClick={() => ((withTime || timeOnly) ? pickNow() : pickDate(todayIso))}
+              className="rounded px-2 py-1 text-xs text-primary transition-colors hover:bg-accent"
+            >
+              {timeOnly ? '现在' : '今天'}
+            </button>
+            <button
+              type="button"
+              onClick={clear}
+              className="rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent"
+            >
+              清空
+            </button>
+            {(withTime || timeOnly) && (
+              <button
+                type="button"
+                onClick={close}
+                className="rounded px-2 py-1 text-xs text-primary transition-colors hover:bg-accent"
+              >
+                确定
+              </button>
+            )}
+          </div>
+        </div>,
+        document.body,
+      )}
+    </div>
+  )
+}
+
+export default { Button, Card, PageContainer, PageHeader, Badge, StatusBadge, Skeleton, LoadingState, EmptyState, ErrorState, DataTable, Pagination, CompactSelect, DatePicker }

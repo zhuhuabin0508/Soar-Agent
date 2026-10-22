@@ -1,4 +1,4 @@
-// 值班监控大屏：全屏暗色主题，实时展示当前班次、异常提醒、近7天排班与月度排班
+﻿// 值班监控大屏：全屏暗色主题，实时展示当前班次、异常提醒、近7天排班与月度排班
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Maximize2, Minimize2, RefreshCw, AlertTriangle, CalendarDays, Sun, Moon, Phone, Clock, Users, ChevronLeft, ChevronRight, LayoutDashboard, Cpu, Package } from 'lucide-react'
 import dutyApi from '../api/duty'
@@ -144,6 +144,9 @@ export default function DutyDashboard({ onSwitchTab }) {
 
   const shiftTitle = data?.current_shift === 'DAY' ? '白班' : '晚班'
   const shiftColor = data?.current_shift === 'DAY' ? C.day : C.night
+  // 深色主题下使用更亮的同色系变体，确保班次文字在暗色/投影场景下清晰（组件每秒随时钟重渲染，可自动跟随主题切换）
+  const isDark = document.documentElement.classList.contains('dark')
+  const shiftTextColor = data?.current_shift === 'DAY' ? (isDark ? '#60A5FA' : '#2563EB') : (isDark ? '#A78BFA' : '#7C3AED')
   const curMember = data?.current_member
   const backupMember = data?.backup_member
   const todayRec = data?.today_record
@@ -183,16 +186,16 @@ export default function DutyDashboard({ onSwitchTab }) {
             <CalendarDays className="h-6 w-6" style={{ color: shiftColor }} />
           </div>
           <div>
-            <h1 className="text-2xl font-bold tracking-wide text-foreground">值班监控大屏</h1>
+            <h1 className="text-gradient-primary text-3xl font-bold tracking-wide">值班监控大屏</h1>
             <p className="text-sm text-muted-foreground">{dateStr} {weekdayStr}</p>
           </div>
           {/* 大屏切换 */}
           {onSwitchTab && (
-            <div className="ml-4 flex items-center gap-1 rounded-lg bg-muted p-0.5">
+            <div className="ml-4 flex items-center gap-1 rounded-lg bg-muted p-1">
               <button
                 type="button"
                 onClick={() => onSwitchTab('operations')}
-                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-primary/10 hover:text-foreground"
                 title="运营大屏"
               >
                 <LayoutDashboard className="h-3.5 w-3.5" />
@@ -201,7 +204,7 @@ export default function DutyDashboard({ onSwitchTab }) {
               <button
                 type="button"
                 onClick={() => onSwitchTab('ai_usage')}
-                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-primary/10 hover:text-foreground"
                 title="AI 用量大屏"
               >
                 <Cpu className="h-3.5 w-3.5" />
@@ -210,7 +213,7 @@ export default function DutyDashboard({ onSwitchTab }) {
               <button
                 type="button"
                 onClick={() => onSwitchTab('materials')}
-                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-primary/10 hover:text-foreground"
                 title="材料管理大屏"
               >
                 <Package className="h-3.5 w-3.5" />
@@ -218,8 +221,7 @@ export default function DutyDashboard({ onSwitchTab }) {
               </button>
               <button
                 type="button"
-                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-primary"
-                style={{ background: 'rgba(59,130,246,0.25)' }}
+                className="flex items-center gap-1.5 rounded-md bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary ring-1 ring-primary/25 transition-colors"
                 title="值班大屏（当前）"
               >
                 <CalendarDays className="h-3.5 w-3.5" />
@@ -232,13 +234,13 @@ export default function DutyDashboard({ onSwitchTab }) {
         <div className="flex items-center gap-6">
           {/* 实时时钟 */}
           <div className="text-right">
-            <div className="text-3xl font-bold tabular-nums text-foreground" style={{ fontVariantNumeric: 'tabular-nums' }}>{timeStr}</div>
+            <div className="text-glow text-3xl font-bold tabular-nums text-foreground" style={{ fontVariantNumeric: 'tabular-nums' }}>{timeStr}</div>
           </div>
 
           {/* 班次状态 */}
-          <div className="flex items-center gap-2 rounded-lg px-4 py-2" style={{ background: `${shiftColor}22`, border: `1px solid ${shiftColor}55` }}>
-            {data?.current_shift === 'DAY' ? <Sun className="h-5 w-5" style={{ color: shiftColor }} /> : <Moon className="h-5 w-5" style={{ color: shiftColor }} />}
-            <span className="text-lg font-semibold" style={{ color: shiftColor }}>{shiftTitle}</span>
+          <div className="flex items-center gap-2 rounded-lg px-4 py-2" style={{ background: `${shiftColor}26`, border: `1px solid ${shiftColor}66` }}>
+            {data?.current_shift === 'DAY' ? <Sun className="h-5 w-5" style={{ color: shiftTextColor }} /> : <Moon className="h-5 w-5" style={{ color: shiftTextColor }} />}
+            <span className="text-lg font-semibold" style={{ color: shiftTextColor }}>{shiftTitle}</span>
           </div>
 
           {/* 全屏切换 */}
@@ -254,7 +256,7 @@ export default function DutyDashboard({ onSwitchTab }) {
       </header>
 
       {/* ===== 主区域 ===== */}
-      <div className="flex flex-1 min-h-0">
+      <div className="flex min-h-0 flex-1 bg-tech-grid">
         {/* 左侧 30%：上 2/3 当前值班卡片 + 下 1/3 异常提醒 */}
         <div className="flex w-[30%] shrink-0 flex-col border-r border-border px-6 py-4">
           {/* 上 2/3：当前值班 */}
@@ -262,25 +264,34 @@ export default function DutyDashboard({ onSwitchTab }) {
             {/* 呼吸灯 */}
             <div className="relative mb-3">
               <div className="absolute inset-0 animate-ping rounded-full" style={{ background: `${shiftColor}33`, animationDuration: '2s' }} />
-              <div className="relative flex h-14 w-14 items-center justify-center rounded-full" style={{ background: `${shiftColor}22`, border: `2px solid ${shiftColor}` }}>
-                {data?.current_shift === 'DAY' ? <Sun className="h-7 w-7" style={{ color: shiftColor }} /> : <Moon className="h-7 w-7" style={{ color: shiftColor }} />}
+              <div className="relative flex h-14 w-14 items-center justify-center rounded-full" style={{ background: `${shiftColor}22`, border: `2px solid ${shiftTextColor}` }}>
+                {data?.current_shift === 'DAY' ? <Sun className="h-7 w-7" style={{ color: shiftTextColor }} /> : <Moon className="h-7 w-7" style={{ color: shiftTextColor }} />}
               </div>
             </div>
 
             {/* 班次标题 */}
             <div className="mb-1.5 text-xs text-muted-foreground">当前班次</div>
-            <div className="mb-4" style={{ fontSize: 48, fontWeight: 700, color: shiftColor, lineHeight: 1 }}>{shiftTitle}</div>
+            <div className="mb-4" style={{ fontSize: 48, fontWeight: 700, color: shiftTextColor, lineHeight: 1 }}>{shiftTitle}</div>
 
             {/* 值班人姓名 */}
             {curMember ? (
               <>
                 <div className="mb-1.5 text-xs text-muted-foreground">值班人员</div>
-                <div className="mb-3 text-center text-foreground" style={{ fontSize: 60, fontWeight: 700, lineHeight: 1.1 }}>{curMember.name}</div>
+                <div className="mb-3 flex items-center gap-4">
+                  {/* 头像：主题色圆环 + 姓名首字 */}
+                  <div
+                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-bold"
+                    style={{ background: `${shiftColor}1F`, border: `2px solid ${shiftTextColor}66`, color: shiftTextColor }}
+                  >
+                    {(curMember.name || '?').slice(0, 1)}
+                  </div>
+                  <div className="text-foreground" style={{ fontSize: 60, fontWeight: 700, lineHeight: 1.1 }}>{curMember.name}</div>
+                </div>
                 {curMember.duty_category === 'PERMANENT_DAY' && (
                   <div className="mb-3 rounded px-3 py-0.5 text-xs" style={{ background: 'rgba(16,185,129,0.12)', color: C.normal }}>长期白班</div>
                 )}
                 {memberPhone(curMember) && (
-                  <div className="mb-4 flex items-center gap-2 text-foreground" style={{ fontSize: 28, fontWeight: 500 }}>
+                  <div className="mb-4 flex items-center gap-2 tabular-nums text-foreground" style={{ fontSize: 28, fontWeight: 500 }}>
                     <Phone className="h-5 w-5 text-muted-foreground" />
                     {memberPhone(curMember)}
                   </div>
@@ -292,7 +303,7 @@ export default function DutyDashboard({ onSwitchTab }) {
 
             {/* 倒计时 */}
             <div className="mb-1.5 text-xs text-muted-foreground">距离下班</div>
-            <div className="tabular-nums mb-3 text-foreground" style={{ fontSize: 28, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{countdown}</div>
+            <div className="text-glow tabular-nums mb-3 text-foreground" style={{ fontSize: 28, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{countdown}</div>
 
             {/* 备班 */}
             {backupMember && (
@@ -352,7 +363,7 @@ export default function DutyDashboard({ onSwitchTab }) {
               {/* 无异常 */}
               {!data?.has_anomaly && (anomalies.pending || []).length === 0 && (anomalies.leaves || []).length === 0 && (
                 <div className="flex items-center gap-2 text-[11px]" style={{ color: C.normal }}>
-                  <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: C.normal }} /> 一切正常
+                  <span className="dot-pulse inline-block h-1.5 w-1.5 rounded-full" style={{ background: C.normal }} /> 一切正常
                 </div>
               )}
             </div>

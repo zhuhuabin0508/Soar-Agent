@@ -41,7 +41,7 @@ function PermissionPicker({ value, onChange, disabled }) {
     { value: 'edit', label: '编辑', Icon: Pencil, active: 'bg-primary/15 text-primary' },
   ]
   return (
-    <div className="inline-flex shrink-0 rounded-md border border-border bg-muted/40 p-0.5">
+    <div className="inline-flex shrink-0 rounded-md border border-border bg-muted p-0.5">
       {opts.map((o) => {
         const active = value === o.value
         return (
@@ -196,7 +196,7 @@ export default function BatchShareDialog({
       </p>
 
       {/* 资源信息卡：折叠展示已选资源列表 */}
-      <details className="mt-3 rounded-md border border-border bg-secondary/30 px-3 py-2">
+      <details className="mt-3 rounded-md border border-border bg-secondary px-3 py-2">
         <summary className="flex cursor-pointer items-center justify-between text-xs font-medium text-card-foreground">
           <span className="flex items-center gap-1.5">
             <Users className="h-3.5 w-3.5 text-primary" />
@@ -290,7 +290,7 @@ export default function BatchShareDialog({
                 return (
                   <label
                     key={u.id}
-                    className={`flex cursor-pointer items-center gap-2 border-b border-border px-2.5 py-1.5 last:border-b-0 hover:bg-secondary/40 ${
+                    className={`flex cursor-pointer items-center gap-2 border-b border-border px-2.5 py-1.5 last:border-b-0 hover:bg-secondary ${
                       checked ? 'bg-primary/5' : ''
                     }`}
                   >
@@ -303,7 +303,7 @@ export default function BatchShareDialog({
                     />
                     <Avatar
                       name={u.display_name || u.username}
-                      color={checked ? (selectedPermission === 'edit' ? 'bg-primary' : 'bg-blue-500') : 'bg-muted-foreground/40'}
+                      color={checked ? (selectedPermission === 'edit' ? 'bg-primary' : 'bg-blue-500') : 'bg-muted-foreground'}
                     />
                     <div className="flex min-w-0 flex-1 items-center gap-1.5">
                       <span className="truncate text-xs text-card-foreground">
@@ -352,7 +352,7 @@ export default function BatchShareDialog({
         </div>
 
         {/* 权限说明随选择切换 */}
-        <div className="mt-2 flex items-start gap-1.5 text-[11px] text-muted-foreground/80">
+        <div className="mt-2 flex items-start gap-1.5 text-[11px] text-muted-foreground">
           {selectedPermission === 'edit' ? (
             <>
               <Pencil className="mt-0.5 h-3 w-3 shrink-0 text-primary" />

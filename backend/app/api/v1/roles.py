@@ -15,7 +15,7 @@ from app.core.permissions import (
     migrate_permissions,
 )
 from app.database import get_db
-from app.dependencies import get_current_user, require_permission
+from app.dependencies import get_current_user, is_admin, require_permission
 from app.models.role import Role
 from app.models.user import User
 from app.schemas.role import RoleCreate, RoleOut, RoleUpdate
@@ -103,12 +103,28 @@ def update_role(
     role_id: int,
     body: RoleUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_permission("role", "edit")),
+    current: User = Depends(require_permission("role", "edit")),
 ) -> Role:
-    """更新角色（名称/描述/权限矩阵）。"""
+    """更新角色（名称/描述/权限矩阵）。
+
+    安全防护（防自扩权）：
+    - 修改权限矩阵仅限 admin（否则持 role:edit 的用户可把自己所属角色的
+      矩阵改成全权限，绕过所有 require_permission 校验）；
+    - 系统内置角色（is_system）的名称/权限不可改；
+    - admin 自身所属角色视为系统级，同样不可改。
+    """
     role = db.query(Role).filter(Role.id == role_id).first()
     if not role:
         raise HTTPException(status_code=404, detail="角色不存在")
+
+    perms_changed = "permissions" in body.model_dump(exclude_unset=True)
+    if perms_changed and not is_admin(current, db):
+        raise HTTPException(status_code=403, detail="仅管理员可修改角色权限矩阵")
+    if role.is_system and not is_admin(current, db):
+        raise HTTPException(status_code=403, detail="系统内置角色不可修改")
+    # admin 所属角色（含 admin 角色本身）仅 admin 可改
+    if role.name == "admin" and not is_admin(current, db):
+        raise HTTPException(status_code=403, detail="无权修改管理员角色")
 
     update_data = body.model_dump(exclude_unset=True)
     if "permissions" in update_data and update_data["permissions"] is not None:
@@ -117,7 +133,7 @@ def update_role(
         setattr(role, key, value)
     db.commit()
     db.refresh(role)
-    logger.info("角色更新: id=%s", role_id)
+    logger.info("角色更新: id=%s, operator=%s", role_id, current.username)
     return role
 
 

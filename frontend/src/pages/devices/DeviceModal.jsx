@@ -4,6 +4,7 @@ import { Check, Copy, Eye, EyeOff, Plus, X } from 'lucide-react'
 import { Modal } from '../../components/Dialog'
 import { toast } from '../../store/toastStore'
 import { inputCls } from '../../components/property/FormControls'
+import { CompactSelect } from '../../components/ui'
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges'
 import {
   DEVICE_AUTH_TYPES,
@@ -154,17 +155,18 @@ export function DeviceFormModal({ open, initial, onClose, onSubmit, saving, onTe
             </label>
             <label>
               <div className="mb-1 text-xs font-medium text-muted-foreground">设备类型</div>
-              <select
-                className={inputCls}
+              <CompactSelect
                 value={form.type}
                 onChange={(e) => set('type')(e.target.value)}
+                size="lg"
+                block
               >
                 {DEVICE_TYPES.map((t) => (
                   <option key={t.value} value={t.value}>
                     {t.label}
                   </option>
                 ))}
-              </select>
+              </CompactSelect>
             </label>
             <label>
               <div className="mb-1 text-xs font-medium text-muted-foreground">厂商</div>
@@ -237,7 +239,7 @@ export function DeviceFormModal({ open, initial, onClose, onSubmit, saving, onTe
               onChange={(e) => set('api_url')(e.target.value)}
               placeholder="https://203.0.113.1:8443/api"
             />
-            <div className="mt-1 text-xs text-muted-foreground/70">
+            <div className="mt-1 text-xs text-muted-foreground">
               可选。仅需通过 API 主动调用（封禁/下发动作）的设备填写；仅用于被动接收日志（syslog/kafka）的设备可留空，在「日志接收」页配置接收方式即可。
             </div>
           </label>
@@ -273,17 +275,18 @@ export function DeviceFormModal({ open, initial, onClose, onSubmit, saving, onTe
         <Section title="认证配置">
           <label className="mb-3 block">
             <div className="mb-1 text-xs font-medium text-muted-foreground">认证方式</div>
-            <select
-              className={inputCls}
+            <CompactSelect
               value={form.auth_type}
               onChange={(e) => set('auth_type')(e.target.value)}
+              size="lg"
+              block
             >
               {DEVICE_AUTH_TYPES.map((a) => (
                 <option key={a.value} value={a.value}>
                   {a.label}
                 </option>
               ))}
-            </select>
+            </CompactSelect>
           </label>
 
           {form.auth_type === 'api_key' && (
@@ -380,7 +383,7 @@ export function DeviceFormModal({ open, initial, onClose, onSubmit, saving, onTe
           )}
 
           {form.auth_type === 'none' && (
-            <div className="text-xs text-muted-foreground/70">无认证模式，直接访问 API。</div>
+            <div className="text-xs text-muted-foreground">无认证模式，直接访问 API。</div>
           )}
 
           {(form.auth_type === 'oauth2' || form.auth_type === 'mtls') && (
@@ -460,14 +463,14 @@ export function ParamsEditor({ value, onChange }) {
   return (
     <div className="flex flex-col gap-2">
       {rows.length === 0 && (
-        <div className="rounded-md border border-dashed border-border bg-background/40 px-3 py-3 text-center text-xs text-muted-foreground/70">
+        <div className="rounded-md border border-dashed border-border bg-background px-3 py-3 text-center text-xs text-muted-foreground">
           暂无参数，点击下方按钮添加
         </div>
       )}
       {rows.map((row, idx) => (
         <div
           key={idx}
-          className="grid grid-cols-[1fr_100px_60px_1fr_1.2fr_28px] items-center gap-2 rounded-md border border-border bg-background/60 px-2 py-1.5"
+          className="grid grid-cols-[1fr_100px_60px_1fr_1.2fr_28px] items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5"
         >
           <input
             className="rounded border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-primary"
@@ -475,17 +478,18 @@ export function ParamsEditor({ value, onChange }) {
             value={row.name}
             onChange={(e) => editRow(idx, { name: e.target.value })}
           />
-          <select
-            className="rounded border border-border bg-background px-1 py-1 text-xs text-foreground outline-none focus:border-primary"
+          <CompactSelect
             value={row.type}
             onChange={(e) => editRow(idx, { type: e.target.value })}
+            size="sm"
+            block
           >
             {PARAM_TYPES.map((t) => (
               <option key={t} value={t}>
                 {t}
               </option>
             ))}
-          </select>
+          </CompactSelect>
           <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
             <input
               type="checkbox"
@@ -548,14 +552,14 @@ export function HeadersEditor({ value, onChange }) {
   return (
     <div className="flex flex-col gap-2">
       {rows.length === 0 && (
-        <div className="rounded-md border border-dashed border-border bg-background/40 px-3 py-3 text-center text-xs text-muted-foreground/70">
+        <div className="rounded-md border border-dashed border-border bg-background px-3 py-3 text-center text-xs text-muted-foreground">
           暂无自定义请求头
         </div>
       )}
       {rows.map((row, idx) => (
         <div
           key={idx}
-          className="grid grid-cols-[1fr_1fr_28px] items-center gap-2 rounded-md border border-border bg-background/60 px-2 py-1.5"
+          className="grid grid-cols-[1fr_1fr_28px] items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5"
         >
           <input
             className="rounded border border-border bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-primary"

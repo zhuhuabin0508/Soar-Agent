@@ -48,7 +48,7 @@ const SOURCE_META = {
   db_http: { label: 'DB HTTP 工具', color: 'text-destructive', bg: 'bg-destructive/10' },
   openapi_dynamic: { label: 'OpenAPI 动态', color: 'text-primary', bg: 'bg-primary/10' },
   workflow: { label: '工作流包装', color: 'text-indigo-300', bg: 'bg-indigo-500/10' },
-  unknown: { label: '未知', color: 'text-muted-foreground', bg: 'bg-muted-foreground/10' },
+  unknown: { label: '未知', color: 'text-muted-foreground', bg: 'bg-muted' },
 }
 
 function getSourceMeta(source) {
@@ -134,7 +134,7 @@ export default function ToolSearchStatus({ agentId, value, onChange }) {
                 }`}
               >
                 <div className="text-xs font-semibold text-foreground">{m.label}</div>
-                <div className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground/70">{m.desc}</div>
+                <div className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">{m.desc}</div>
               </button>
             ))}
           </div>
@@ -156,7 +156,7 @@ export default function ToolSearchStatus({ agentId, value, onChange }) {
             className="w-full accent-primary"
             disabled={cfg.enabled !== 'auto'}
           />
-          <p className="mt-0.5 text-[10px] text-muted-foreground/70">
+          <p className="mt-0.5 text-[10px] text-muted-foreground">
             {cfg.enabled === 'auto'
               ? `当可延迟工具的相关度超过 ${cfg.threshold_pct}% 时，工具才会被加载到上下文中`
               : '仅 auto 模式生效'}
@@ -182,7 +182,7 @@ export default function ToolSearchStatus({ agentId, value, onChange }) {
           />
         </div>
 
-        <div className="rounded-md border border-border bg-muted p-2 text-[11px] leading-relaxed text-muted-foreground/70">
+        <div className="rounded-md border border-border bg-muted p-2 text-[11px] leading-relaxed text-muted-foreground">
           <span className="text-muted-foreground">桥接工具：</span>
           <span className="ml-1 font-mono text-muted-foreground">tool_search</span>（BM25 检索）/
           <span className="font-mono text-muted-foreground"> tool_describe</span>（详情）/
@@ -287,7 +287,7 @@ export default function ToolSearchStatus({ agentId, value, onChange }) {
                     <span className="text-[11px] font-semibold uppercase tracking-wider text-emerald-300">
                       核心工具（永不延迟）
                     </span>
-                    <span className="text-[10px] text-muted-foreground/70">
+                    <span className="text-[10px] text-muted-foreground">
                       {stats.visible_count ?? 0} 个 · {stats.visible_tokens ?? 0} token
                     </span>
                   </div>
@@ -308,7 +308,7 @@ export default function ToolSearchStatus({ agentId, value, onChange }) {
                     <span className="text-[11px] font-semibold uppercase tracking-wider text-warning">
                       可延迟工具（进入目录，按需检索）
                     </span>
-                    <span className="text-[10px] text-muted-foreground/70">
+                    <span className="text-[10px] text-muted-foreground">
                       {stats.deferrable_count ?? 0} 个 · {stats.deferrable_tokens ?? 0} token
                     </span>
                   </div>
@@ -324,7 +324,7 @@ export default function ToolSearchStatus({ agentId, value, onChange }) {
                 </div>
 
                 {/* source 分类目录 */}
-                <div className="rounded-md border border-border bg-card/40 p-2 text-[10px] text-muted-foreground/70">
+                <div className="rounded-md border border-border bg-card p-2 text-[10px] text-muted-foreground">
                   <div className="mb-1 text-muted-foreground">source 分类规则：</div>
                   <div className="flex flex-wrap gap-x-3 gap-y-0.5">
                     <span>
@@ -384,10 +384,10 @@ function SourceGroup({ source, group }) {
         <span className={`text-[10px] font-semibold ${meta.color}`}>
           {meta.label}
         </span>
-        <span className="rounded bg-muted/40 px-1 py-0.5 text-[9px] text-muted-foreground">
+        <span className="rounded bg-muted px-1 py-0.5 text-[9px] text-muted-foreground">
           {source}
         </span>
-        <span className="text-[10px] text-muted-foreground/70">
+        <span className="text-[10px] text-muted-foreground">
           {group.count} 个 · {group.tokens} token
         </span>
       </div>
@@ -396,10 +396,10 @@ function SourceGroup({ source, group }) {
           <span
             key={t.name}
             title={t.description || t.name}
-            className="rounded bg-card/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+            className="rounded bg-card px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
           >
             {t.name}
-            <span className="ml-1 text-muted-foreground/70">{t.tokens}t</span>
+            <span className="ml-1 text-muted-foreground">{t.tokens}t</span>
           </span>
         ))}
       </div>
@@ -409,7 +409,7 @@ function SourceGroup({ source, group }) {
 
 function EmptyHint({ text }) {
   return (
-    <div className="rounded-md border border-dashed border-border p-2 text-center text-[10px] text-muted-foreground/60">
+    <div className="rounded-md border border-dashed border-border p-2 text-center text-[10px] text-muted-foreground">
       {text}
     </div>
   )

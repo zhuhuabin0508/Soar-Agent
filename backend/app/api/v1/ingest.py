@@ -13,6 +13,7 @@ ingest 端点面向设备/上游系统推送（类 webhook），不做用户态�
 import json
 import logging
 import re
+import secrets
 import time
 from datetime import datetime, timedelta
 from typing import Any, Optional
@@ -45,6 +46,7 @@ from app.models.log_receiver import LogReceiver
 from app.models.log_source_entry import LogSourceEntry
 from app.models.parse_error import ParseErrorQueue
 from app.models.parse_strategy import ParseStrategy, ParseStrategyVersion
+from app.models.system_config import SystemConfig
 from app.models.user import User
 from app.models.workflow_ban import WorkflowInstance
 
@@ -444,14 +446,59 @@ def _preview(value: Any, limit: int = 80) -> Any:
 # ======================================================================
 # 告警接入（设备/上游系统推送）
 # ======================================================================
+# 摄入限流（内存滑动窗口，单实例部署足够；多实例可升级为 Redis）
+_INGEST_RATE_WINDOW_S = 60.0
+_INGEST_RATE_MAX = 600  # 每 IP 每分钟最多推送 600 条
+_INGEST_BATCH_MAX = 1000  # 单次请求最多 1000 条告警
+_ingest_rate_bucket: dict[str, tuple[float, int]] = {}
+
+_INGEST_KEY = "ingest.alert_api_key"
+
+
+def _check_ingest_access(request: Request, db: Session) -> None:
+    """告警摄入鉴权：X-API-Key（系统配置 ``ingest.alert_api_key``）+ IP 限流。
+
+    安全设计：
+    - Key 未配置时直接拒绝（fail-closed），避免匿名推送灌假告警、
+      间接触发自动封禁工作流；
+    - 恒时比较（secrets.compare_digest）防时序侧信道；
+    - 单 IP 每分钟限流，防滥用。
+    """
+    cfg = db.query(SystemConfig).filter(SystemConfig.key == _INGEST_KEY).first()
+    expected = (cfg.value or "").strip() if cfg else ""
+    if not expected:
+        logger.warning("告警摄入拒绝请求：未配置 API Key（system_config: %s）", _INGEST_KEY)
+        raise HTTPException(
+            status_code=503,
+            detail="告警摄入未配置 API Key，请联系管理员在系统设置中配置 ingest.alert_api_key",
+        )
+    provided = (request.headers.get("X-API-Key") or "").strip()
+    if not provided or not secrets.compare_digest(provided, expected):
+        logger.warning("告警摄入 API Key 校验失败: client=%s", get_client_ip(request))
+        raise HTTPException(status_code=401, detail="API Key 无效")
+
+    now = time.monotonic()
+    client = get_client_ip(request)
+    window_start, count = _ingest_rate_bucket.get(client, (now, 0))
+    if now - window_start > _INGEST_RATE_WINDOW_S:
+        window_start, count = now, 0
+    count += 1
+    _ingest_rate_bucket[client] = (window_start, count)
+    if count > _INGEST_RATE_MAX:
+        raise HTTPException(status_code=429, detail="推送过于频繁，请稍后再试")
+
+
 @router.post("/alert", response_model=IngestResponse)
 async def ingest_alert(request: Request, db: Session = Depends(get_db)) -> IngestResponse:
     """接收原始告警 JSON（单条对象或数组），解析入库。
 
     - 单条：直接传对象 ``{"type": "security_alert", ...}``；
     - 批量：传数组 ``[ {...}, {...} ]``；
+    - 需携带请求头 ``X-API-Key``（系统配置 ``ingest.alert_api_key``）；
     - 无匹配策略 / 解析失败的数据进入错误队列，不阻断其余数据。
     """
+    _check_ingest_access(request, db)
+
     try:
         payload = await request.json()
     except Exception:
@@ -460,6 +507,11 @@ async def ingest_alert(request: Request, db: Session = Depends(get_db)) -> Inges
     items = payload if isinstance(payload, list) else [payload]
     if not items:
         raise HTTPException(status_code=400, detail="请求体为空")
+    if len(items) > _INGEST_BATCH_MAX:
+        raise HTTPException(
+            status_code=413,
+            detail=f"单次最多推送 {_INGEST_BATCH_MAX} 条告警，请分批提交",
+        )
 
     # 策略缓存为空时自动刷新（首次请求或策略刚创建）
     loader = get_strategy_loader()

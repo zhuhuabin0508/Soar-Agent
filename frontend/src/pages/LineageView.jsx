@@ -1,10 +1,11 @@
 // 数据血缘视图：用 reactflow 拓扑图展示 设备 → 接收器 → 条目 → 模板 的数据血缘
 // 节点按类型分列布局，显示健康状态徽章（healthy/disabled/warning/offline）
 import { useEffect, useState, useCallback } from 'react'
-import ReactFlow, { Background, Controls, MiniMap } from 'reactflow'
+import { useNavigate } from 'react-router-dom'
+import ReactFlow, { Background, Controls, MiniMap, Handle, Position, MarkerType } from 'reactflow'
 import 'reactflow/dist/style.css'
-import { Server, Radio, ListTree, FileJson, Loader2, RefreshCw } from 'lucide-react'
-import { PageContainer, PageHeader, Button, EmptyState } from '../components/ui'
+import { Server, Radio, ListTree, FileJson, RefreshCw } from 'lucide-react'
+import { EmptyState } from '../components/ui'
 import { request } from '../api/client'
 import { toast } from '../store/toastStore'
 
@@ -32,6 +33,8 @@ function LineageNode({ data }) {
   const Icon = tm.icon
   return (
     <div className="flex w-[200px] flex-col rounded-lg border border-border bg-background p-3 shadow-sm">
+      <Handle type="target" position={Position.Left} className="!h-1.5 !w-1.5 !border-0 !bg-border !opacity-0" />
+      <Handle type="source" position={Position.Right} className="!h-1.5 !w-1.5 !border-0 !bg-border !opacity-0" />
       <div className="flex items-center gap-2">
         <div className="flex h-7 w-7 items-center justify-center rounded-md" style={{ backgroundColor: `${tm.color}22` }}>
           <Icon className="h-4 w-4" style={{ color: tm.color }} />
@@ -86,9 +89,9 @@ function layoutNodes(nodes) {
 const edgeStyle = {
   stroke: '#94a3b8', strokeWidth: 1.5, strokeDasharray: '0',
 }
-const arrowHeadType = 'arrowclosed'
 
 export default function LineageView() {
+  const navigate = useNavigate()
   const [data, setData] = useState({ nodes: [], edges: [] })
   const [loading, setLoading] = useState(false)
 
@@ -107,15 +110,17 @@ export default function LineageView() {
   useEffect(() => { load() }, [load])
 
   const rfNodes = layoutNodes(data.nodes || [])
-  const rfEdges = (data.edges || []).map((e) => ({
-    id: e.id,
-    source: e.source,
-    target: e.target,
-    label: e.label,
-    type: 'smoothstep',
-    style: edgeStyle,
-    arrowHeadType,
-  }))
+  const rfEdges = (data.edges || [])
+    .filter((e) => e && e.source && e.target)
+    .map((e, i) => ({
+      id: e.id || `edge-${e.source}-${e.target}-${i}`,
+      source: e.source,
+      target: e.target,
+      label: e.label,
+      type: 'smoothstep',
+      style: edgeStyle,
+      markerEnd: { type: MarkerType.ArrowClosed },
+    }))
 
   const counts = (data.nodes || []).reduce((acc, n) => {
     acc[n.type] = (acc[n.type] || 0) + 1
@@ -123,43 +128,86 @@ export default function LineageView() {
   }, {})
 
   return (
-    <div>
-      <PageHeader
-        title="数据血缘视图"
-        description="设备 → 接收器 → 数据源条目 → 解析模板 的拓扑血缘与健康状态"
-        actions={
-          <Button variant="ghost" onClick={load} disabled={loading}>
-            {loading ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-1 h-4 w-4" />}
-            刷新
-          </Button>
-        }
-      />
-      <PageContainer>
-        {/* 统计条 */}
-        <div className="mb-3 flex items-center gap-4 text-xs text-muted-foreground">
-          <span>设备 {counts.device || 0}</span>
-          <span>接收器 {counts.receiver || 0}</span>
-          <span>数据源条目 {counts.entry || 0}</span>
-          <span>解析模板 {counts.strategy || 0}</span>
-          <span>连线 {rfEdges.length}</span>
-          <span className="ml-auto flex items-center gap-3">
-            {Object.entries(HEALTH_LABEL).map(([k, v]) => (
-              <span key={k} className="flex items-center gap-1">
-                <span className={`inline-block h-2 w-2 rounded-full ${HEALTH_STYLE[k]}`} />
-                {v}
-              </span>
-            ))}
-          </span>
+    <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
+      <header className="flex items-center justify-between gap-4 border-b border-border bg-card px-6 py-4">
+        <div className="flex min-w-0 items-baseline gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">数据血缘视图</h1>
+          {!loading && (
+            <span className="text-xs text-muted-foreground">
+              共 <span className="font-medium tabular-nums text-foreground">{(data.nodes || []).length}</span> 个节点
+            </span>
+          )}
+          <span className="hidden text-xs text-muted-foreground xl:inline">设备 → 接收器 → 数据源条目 → 解析模板 的拓扑血缘与健康状态</span>
         </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <button type="button" onClick={load} className="btn-secondary btn-sm" title="刷新血缘数据">
+            <RefreshCw className={`mr-1 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> 刷新
+          </button>
+        </div>
+      </header>
 
-        {/* 拓扑图 */}
-        <div className="h-[calc(100vh-220px)] min-h-[480px] rounded-lg border border-border bg-background">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-6">
+        {/* 统计条 */}
+        {!loading && (
+          <div className="mb-3 flex items-center gap-4 text-xs text-muted-foreground">
+            <span>设备 {counts.device || 0}</span>
+            <span>接收器 {counts.receiver || 0}</span>
+            <span>数据源条目 {counts.entry || 0}</span>
+            <span>解析模板 {counts.strategy || 0}</span>
+            <span>连线 {rfEdges.length}</span>
+            <span className="ml-auto flex items-center gap-3">
+              {Object.entries(HEALTH_LABEL).map(([k, v]) => (
+                <span key={k} className="flex items-center gap-1">
+                  <span className={`inline-block h-2 w-2 rounded-full ${HEALTH_STYLE[k]}`} />
+                  {v}
+                </span>
+              ))}
+            </span>
+          </div>
+        )}
+
+        {/* 拓扑图：加载中渲染分列骨架屏占位，无数据给接入引导，正常渲染拓扑图 */}
+        <div className="min-h-[480px] flex-1 rounded-lg border border-border bg-background">
           {loading ? (
-            <div className="flex h-full items-center justify-center">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <div className="flex h-full flex-col gap-5 p-5">
+              <div className="flex items-center justify-between">
+                <div className="h-4 w-44 rounded skeleton-shimmer" />
+                <div className="h-4 w-56 rounded skeleton-shimmer" />
+              </div>
+              <div className="grid min-h-0 flex-1 grid-cols-2 gap-4 md:grid-cols-4">
+                {['device', 'receiver', 'entry', 'strategy'].map((t) => (
+                  <div key={t} className="flex flex-col gap-3">
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <div key={i} className="rounded-lg border border-border bg-card p-3">
+                        <div className="flex items-center gap-2">
+                          <div className="h-7 w-7 shrink-0 rounded-md skeleton-shimmer" />
+                          <div className="h-3.5 w-24 rounded skeleton-shimmer" />
+                        </div>
+                        <div className="mt-2.5 flex items-center justify-between">
+                          <div className="h-2.5 w-10 rounded skeleton-shimmer" />
+                          <div className="h-4 w-14 rounded skeleton-shimmer" />
+                        </div>
+                        <div className="mt-2.5 space-y-1.5 border-t border-border pt-2">
+                          <div className="h-2.5 w-full rounded skeleton-shimmer" />
+                          <div className="h-2.5 w-2/3 rounded skeleton-shimmer" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
             </div>
           ) : rfNodes.length === 0 ? (
-            <EmptyState icon={Server} title="暂无血缘数据" description="请先通过设备列表的「新建设备」完成设备接入，并创建接收器" />
+            <EmptyState
+              icon={Server}
+              title="暂无血缘数据"
+              description="请先通过设备列表的「新建设备」完成设备接入，并创建接收器"
+              action={(
+                <button type="button" onClick={() => navigate('/devices')} className="btn-primary btn-sm">
+                  前往设备对接
+                </button>
+              )}
+            />
           ) : (
             <ReactFlow
               nodes={rfNodes}
@@ -182,7 +230,7 @@ export default function LineageView() {
             </ReactFlow>
           )}
         </div>
-      </PageContainer>
+      </div>
     </div>
   )
 }

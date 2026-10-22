@@ -3,7 +3,7 @@ import {
   Trash2, Pencil, Eye, ListChecks, LayoutGrid, Table as TableIcon,
   Download, Upload, Power, PowerOff, RefreshCw,
   FileUp, FileText, CheckCircle2, AlertTriangle, X, Loader2,
-  ChevronDown, FileDown, Share2,
+  ChevronDown, FileDown, Share2, Plus, Database,
 } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { skills as skillsApi } from '../api/client'
@@ -12,7 +12,7 @@ import { TutorialButton, TutorialDrawer } from '../components/TutorialDrawer'
 import { SKILL_TUTORIAL } from '../components/tutorialContent'
 import { toast } from '../store/toastStore'
 import { confirm } from '../components/ConfirmDialog'
-import { DataTable, Pagination } from '../components/ui'
+import { DataTable, Pagination, CompactSelect } from '../components/ui'
 import FilterBar from '../components/FilterBar'
 import BatchActions from '../components/BatchActions'
 import { HoverTip } from '../components/InfoTip'
@@ -79,14 +79,6 @@ const SORT_OPTIONS = [
 // 推荐技能：按分类优先展示（处置流程 / SOP）
 const RECOMMENDED_SKILL_CATEGORIES = ['处置流程', 'SOP']
 
-// 快捷筛选 chip
-const QUICK_FILTERS = [
-  { key: 'enabled', label: '只看已启用', value: 'true' },
-  { key: 'disabled', label: '只看已禁用', value: 'false' },
-  { key: '角色设定', label: '只看角色设定', value: '角色设定' },
-  { key: '处置流程', label: '只看处置流程', value: '处置流程' },
-]
-
 // 技能列表页
 function SkillList() {
   const navigate = useNavigate()
@@ -102,6 +94,20 @@ function SkillList() {
   const [sortKey, setSortKey] = useState('priority:desc')
   const [quickFilter, setQuickFilter] = useState('') // 当前激活的快捷筛选 key
   const [viewMode, setViewMode] = useState('table') // table | card
+
+  // 头部「数据」下拉菜单（ref + document 监听实现点击外部关闭，不用全屏遮罩避免拦截交互）
+  const [dataMenuOpen, setDataMenuOpen] = useState(false)
+  const dataMenuRef = useRef(null)
+  useEffect(() => {
+    if (!dataMenuOpen) return
+    const onDocMouseDown = (e) => {
+      if (dataMenuRef.current && !dataMenuRef.current.contains(e.target)) {
+        setDataMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDocMouseDown)
+    return () => document.removeEventListener('mousedown', onDocMouseDown)
+  }, [dataMenuOpen])
 
   // 编辑抽屉
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -189,6 +195,28 @@ function SkillList() {
       .filter((r) => (r.tags || []).some((t) => /处置|封禁|sop|流程/i.test(t)))
       .slice(0, 6)
   }, [rows])
+
+  // 状态/分类指标统计（指标条用：启用分布 + 分类分布 + 引用汇总）
+  const listStats = useMemo(() => {
+    const s = { enabled: 0, disabled: 0, totalRefs: 0 }
+    const cat = {}
+    rows.forEach((r) => {
+      if (r.enabled) s.enabled += 1
+      else s.disabled += 1
+      const c = r.category || '其他'
+      cat[c] = (cat[c] || 0) + 1
+      s.totalRefs += r.reference_count || 0
+    })
+    return { ...s, cat, categories: Object.keys(cat).length }
+  }, [rows])
+
+  // 清除全部筛选（空态 CTA 用）
+  const clearAllFilters = () => {
+    setKeyword('')
+    setCategoryFilter('')
+    setQuickFilter('')
+    setPage(1)
+  }
 
   const openCreate = () => { setEditing(null); setDrawerOpen(true) }
   const openEdit = (skill) => { setEditing(skill); setDrawerOpen(true) }
@@ -321,7 +349,7 @@ function SkillList() {
         type="button"
         disabled={togglingId === skill.id}
         onClick={(e) => { e.stopPropagation(); handleToggleEnabled(skill) }}
-        className={`relative h-5 w-9 rounded-full transition disabled:opacity-50 ${skill.enabled ? 'bg-primary' : 'bg-muted-foreground/40'}`}
+        className={`relative h-5 w-9 rounded-full transition disabled:opacity-50 ${skill.enabled ? 'bg-primary' : 'bg-input'}`}
         title={skill.enabled ? '点击禁用（即时从 Agent prompt 移除）' : '点击启用'}
         aria-label="切换启用状态"
       >
@@ -334,7 +362,7 @@ function SkillList() {
   const renderRef = (r) => {
     const count = r.reference_count ?? 0
     const refs = r.referenced_by || []
-    if (count === 0) return <span className="text-muted-foreground/40">-</span>
+    if (count === 0) return <span className="text-muted-foreground">-</span>
     const tip = (
       <div className="flex flex-col gap-0.5">
         <span className="font-medium text-foreground">被 {count} 个智能体引用</span>
@@ -345,8 +373,8 @@ function SkillList() {
       <HoverTip text={tip} placement="right">
         <span className="inline-flex cursor-help items-center gap-1 text-[11px] text-muted-foreground">
           <ListChecks className="h-3 w-3 text-primary" />
-          <span className="font-medium text-primary">{count}</span>
-          <span className="text-muted-foreground/50">个</span>
+          <span className="font-medium tabular-nums text-primary">{count}</span>
+          <span className="text-muted-foreground">个</span>
         </span>
       </HoverTip>
     )
@@ -374,17 +402,27 @@ function SkillList() {
             {tags.slice(0, 2).map((t) => (
               <span key={t} className="rounded-full border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary" title={t}>{t}</span>
             ))}
-            {tags.length > 2 && <span className="text-[10px] text-muted-foreground/50">+{tags.length - 2}</span>}
+            {tags.length > 2 && <span className="text-[10px] text-muted-foreground">+{tags.length - 2}</span>}
           </div>
         )
       },
     },
-    { key: 'priority', header: '优先级', width: '70px', numeric: true, render: (r) => <span className="whitespace-nowrap font-mono text-muted-foreground">{r.priority ?? 0}</span> },
+    {
+      key: 'priority', header: '优先级', width: '70px', numeric: true,
+      render: (r) => (
+        <span
+          className={`whitespace-nowrap font-mono tabular-nums ${r.priority ? 'text-foreground' : 'text-muted-foreground'}`}
+          title={r.priority ? undefined : '未设置优先级'}
+        >
+          {r.priority ?? 0}
+        </span>
+      ),
+    },
     { key: 'reference_count', header: '引用', width: '80px', render: renderRef },
     { key: 'enabled', header: '启用', width: '70px', render: (r) => <InlineToggle skill={r} /> },
     { key: 'updated_at', header: '更新时间', width: '140px', render: (r) => <HoverTip text={fmtTime(r.updated_at)} placement="left"><span className="cursor-help whitespace-nowrap text-muted-foreground">{relTime(r.updated_at)}</span></HoverTip> },
     {
-      key: '__actions', header: '操作', width: '130px',
+      key: '__actions', header: '操作', width: '205px',
       render: (r) => {
         const editable = canEditResource(r)
         const shareable = canManageShare(r)
@@ -406,26 +444,71 @@ function SkillList() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
-      <header className="flex items-center justify-between border-b border-border bg-card/60 px-6 py-4">
-        <div className="flex items-center gap-4">
-          <button type="button" onClick={() => navigate('/studio')} className="btn-secondary btn-sm">
-            ← 返回工作室
+      <header className="flex items-center justify-between gap-4 border-b border-border bg-card px-6 py-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <button type="button" onClick={() => navigate('/studio')} className="btn-secondary btn-sm shrink-0 self-center" title="返回工作室">
+            ← 工作室
           </button>
-          <h1 className="text-xl font-semibold text-foreground">技能库</h1>
-          <span className="text-xs text-muted-foreground/70">共 {filteredRows.length} 个</span>
-          <span className="hidden text-xs text-muted-foreground/60 sm:inline">纯文本指令，注入智能体 system prompt</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <TutorialButton onClick={() => setTutorialOpen(true)} />
-          <button type="button" onClick={load} className="btn-secondary btn-sm" title="刷新"><RefreshCw className="h-3.5 w-3.5" /></button>
-          <button type="button" onClick={handleExport} className="btn-secondary btn-sm" title="导出技能"><Download className="h-3.5 w-3.5" /></button>
-          {canEdit && (
-            <button type="button" onClick={() => setImportOpen(true)} className="btn-secondary btn-sm" title="导入技能">
-              <Upload className="h-3.5 w-3.5" />
-            </button>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">技能库</h1>
+          {!loading && (
+            <span className="text-xs text-muted-foreground">
+              共 <span className="font-medium tabular-nums text-foreground">{filteredRows.length}</span> 个技能
+            </span>
           )}
+          <span className="hidden text-xs text-muted-foreground xl:inline">纯文本指令，注入智能体 system prompt</span>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <TutorialButton onClick={() => setTutorialOpen(true)} />
+          <button type="button" onClick={load} className="btn-secondary btn-sm" title="刷新技能列表">
+            <RefreshCw className="mr-1 h-3.5 w-3.5" /> 刷新
+          </button>
+          {/* 数据操作下拉：导出 / 导入（ref + document 监听点击外部关闭，不用全屏遮罩） */}
+          <div className="relative" ref={dataMenuRef}>
+            <button
+              type="button"
+              onClick={() => setDataMenuOpen((v) => !v)}
+              className={`btn-secondary btn-sm ${dataMenuOpen ? 'ring-1 ring-ring' : ''}`}
+              title="数据导入 / 导出"
+            >
+              <Database className="mr-1 h-3.5 w-3.5" /> 数据
+              <ChevronDown className={`ml-1 h-3 w-3 transition-transform ${dataMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {dataMenuOpen && (
+              <div className="absolute right-0 top-full z-50 mt-1.5 w-52 overflow-hidden rounded-lg border border-border bg-popover py-1 shadow-xl shadow-black/20">
+                <button
+                  type="button"
+                  onClick={() => { handleExport(); setDataMenuOpen(false) }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground transition hover:bg-accent"
+                >
+                  <Download className="h-3.5 w-3.5 text-muted-foreground" />
+                  导出全部技能
+                </button>
+                <button
+                  type="button"
+                  disabled={selectedKeys.length === 0}
+                  onClick={() => { handleExport(); setDataMenuOpen(false) }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5 text-muted-foreground" />
+                  导出所选{selectedKeys.length > 0 ? `（${selectedKeys.length} 个）` : ''}
+                </button>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => { setImportOpen(true); setDataMenuOpen(false) }}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-foreground transition hover:bg-accent"
+                  >
+                    <Upload className="h-3.5 w-3.5 text-muted-foreground" />
+                    导入技能
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
           {canCreate && (
-            <button type="button" onClick={openCreate} className="btn-primary btn-sm">+ 新建技能</button>
+            <button type="button" onClick={openCreate} className="btn-primary btn-sm">
+              <Plus className="mr-1 h-3.5 w-3.5" /> 新建技能
+            </button>
           )}
         </div>
       </header>
@@ -447,7 +530,7 @@ function SkillList() {
                   key={sk.id}
                   type="button"
                   onClick={() => openEdit(sk)}
-                  className="inline-flex max-w-xs items-center gap-2 rounded-md border border-border bg-card/60 px-3 py-1.5 text-left text-xs transition hover:border-primary/40 hover:bg-primary/5"
+                  className="inline-flex max-w-xs items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-left text-xs transition hover:border-primary/40 hover:bg-primary/5"
                   title={sk.description || sk.name}
                 >
                   <ListChecks className="h-3.5 w-3.5 shrink-0 text-amber-500" />
@@ -497,30 +580,92 @@ function SkillList() {
           }
         />
 
-        {/* 快捷筛选 chip */}
-        <div className="mb-4 flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] text-muted-foreground/60">快捷：</span>
-          {QUICK_FILTERS.map((f) => {
-            const active = quickFilter === f.key
-            return (
-              <button
-                key={f.key} type="button"
-                onClick={() => setQuickFilter(active ? '' : f.key)}
-                className={`rounded-full border px-2.5 py-0.5 text-[11px] transition ${active ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/50'}`}
-              >
-                {f.label}
-              </button>
-            )
-          })}
-          {quickFilter && (
-            <button type="button" onClick={() => setQuickFilter('')} className="text-[11px] text-muted-foreground/50 hover:text-foreground">清除</button>
-          )}
-        </div>
+        {/* 状态指标条：启用分布 + 分类分布（点击快速筛选）+ 汇总指标 */}
+        {!loading && rows.length > 0 && (
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            {[
+              { key: 'enabled', label: '已启用', dot: 'bg-success', active: 'bg-success/15 text-success ring-success/40' },
+              { key: 'disabled', label: '已禁用', dot: 'bg-zinc-500', active: 'bg-zinc-500/15 text-zinc-400 ring-zinc-500/40' },
+            ].map((chip) => {
+              const active = quickFilter === chip.key
+              const count = chip.key === 'enabled' ? listStats.enabled : listStats.disabled
+              return (
+                <button
+                  key={chip.key} type="button"
+                  onClick={() => { setQuickFilter(active ? '' : chip.key); setCategoryFilter(''); setPage(1) }}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all duration-200 ${
+                    active
+                      ? `border-transparent ring-1 ${chip.active}`
+                      : 'border-border bg-secondary text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                  }`}
+                  title={active ? '点击取消该筛选' : `点击筛选「${chip.label}」的技能`}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${chip.dot} ${
+                      chip.key === 'enabled' && count > 0 ? 'animate-pulse' : ''
+                    }`}
+                  />
+                  {chip.label}
+                  <span className={`tabular-nums ${count > 0 ? '' : 'text-muted-foreground'}`}>{count}</span>
+                </button>
+              )
+            })}
+            <span className="mx-1 h-4 w-px bg-border" />
+            {CATEGORIES.map((c) => {
+              const active = quickFilter === c || categoryFilter === c
+              const count = listStats.cat[c] || 0
+              return (
+                <button
+                  key={c} type="button"
+                  onClick={() => {
+                    if (active) { setQuickFilter(''); setCategoryFilter('') }
+                    else { setQuickFilter(''); setCategoryFilter(c) }
+                    setPage(1)
+                  }}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all duration-200 ${
+                    active
+                      ? 'border-transparent bg-primary/15 text-primary ring-1 ring-primary/40'
+                      : 'border-border bg-secondary text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                  }`}
+                  title={active ? '点击取消该分类筛选' : `点击筛选「${c}」类技能`}
+                >
+                  {c}
+                  <span className={`tabular-nums ${count > 0 ? '' : 'text-muted-foreground'}`}>{count}</span>
+                </button>
+              )
+            })}
+            <div className="ml-auto flex items-center gap-4 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5" title="全部技能被智能体引用的总次数">
+                <ListChecks className="h-3.5 w-3.5 text-primary/80" />
+                总引用
+                <span
+                  className={`font-semibold tabular-nums ${
+                    listStats.totalRefs > 0 ? 'text-foreground' : 'text-muted-foreground'
+                  }`}
+                >
+                  {listStats.totalRefs > 0 ? listStats.totalRefs.toLocaleString() : '--'}
+                </span>
+              </span>
+              <span className="inline-flex items-center gap-1.5" title="技能已覆盖的分类数量">
+                <LayoutGrid className="h-3.5 w-3.5 text-primary/80" />
+                分类
+                <span
+                  className={`font-semibold tabular-nums ${
+                    listStats.categories > 0 ? 'text-foreground' : 'text-muted-foreground'
+                  }`}
+                >
+                  {listStats.categories > 0 ? listStats.categories : '--'}
+                </span>
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* 列表：表格 / 卡片 */}
         {viewMode === 'table' ? (
           <div className="overflow-hidden rounded-lg border border-border">
             <DataTable
+              className="table-stagger"
               columns={columns}
               data={paged}
               loading={loading}
@@ -528,7 +673,28 @@ function SkillList() {
               selectedKeys={selectedKeys}
               onSelectChange={setSelectedKeys}
               rowKey="id"
-              emptyText="暂无技能"
+              onRowClick={(r) => { if (canEditResource(r)) openEdit(r) }}
+              rowClickHint="点击编辑"
+              emptyIcon={ListChecks}
+              emptyText={rows.length === 0 ? '暂无技能' : '未找到匹配的技能'}
+              emptyDescription={
+                rows.length === 0
+                  ? '创建第一个技能，让智能体获得处置流程与领域规则'
+                  : '调整关键词或清除筛选条件后再试'
+              }
+              emptyAction={
+                rows.length === 0
+                  ? canCreate && (
+                      <button type="button" onClick={openCreate} className="btn-primary btn-sm">
+                        <Plus className="mr-1 h-3.5 w-3.5" /> 新建技能
+                      </button>
+                    )
+                  : (
+                      <button type="button" onClick={clearAllFilters} className="btn-secondary btn-sm">
+                        清除筛选
+                      </button>
+                    )
+              }
             />
           </div>
         ) : (
@@ -540,6 +706,9 @@ function SkillList() {
             onShare={(r) => { setShareResource(r); setShareOpen(true) }}
             togglingId={togglingId}
             renderRef={renderRef}
+            hasAny={rows.length > 0}
+            onCreate={canCreate ? openCreate : undefined}
+            onClearFilters={clearAllFilters}
           />
         )}
         <Pagination
@@ -610,27 +779,67 @@ function SkillList() {
 }
 
 // 卡片视图
-function CardView({ rows, loading, selectable, selectedKeys, onSelectChange, canEdit, canDelete, onEdit, onDelete, onToggle, onShare, togglingId, renderRef }) {
+function CardView({ rows, loading, selectable, selectedKeys, onSelectChange, canEdit, canDelete, onEdit, onDelete, onToggle, onShare, togglingId, renderRef, hasAny, onCreate, onClearFilters }) {
   if (loading) {
-    return <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-40 animate-pulse rounded-lg border border-border bg-secondary/30" />)}</div>
+    return (
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="flex h-[172px] flex-col rounded-lg border border-border bg-card px-5 py-4">
+            <div className="flex items-start justify-between gap-2">
+              <div className="h-4 w-1/3 rounded skeleton-shimmer" />
+              <div className="h-5 w-16 rounded skeleton-shimmer" />
+            </div>
+            <div className="mt-3 h-3 w-full rounded skeleton-shimmer" />
+            <div className="mt-2 h-3 w-2/3 rounded skeleton-shimmer" />
+            <div className="mt-auto flex items-center justify-between border-t border-border pt-2.5">
+              <div className="h-3 w-16 rounded skeleton-shimmer" />
+              <div className="h-7 w-24 rounded skeleton-shimmer" />
+            </div>
+          </div>
+        ))}
+      </div>
+    )
   }
   if (!rows || rows.length === 0) {
-    return <div className="rounded-lg border border-dashed border-border py-16 text-center text-sm text-muted-foreground">暂无技能</div>
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border py-16 text-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+          <ListChecks className="h-5 w-5" />
+        </div>
+        <div className="text-sm font-medium text-foreground">{hasAny ? '未找到匹配的技能' : '暂无技能'}</div>
+        <div className="text-xs text-muted-foreground">
+          {hasAny ? '调整关键词或清除筛选条件后再试' : '创建第一个技能，让智能体获得处置流程与领域规则'}
+        </div>
+        {hasAny
+          ? onClearFilters && (
+              <button type="button" onClick={onClearFilters} className="btn-secondary btn-sm">清除筛选</button>
+            )
+          : onCreate && (
+              <button type="button" onClick={onCreate} className="btn-primary btn-sm">
+                <Plus className="mr-1 h-3.5 w-3.5" /> 新建技能
+              </button>
+            )}
+      </div>
+    )
   }
   const toggle = (id) => {
     if (!selectable) return
     onSelectChange(selectedKeys.includes(id) ? selectedKeys.filter((k) => k !== id) : [...selectedKeys, id])
   }
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="card-stagger grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {rows.map((r) => {
         const checked = selectedKeys.includes(r.id)
         return (
           <div
             key={r.id}
-            className={`flex flex-col rounded-lg border bg-card p-3 transition hover:border-primary/50 ${checked ? 'border-primary/60 ring-1 ring-primary/30' : 'border-border'}`}
+            className={`card-hover flex flex-col rounded-lg border backdrop-blur-sm transition-colors ${
+              checked
+                ? 'border-primary/60 bg-primary/5 shadow-[0_0_0_1px_color-mix(in_oklch,var(--ring)_15%,transparent)]'
+                : 'border-border bg-card hover:border-primary/40'
+            }`}
           >
-            <div className="flex items-start justify-between gap-2">
+            <div className="flex items-start justify-between gap-2 px-5 pt-4">
               <div className="flex min-w-0 items-center gap-2">
                 {selectable && (
                   <input
@@ -646,30 +855,32 @@ function CardView({ rows, loading, selectable, selectedKeys, onSelectChange, can
               <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium ${CATEGORY_STYLES[r.category] || CATEGORY_STYLES['其他']}`}>{r.category || '未分类'}</span>
             </div>
             {/* 摘要 + 正文前 2 行 */}
-            <p className="mt-1.5 line-clamp-1 text-[11px] text-muted-foreground">{r.description || '（无摘要）'}</p>
-            <p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground/70">{r.content || '（无正文）'}</p>
-            {/* 标签 */}
-            {(r.tags || []).length > 0 && (
-              <div className="mt-1.5 flex flex-wrap gap-1">
-                {r.tags.slice(0, 3).map((t) => (
-                  <span key={t} className="rounded-full border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">{t}</span>
-                ))}
-              </div>
-            )}
+            <div className="flex-1 px-5">
+              <p className="mt-1.5 line-clamp-1 text-[11px] text-muted-foreground">{r.description || '（无摘要）'}</p>
+              <p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">{r.content || '（无正文）'}</p>
+              {/* 标签 */}
+              {(r.tags || []).length > 0 && (
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {r.tags.slice(0, 3).map((t) => (
+                    <span key={t} className="rounded-full border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">{t}</span>
+                  ))}
+                </div>
+              )}
+            </div>
             {/* 底部信息 */}
-            <div className="mt-2 flex items-center justify-between border-t border-border pt-2 text-[10px] text-muted-foreground/60">
-              <span>优先级 {r.priority ?? 0}</span>
+            <div className="mt-2 flex items-center justify-between border-t border-border px-5 py-2.5 text-[10px] text-muted-foreground">
+              <span className="tabular-nums">优先级 <span className="font-mono">{r.priority ?? 0}</span></span>
               <span>{renderRef(r)}</span>
               <span title={fmtTime(r.updated_at)}>{relTime(r.updated_at)}</span>
             </div>
             {/* 操作 */}
-            <div className="mt-2 flex items-center justify-between">
+            <div className="flex items-center justify-between px-5 pb-4">
               {canEditResource(r) ? (
                 <button
                   type="button"
                   disabled={togglingId === r.id}
                   onClick={(e) => { e.stopPropagation(); onToggle(r) }}
-                  className={`relative h-5 w-9 rounded-full transition disabled:opacity-50 ${r.enabled ? 'bg-primary' : 'bg-muted-foreground/40'}`}
+                  className={`relative h-5 w-9 rounded-full transition disabled:opacity-50 ${r.enabled ? 'bg-primary' : 'bg-input'}`}
                   title={r.enabled ? '点击禁用' : '点击启用'}
                   aria-label="切换启用状态"
                 >
@@ -933,7 +1144,7 @@ function SkillImportModal({ onClose, onCompleted }) {
         onClick={(e) => e.stopPropagation()}
       >
         {/* 标题栏 */}
-        <div className="flex shrink-0 items-center justify-between border-b border-border bg-secondary/30 px-6 py-4">
+        <div className="flex shrink-0 items-center justify-between border-b border-border bg-secondary px-6 py-4">
           <div className="flex items-center gap-2">
             <FileUp className="h-4 w-4 text-primary" />
             <h3 className="text-sm font-semibold text-foreground">导入技能</h3>
@@ -964,7 +1175,7 @@ function SkillImportModal({ onClose, onCompleted }) {
         </div>
 
         {/* 步骤指示器 */}
-        <div className="flex shrink-0 items-center gap-2 border-b border-border bg-secondary/20 px-6 py-2.5">
+        <div className="flex shrink-0 items-center gap-2 border-b border-border bg-secondary px-6 py-2.5">
           {[
             { key: 'upload', label: '上传文件' },
             { key: 'preview', label: '预览校验' },
@@ -978,7 +1189,7 @@ function SkillImportModal({ onClose, onCompleted }) {
             return (
               <div key={s.key} className="flex items-center gap-2">
                 <div className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] transition ${
-                  isActive ? 'bg-primary/15 text-primary' : isPassed ? 'bg-success/15 text-success' : 'text-muted-foreground/50'
+                  isActive ? 'bg-primary/15 text-primary' : isPassed ? 'bg-success/15 text-success' : 'text-muted-foreground'
                 }`}>
                   <span className={`flex h-4 w-4 items-center justify-center rounded-full text-[10px] ${
                     isActive ? 'bg-primary text-primary-foreground' : isPassed ? 'bg-success text-white' : 'bg-muted text-muted-foreground'
@@ -1006,7 +1217,7 @@ function SkillImportModal({ onClose, onCompleted }) {
                 className={`flex h-40 w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed transition ${
                   dragOver
                     ? 'border-primary bg-primary/10'
-                    : 'border-border bg-secondary/40 hover:border-primary/60 hover:bg-secondary/60'
+                    : 'border-border bg-secondary hover:border-primary/60 hover:bg-secondary'
                 }`}
               >
                 {parsing ? (
@@ -1016,12 +1227,12 @@ function SkillImportModal({ onClose, onCompleted }) {
                   </>
                 ) : (
                   <>
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted/30">
-                      <FileText className="h-6 w-6 text-muted-foreground/50" />
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                      <FileText className="h-6 w-6 text-muted-foreground" />
                     </div>
                     <div className="text-center">
                       <div className="text-xs font-medium text-muted-foreground">暂无文件</div>
-                      <div className="mt-1 text-[11px] text-muted-foreground/60">
+                      <div className="mt-1 text-[11px] text-muted-foreground">
                         点击选择 JSON / Markdown 文件，或拖拽文件到此处
                       </div>
                     </div>
@@ -1036,7 +1247,7 @@ function SkillImportModal({ onClose, onCompleted }) {
                 onChange={handleFileSelect}
               />
               {/* 格式示例（可折叠） */}
-              <div className="w-full rounded-md border border-border bg-secondary/30">
+              <div className="w-full rounded-md border border-border bg-secondary">
                 <button
                   type="button"
                   onClick={() => setShowFormat((p) => !p)}
@@ -1061,7 +1272,7 @@ function SkillImportModal({ onClose, onCompleted }) {
     }
   ]
 }`}</code>
-                    <div className="mt-1.5 text-[10px] text-muted-foreground/60">
+                    <div className="mt-1.5 text-[10px] text-muted-foreground">
                       或直接为技能数组：[{`{ "name": "..." }`}]
                     </div>
                     <div className="mt-3 mb-1 text-[10px] font-medium text-muted-foreground">Markdown 格式（.md，单文件 = 单个技能）</div>
@@ -1075,7 +1286,7 @@ enabled: true
 ---
 
 技能正文（注入 Agent prompt），支持完整 Markdown 语法。`}</code>
-                    <div className="mt-1.5 text-[10px] text-muted-foreground/60">
+                    <div className="mt-1.5 text-[10px] text-muted-foreground">
                       无 frontmatter 时整篇作为正文，名称用文件名兜底
                     </div>
                   </div>
@@ -1089,7 +1300,7 @@ enabled: true
             <div className="flex flex-col gap-4">
               {/* 统计摘要 */}
               <div className="grid grid-cols-3 gap-2">
-                <div className="rounded-md border border-border bg-secondary/30 p-3 text-center">
+                <div className="rounded-md border border-border bg-secondary p-3 text-center">
                   <div className="text-lg font-bold text-foreground">{totalCount}</div>
                   <div className="text-[10px] text-muted-foreground">总条数</div>
                 </div>
@@ -1097,7 +1308,7 @@ enabled: true
                   <div className="text-lg font-bold text-success">{validCount}</div>
                   <div className="text-[10px] text-muted-foreground">有效</div>
                 </div>
-                <div className={`rounded-md border p-3 text-center ${invalidCount > 0 ? 'border-destructive/30 bg-destructive/10' : 'border-border bg-secondary/30'}`}>
+                <div className={`rounded-md border p-3 text-center ${invalidCount > 0 ? 'border-destructive/30 bg-destructive/10' : 'border-border bg-secondary'}`}>
                   <div className={`text-lg font-bold ${invalidCount > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>{invalidCount}</div>
                   <div className="text-[10px] text-muted-foreground">无效/缺失</div>
                 </div>
@@ -1108,7 +1319,7 @@ enabled: true
                   const skill = parsedData.skills[v.idx]
                   const tagsStr = Array.isArray(skill.tags) ? skill.tags.join(', ') : (skill.tags || '')
                   return (
-                    <div key={v.idx} className="rounded-md border border-border bg-secondary/20 p-3">
+                    <div key={v.idx} className="rounded-md border border-border bg-secondary p-3">
                       {/* 卡片头：序号 + 状态徽章 */}
                       <div className="mb-2 flex items-center justify-between">
                         <span className="text-[11px] text-muted-foreground">#{v.idx + 1}</span>
@@ -1126,23 +1337,24 @@ enabled: true
                           value={skill.name || ''}
                           onChange={(e) => updateSkillField(v.idx, 'name', e.target.value)}
                           placeholder="技能名称（必填）"
-                          className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30"
+                          className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30"
                         />
                       </div>
                       {/* 分类 + 优先级 */}
                       <div className="mb-2 grid grid-cols-2 gap-2">
                         <div>
                           <label className="mb-0.5 block text-[10px] text-muted-foreground">分类</label>
-                          <select
+                          <CompactSelect
+                            size="lg"
+                            block
                             value={skill.category || ''}
                             onChange={(e) => updateSkillField(v.idx, 'category', e.target.value)}
-                            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30"
                           >
                             <option value="">未分类</option>
                             {CATEGORIES.map((c) => (
                               <option key={c} value={c}>{c}</option>
                             ))}
-                          </select>
+                          </CompactSelect>
                         </div>
                         <div>
                           <label className="mb-0.5 block text-[10px] text-muted-foreground">优先级</label>
@@ -1162,43 +1374,43 @@ enabled: true
                           value={skill.description || ''}
                           onChange={(e) => updateSkillField(v.idx, 'description', e.target.value)}
                           placeholder="技能描述（选填）"
-                          className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30"
+                          className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30"
                         />
                       </div>
                       {/* 标签 */}
                       <div className="mb-2">
-                        <label className="mb-0.5 block text-[10px] text-muted-foreground">标签<span className="text-muted-foreground/50">（逗号分隔）</span></label>
+                        <label className="mb-0.5 block text-[10px] text-muted-foreground">标签<span className="text-muted-foreground">（逗号分隔）</span></label>
                         <input
                           type="text"
                           value={tagsStr}
                           onChange={(e) => updateSkillField(v.idx, 'tags', e.target.value.split(',').map((s) => s.trim()))}
                           placeholder="标签1, 标签2"
-                          className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30"
+                          className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30"
                         />
                       </div>
                       {/* 正文预览（折叠） */}
                       {skill.content && (
                         <details className="group">
-                          <summary className="cursor-pointer select-none text-[10px] text-muted-foreground/70 hover:text-foreground">
+                          <summary className="cursor-pointer select-none text-[10px] text-muted-foreground hover:text-foreground">
                             正文预览（{skill.content.length} 字符）
                           </summary>
-                          <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-background p-2 text-[10px] leading-relaxed text-muted-foreground/80">{skill.content}</pre>
+                          <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-background p-2 text-[10px] leading-relaxed text-muted-foreground">{skill.content}</pre>
                         </details>
                       )}
                     </div>
                   )
                 })}
                 {totalCount > 50 && (
-                  <div className="rounded-md border border-border bg-secondary/20 px-3 py-1.5 text-center text-[10px] text-muted-foreground/60">
+                  <div className="rounded-md border border-border bg-secondary px-3 py-1.5 text-center text-[10px] text-muted-foreground">
                     仅显示前 50 条，共 {totalCount} 条
                   </div>
                 )}
               </div>
               {/* 同名处理策略 */}
-              <div className="flex items-center justify-between rounded-md border border-border bg-secondary/40 p-3">
+              <div className="flex items-center justify-between rounded-md border border-border bg-secondary p-3">
                 <div>
                   <div className="text-xs font-medium text-foreground">覆盖同名技能</div>
-                  <div className="mt-0.5 text-[11px] text-muted-foreground/70">
+                  <div className="mt-0.5 text-[11px] text-muted-foreground">
                     {overwrite ? '同名的技能将被更新（覆盖原内容）' : '同名的技能将被跳过（仅新增）'}
                   </div>
                 </div>
@@ -1208,7 +1420,7 @@ enabled: true
                   aria-checked={overwrite}
                   onClick={() => setOverwrite((p) => !p)}
                   className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-                    overwrite ? 'bg-primary' : 'bg-muted-foreground/30'
+                    overwrite ? 'bg-primary' : 'bg-input'
                   }`}
                 >
                   <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
@@ -1251,7 +1463,7 @@ enabled: true
             <div className="flex flex-col items-center gap-4 py-10">
               <Loader2 className="h-12 w-12 animate-spin text-primary" />
               <div className="text-sm font-medium text-foreground">正在导入技能...</div>
-              <div className="text-[11px] text-muted-foreground/70">共 {totalCount} 个技能，请勿关闭窗口</div>
+              <div className="text-[11px] text-muted-foreground">共 {totalCount} 个技能，请勿关闭窗口</div>
               <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
                 <div className="h-full w-1/3 animate-pulse rounded-full bg-primary" />
               </div>
@@ -1279,7 +1491,7 @@ enabled: true
                 {[
                   { label: '新增', value: importResult.created || 0, color: 'text-success', bg: 'bg-success/10 border-success/30' },
                   { label: '更新', value: importResult.updated || 0, color: 'text-primary', bg: 'bg-primary/10 border-primary/30' },
-                  { label: '跳过', value: importResult.skipped || 0, color: 'text-muted-foreground', bg: 'bg-secondary/30 border-border' },
+                  { label: '跳过', value: importResult.skipped || 0, color: 'text-muted-foreground', bg: 'bg-secondary border-border' },
                   { label: '错误', value: importResult.errors?.length || 0, color: 'text-destructive', bg: 'bg-destructive/10 border-destructive/30' },
                 ].map((s) => (
                   <div key={s.label} className={`rounded-md border p-3 text-center ${s.bg}`}>

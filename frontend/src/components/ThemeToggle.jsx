@@ -47,13 +47,13 @@ export default function ThemeToggle({ className = '' }) {
 
   return (
     <div ref={menuRef} className={`relative ${className}`}>
-      <div className="flex items-center">
+      <div className="flex items-center rounded-md transition-all duration-200 hover:bg-accent hover:ring-1 hover:ring-primary/30">
         <button
           type="button"
           onClick={handleClick}
           title={`当前主题：${theme === 'system' ? '跟随系统' : theme === 'dark' ? '暗色' : '亮色'}`}
           aria-label="切换主题"
-          className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-primary"
         >
           <CurIcon className="h-4 w-4" />
         </button>
@@ -61,13 +61,13 @@ export default function ThemeToggle({ className = '' }) {
           type="button"
           onClick={() => setMenuOpen((o) => !o)}
           aria-label="展开主题选项"
-          className="flex h-8 w-5 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className={`flex h-8 w-5 items-center justify-center rounded-md text-muted-foreground transition-all duration-200 hover:text-primary ${menuOpen ? 'rotate-180 text-primary' : ''}`}
         >
           <ChevronDown className="h-3 w-3" />
         </button>
       </div>
       {menuOpen && (
-        <div className="absolute right-0 z-dropdown mt-1 w-36 overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl">
+        <div className="drawer-enter absolute right-0 z-dropdown mt-1 w-36 overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-2xl">
           {options.map((opt) => {
             const Icon = opt.icon
             const active = theme === opt.value
@@ -80,7 +80,7 @@ export default function ThemeToggle({ className = '' }) {
                   setMenuOpen(false)
                 }}
                 className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-accent ${
-                  active ? 'text-primary' : 'text-muted-foreground'
+                  active ? 'bg-primary/10 font-medium text-primary' : 'text-muted-foreground'
                 }`}
               >
                 <Icon className="h-4 w-4" />

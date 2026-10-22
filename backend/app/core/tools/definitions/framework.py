@@ -176,37 +176,8 @@ HERMES_FRAMEWORK_TOOLS: list[dict[str, Any]] = [
         "code": None,
         "enabled": True,
     },
-    {
-        "name": "computer_use",
-        "description": (
-            "执行计算机操作（如运行命令、操作文件系统、打开浏览器等）。"
-            "适用于需要与操作系统或桌面环境交互的自动化场景。"
-            "注意：此工具在沙箱中执行，受安全策略限制。"
-        ),
-        "parameters_schema": {
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "description": "要执行的操作类型：run_command / read_file / write_file / list_dir / open_url",
-                },
-                "target": {
-                    "type": "string",
-                    "description": "操作目标（命令、文件路径、URL 等）",
-                },
-                "args": {
-                    "type": "object",
-                    "description": "附加参数",
-                    "additionalProperties": True,
-                },
-            },
-            "required": ["action", "target"],
-        },
-        "tool_type": "framework",
-        "category": "computer_use",
-        "code": None,
-        "enabled": True,
-    },
+    # computer_use 工具已按用户要求退役：定义移除，名称加入
+    # definitions/legacy.py 的 REMOVED_BUILTIN_TOOLS（启动时物理删除 DB 记录）。
     # ===== 智能体创建助手：构建类框架工具（tool_type='framework'，executor 拦截处理）=====
     # 处理逻辑在 app/agent/hermes/builder.py；仅对显式启用的智能体可见。
     {

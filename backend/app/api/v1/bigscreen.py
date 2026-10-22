@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.system_config import DEFAULT_CONFIGS
 from app.database import get_db
-from app.dependencies import require_permission
+from app.dependencies import get_current_user, require_permission
 from app.models.system_config import SystemConfig
 
 logger = logging.getLogger(__name__)
@@ -119,11 +119,12 @@ def _build_embed_url(db: Session, prefix: str, label: str) -> dict:
     return {"url": f"{base_url}{path}?{urlencode(query)}"}
 
 
+# 路由级基线：强制登录；embed-url 按接口单独声明各屏 view 权限
 router = APIRouter(prefix="/bigscreen", tags=["bigscreen"])
 router2 = APIRouter(
     prefix="/bigscreen2",
     tags=["bigscreen"],
-    dependencies=[Depends(require_permission("bigscreen2", "view"))],
+    dependencies=[Depends(get_current_user)],
 )
 
 
@@ -209,5 +210,8 @@ def get_yunfang_embed_url(
 
 
 @router2.get("/embed-url")
-def get_cim_embed_url(db: Session = Depends(get_db)) -> dict:
+def get_cim_embed_url(
+    db: Session = Depends(get_db),
+    _: object = Depends(require_permission("bigscreen2", "view")),
+) -> dict:
     return _build_embed_url(db, "bigscreen", "盾立方指挥大屏")

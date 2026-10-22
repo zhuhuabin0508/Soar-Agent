@@ -168,7 +168,7 @@ function ConfirmLeaveDialog({ onStay, onLeave }) {
             type: 'button',
             onClick: onStay,
             className:
-              'rounded-md border border-border px-3 py-1.5 text-sm text-foreground/90 transition hover:bg-secondary',
+              'rounded-md border border-border px-3 py-1.5 text-sm text-foreground transition hover:bg-secondary',
           },
           '留在页面'
         ),

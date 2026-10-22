@@ -8,16 +8,19 @@
 - ``record_device_call``: 把一次动作调用写入 DeviceCallLog（供各链路统一记日志）。
 - ``find_device_action_by_type``: 查找指定设备的指定类型动作（启用状态优先）。
 """
+import asyncio
 import hashlib
 import json
 import logging
+import re
 import time as _time
+from urllib.parse import quote as _quote
 from urllib.parse import urlencode as _urlencode
 from typing import Any, Optional
 
 import httpx
 
-from app.core.security import decrypt_device_secret
+from app.core.security import decrypt_device_secret, validate_outbound_url
 from app.models.device import Device, DeviceAction, DeviceCallLog
 
 logger = logging.getLogger(__name__)
@@ -71,10 +74,19 @@ def record_device_call(
 
 def _build_request(device: Device, action: DeviceAction, params: dict[str, Any]):
     """统一构造设备调用的 (method, url, headers, auth, body)，供各链路复用。"""
-    # 1) 拼接 URL
+    # 1) 拼接 URL（支持 {param} 路径参数占位符：从 params 取值替换并剔除，
+    #    剩余参数继续按 GET query / POST body 传递；无占位符的动作行为不变）
     base_url = (device.api_url or "").rstrip("/")
     api_path = (action.api_path or "").lstrip("/")
+    if "{" in api_path:
+        for _k in re.findall(r"\{(\w+)\}", api_path):
+            _v = params.pop(_k, None)
+            if _v is not None and str(_v) != "":
+                api_path = api_path.replace(f"{{{_k}}}", _quote(str(_v), safe=""))
     url = f"{base_url}/{api_path}" if api_path else base_url
+    # SSRF 防护：动作执行出口兜底校验（协议白名单 + 云元数据黑名单）
+    if url:
+        validate_outbound_url(url, field="设备 api_url")
 
     # 2) 请求头
     headers = {"Content-Type": "application/json"}
@@ -251,6 +263,9 @@ def execute_device_action(
         return {"success": False, "status_code": None, "response_body": None,
                 "error": "设备未配置 api_url 且动作未配置 api_path", "latency_ms": 0}
 
+    # 审计摘要须在青藤登录前构造：登录失败路径的 record_device_call 也会引用
+    request_summary = json.dumps({"url": url, "method": method}, ensure_ascii=False)
+
     # 青藤签名协议：登录换取 comId/jwt/signKey 并对本业务请求做 SHA1 签名。
     # 若动作指向登录接口本身，则直接携带账号密码发送，不再走签名流程。
     auth_type = action.auth_type or "api_key"
@@ -280,8 +295,8 @@ def execute_device_action(
             headers, req_body, url = _qingteng_signheaders(
                 comid, jwt, signkey, method, params, req_body, url
             )
-
-    request_summary = json.dumps({"url": url, "method": method}, ensure_ascii=False)
+            # 签名可能为 GET 追加查询串，审计摘要更新为最终 URL
+            request_summary = json.dumps({"url": url, "method": method}, ensure_ascii=False)
 
     def _do_request() -> httpx.Response:
         with httpx.Client(timeout=timeout, verify=verify) as client:
@@ -394,3 +409,114 @@ def find_device_action_by_type(
         return device, None, f"设备「{device.name}」未配置启用的 {action_type} 动作"
 
     return device, action, None
+
+
+# 智能体工具返回的响应体上限（字符数）：外部设备 API 可能返回超大列表，
+# 超限时截断并标记 response_truncated，保护 LLM 上下文与 SSE 事件大小
+_TOOL_RESPONSE_MAX_CHARS = 30000
+
+
+async def execute_device_action_by_id(
+    action_id: int,
+    params: dict[str, Any] | None = None,
+    device_id: int | None = None,
+    timeout: float | None = None,
+    agent_id: Optional[int] = None,
+    user_id: Optional[int] = None,
+) -> dict[str, Any]:
+    """按动作 ID 执行设备动作（智能体工具入口，异步包装）。
+
+    供 tool_runner 沙箱注入：智能体的 execute_device_action 工具代码直接
+    ``await execute_device_action_by_id(...)``，无需 import（沙箱禁止 import）。
+
+    与 ``execute_device_action`` 的分工：
+    - ``execute_device_action``: 接收 Device/DeviceAction ORM 实例（API/工作流用）；
+    - 本函数：接收 action_id（智能体从 query_device_actions 结果中获得），
+      自行查库解析实体并校验启用状态，再委托执行引擎，审计 source='agent'。
+
+    HTTP 调用（含重试/青藤登录）为同步阻塞代码，放入线程执行避免阻塞事件循环；
+    DB 会话也在该线程内创建并使用，规避跨线程共享 Session 的隐患。
+
+    Args:
+        action_id: 设备动作 ID（DeviceAction.id）。
+        params: 动作参数键值对。
+        device_id: 可选设备 ID，用于校验动作归属（防止误用其他设备的动作）。
+        timeout: HTTP 超时秒数（默认取设备配置）。
+        agent_id / user_id: 审计归属（写入 DeviceCallLog）。
+
+    Returns:
+        dict: 成功执行时含 success / status_code / response_body / latency_ms /
+        device / action；失败或校验不通过时含 error（附排查提示）。
+    """
+    # 入参规整：action_id / device_id 容忍字符串数字，params 必须是对象
+    try:
+        action_id = int(action_id)
+    except (TypeError, ValueError):
+        return {"error": "action_id 必须是数字（动作 ID）"}
+    if device_id is not None:
+        try:
+            device_id = int(device_id)
+        except (TypeError, ValueError):
+            return {"error": "device_id 必须是数字（设备 ID）"}
+    if params is not None and not isinstance(params, dict):
+        return {"error": "params 必须是对象（动作参数 key-value）"}
+
+    def _run() -> dict[str, Any]:
+        from app.database import SessionLocal
+
+        db = SessionLocal()
+        try:
+            action = db.query(DeviceAction).filter(DeviceAction.id == action_id).first()
+            if action is None:
+                return {
+                    "error": f"动作不存在: action_id={action_id}",
+                    "hint": "先用 query_device_actions 查询设备支持的动作及其 action_id",
+                }
+            if device_id is not None and action.device_id != device_id:
+                return {
+                    "error": (
+                        f"动作归属校验失败: action_id={action_id} 属于设备 {action.device_id}，"
+                        f"与传入 device_id={device_id} 不一致"
+                    )
+                }
+            if not action.enabled:
+                return {"error": f"动作已禁用: {action.name} (action_id={action_id})"}
+            device = db.query(Device).filter(Device.id == action.device_id).first()
+            if device is None:
+                return {"error": f"动作所属设备不存在: device_id={action.device_id}"}
+            if not device.enabled:
+                return {"error": f"设备已禁用: {device.name}"}
+
+            result = execute_device_action(
+                device,
+                action,
+                params or {},
+                timeout,
+                db=db,
+                source="agent",
+                agent_id=agent_id,
+                user_id=user_id,
+            )
+            # 附设备/动作上下文，便于智能体解读结果
+            result["device"] = {"id": device.id, "name": device.name, "type": device.type}
+            result["action"] = {
+                "id": action.id,
+                "action_type": action.action_type,
+                "name": action.name,
+            }
+            # 响应体过大时截断，保护 LLM 上下文
+            body = result.get("response_body")
+            if body is not None:
+                text = body if isinstance(body, str) else json.dumps(body, ensure_ascii=False)
+                if len(text) > _TOOL_RESPONSE_MAX_CHARS:
+                    result["response_body"] = (
+                        text[:_TOOL_RESPONSE_MAX_CHARS]
+                        + f"\n...[响应过大已截断（原始 {len(text)} 字符），"
+                        "可带分页/过滤参数重新调用以缩小范围]"
+                    )
+                    result["response_truncated"] = True
+            return result
+        finally:
+            db.close()
+
+    return await asyncio.to_thread(_run)

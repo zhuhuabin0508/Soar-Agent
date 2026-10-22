@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { Drawer } from '../components/Dialog'
 import { inputCls, textareaCls, labelCls, hintCls } from '../components/property/FormControls'
+import { CompactSelect } from '../components/ui'
 import { skills as skillsApi, agents as agentsApi } from '../api/client'
 import { toast } from '../store/toastStore'
 import { HoverTip } from '../components/InfoTip'
@@ -265,17 +266,18 @@ export default function SkillEditor({ open, initial, onClose, onSubmit, saving }
           <div>
             <label className={labelCls}>
               分类
-              <span className="ml-1 text-muted-foreground/50">(可选自定义)</span>
+              <span className="ml-1 text-muted-foreground">(可选自定义)</span>
             </label>
             <div className="flex gap-1.5">
-              <select
-                className={inputCls}
+              <CompactSelect
+                size="lg"
+                block
                 value={catSelectValue}
                 onChange={(e) => handleCategoryChange(e.target.value)}
               >
                 {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                 <option value="__custom">＋ 自定义…</option>
-              </select>
+              </CompactSelect>
               {catSelectValue === '__custom' && (
                 <input
                   className={`${inputCls} flex-1`}
@@ -296,7 +298,7 @@ export default function SkillEditor({ open, initial, onClose, onSubmit, saving }
         {/* 多标签编辑 */}
         <div>
           <label className={labelCls}>
-            标签 <span className="text-muted-foreground/50">(回车添加，可多选)</span>
+            标签 <span className="text-muted-foreground">(回车添加，可多选)</span>
           </label>
           <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-secondary p-1.5">
             {form.tags.map((tag, idx) => (
@@ -342,7 +344,7 @@ export default function SkillEditor({ open, initial, onClose, onSubmit, saving }
               <button
                 type="button"
                 onClick={() => setField('enabled')(!form.enabled)}
-                className={`relative h-5 w-9 rounded-full transition ${form.enabled ? 'bg-primary' : 'bg-muted-foreground/40'}`}
+                className={`relative h-5 w-9 rounded-full transition ${form.enabled ? 'bg-primary' : 'bg-input'}`}
                 aria-label="切换启用状态"
               >
                 <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${form.enabled ? 'left-[18px]' : 'left-0.5'}`} />
@@ -355,7 +357,7 @@ export default function SkillEditor({ open, initial, onClose, onSubmit, saving }
         </div>
 
         {/* 工具栏：AI 优化 / 检测 / 全屏 */}
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-secondary/50 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-secondary px-3 py-2">
           <span className="text-xs font-medium text-muted-foreground">智能助手</span>
           <button type="button" onClick={handleOptimize} disabled={optimizing} className="flex items-center gap-1 rounded border border-primary/50 px-2 py-1 text-[11px] text-primary transition hover:bg-primary/10 disabled:opacity-50">
             <Wand2 className="h-3 w-3" /> {optimizing ? '优化中…' : 'AI 优化提示词'}
@@ -383,13 +385,13 @@ export default function SkillEditor({ open, initial, onClose, onSubmit, saving }
           {/* 编辑区 */}
           <div className="flex flex-col">
             <label className={`${labelCls} flex items-center justify-between`}>
-              <span>技能正文 * <span className="text-muted-foreground/50">(注入到 Agent system prompt)</span></span>
+              <span>技能正文 * <span className="text-muted-foreground">(注入到 Agent system prompt)</span></span>
             </label>
             <div className="relative flex overflow-hidden rounded-md border border-border" style={{ height: fullscreen ? '70vh' : '340px' }}>
               {/* 行号 */}
               <div
                 ref={gutterRef}
-                className="select-none overflow-hidden bg-secondary/60 px-2 py-2 text-right font-mono text-[11px] leading-[1.6] text-muted-foreground/60"
+                className="select-none overflow-hidden bg-secondary px-2 py-2 text-right font-mono text-[11px] leading-[1.6] text-muted-foreground"
                 style={{ minWidth: '40px' }}
               >
                 {Array.from({ length: Math.max(stats.lines, 1) }, (_, i) => (
@@ -421,7 +423,7 @@ export default function SkillEditor({ open, initial, onClose, onSubmit, saving }
             <label className={labelCls}>
               <span className="inline-flex items-center gap-1"><Eye className="h-3 w-3" /> 实时预览</span>
             </label>
-            <div className="overflow-auto rounded-md border border-border bg-secondary/30 p-3" style={{ height: fullscreen ? '70vh' : '340px' }}>
+            <div className="overflow-auto rounded-md border border-border bg-secondary p-3" style={{ height: fullscreen ? '70vh' : '340px' }}>
               <PreviewContent content={form.content} name={form.name} category={form.category} tags={form.tags} />
             </div>
           </div>
@@ -429,7 +431,7 @@ export default function SkillEditor({ open, initial, onClose, onSubmit, saving }
 
         {/* 检测结果 */}
         {checkResult && (
-          <div className="rounded-md border border-border bg-secondary/40 p-3">
+          <div className="rounded-md border border-border bg-secondary p-3">
             <div className="mb-2 flex items-center justify-between">
               <span className="text-xs font-medium text-foreground">检测报告</span>
               <span className={`rounded px-2 py-0.5 text-[11px] font-bold ${(checkResult.score ?? 0) >= 80 ? 'bg-success/20 text-success' : (checkResult.score ?? 0) >= 60 ? 'bg-warning/20 text-warning' : 'bg-destructive/20 text-destructive'}`}>
@@ -459,17 +461,17 @@ export default function SkillEditor({ open, initial, onClose, onSubmit, saving }
         )}
 
         {/* 测试运行 */}
-        <div className="rounded-md border border-border bg-secondary/30 p-3">
+        <div className="rounded-md border border-border bg-secondary p-3">
           <div className="mb-2 flex items-center gap-2">
             <Play className="h-3.5 w-3.5 text-primary" />
             <span className="text-xs font-medium text-foreground">测试运行</span>
-            <span className="text-[10px] text-muted-foreground/60">注入此技能后，用指定智能体回答测试问题</span>
+            <span className="text-[10px] text-muted-foreground">注入此技能后，用指定智能体回答测试问题</span>
           </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <select className={inputCls} value={testAgentId} onChange={(e) => setTestAgentId(e.target.value)}>
+            <CompactSelect size="lg" block value={testAgentId} onChange={(e) => setTestAgentId(e.target.value)}>
               <option value="">选择测试智能体…</option>
               {agentList.map((a) => <option key={a.id} value={a.id}>{a.name || `#${a.id}`}</option>)}
-            </select>
+            </CompactSelect>
             <button
               type="button" onClick={handleTest} disabled={testing || !form.id}
               className="flex items-center justify-center gap-1 rounded border border-primary/50 px-3 py-1.5 text-xs text-primary transition hover:bg-primary/10 disabled:opacity-50"
@@ -492,7 +494,7 @@ export default function SkillEditor({ open, initial, onClose, onSubmit, saving }
               {testResult.injected_prompt && (
                 <details className="mt-2">
                   <summary className="cursor-pointer text-[10px] text-primary">查看注入的完整 prompt</summary>
-                  <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-secondary/50 p-2 text-[10px] text-muted-foreground">{testResult.injected_prompt}</pre>
+                  <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-secondary p-2 text-[10px] text-muted-foreground">{testResult.injected_prompt}</pre>
                 </details>
               )}
             </div>
@@ -506,7 +508,7 @@ export default function SkillEditor({ open, initial, onClose, onSubmit, saving }
 // 预览内容：渲染 {{变量}} 高亮 + 简单分段结构
 function PreviewContent({ content, name, category, tags }) {
   if (!content || !content.trim()) {
-    return <span className="text-xs text-muted-foreground/40">正文为空，开始编辑后此处实时预览…</span>
+    return <span className="text-xs text-muted-foreground">正文为空，开始编辑后此处实时预览…</span>
   }
   const lines = content.split('\n')
   return (

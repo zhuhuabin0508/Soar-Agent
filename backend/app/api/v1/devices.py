@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.core.audit import get_client_ip, log_audit
 from app.core.device_templates import get_device_template, get_device_templates
-from app.core.security import decrypt_device_secret, encrypt_device_secret
+from app.core.security import decrypt_device_secret, encrypt_device_secret, validate_outbound_url
 from app.core.timezone import beijing_now, beijing_now_iso
 from app.database import get_db
 from app.dependencies import get_current_user, require_role
@@ -173,6 +173,12 @@ def _test_device_connection(device: Device) -> tuple[bool, int | None, int | Non
     if not base_url:
         return False, None, None, "设备未配置 api_url", "unconfigured"
 
+    # SSRF 防护：读时兜底校验（防存量数据/导入旁路写入非法 URL）
+    try:
+        validate_outbound_url(base_url, field="设备 api_url")
+    except ValueError as exc:
+        return False, None, None, str(exc), "unconfigured"
+
     timeout = device.timeout or 10
     verify = bool(device.verify_tls)
 
@@ -227,15 +233,23 @@ def _test_device_connection(device: Device) -> tuple[bool, int | None, int | Non
 
 def _apply_device_fields(device: Device, body: DeviceBase, *, is_create: bool) -> None:
     """将请求体字段写入设备对象。"""
+    # SSRF 防护：写时校验 api_url（协议白名单 + 云元数据黑名单）
+    if body.api_url:
+        try:
+            validate_outbound_url(body.api_url, field="设备 api_url")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     device.name = body.name
     device.type = body.type
     device.vendor = body.vendor
     device.version = body.version
     device.ip_address = body.ip_address
     device.api_url = body.api_url
-    device.api_key = encrypt_device_secret(body.api_key)
-    device.username = encrypt_device_secret(body.username)
-    # 更新时密码留空不修改
+    # 更新时凭据留空表示不修改（列表接口不下发凭据，编辑表单默认为空）
+    if is_create or body.api_key:
+        device.api_key = encrypt_device_secret(body.api_key)
+    if is_create or body.username:
+        device.username = encrypt_device_secret(body.username)
     if is_create or body.password:
         device.password = encrypt_device_secret(body.password)
     device.enabled = body.enabled
@@ -302,7 +316,8 @@ def list_devices(db: Session = Depends(get_db)) -> list[dict]:
     devices = db.query(Device).order_by(Device.created_at.desc()).all()
     result: list[dict] = []
     for d in devices:
-        item = to_dict(d)
+        # 凭据字段（api_key/username/password）不随列表下发，编辑时留空表示不修改
+        item = to_dict(d, exclude={"api_key", "username", "password"})
         item["action_count"] = (
             db.query(func.count(DeviceAction.id))
             .filter(DeviceAction.device_id == d.id)
@@ -499,6 +514,12 @@ def create_device_from_template(
             api_url = fmt.replace("{host}", body.host)
         else:
             api_url = fmt
+    # SSRF 防护：模板创建同样校验 api_url
+    if api_url:
+        try:
+            validate_outbound_url(api_url, field="设备 api_url")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     device = Device(
         name=body.name,
@@ -564,7 +585,7 @@ def create_device_from_template(
         ip_address=get_client_ip(request),
         result="success",
     )
-    return {"device": to_dict(device, exclude={"api_key", "password"}), "actions_created": created_actions}
+    return {"device": to_dict(device, exclude={"api_key", "username", "password"}), "actions_created": created_actions}
 
 
 @router.get("/export", dependencies=[Depends(require_role("admin"))])
@@ -617,6 +638,9 @@ def import_devices(
             skipped += 1
             continue
         try:
+            # SSRF 防护：导入数据同样校验 api_url（ValueError 被下方 except 捕获，跳过该设备）
+            if dev_data.get("api_url"):
+                validate_outbound_url(dev_data["api_url"], field="设备 api_url")
             actions_data = dev_data.get("actions", []) or []
             device = Device(
                 name=dev_data.get("name", "") or "未命名设备",
@@ -625,8 +649,8 @@ def import_devices(
                 ip_address=dev_data.get("ip_address", ""),
                 api_url=dev_data.get("api_url", ""),
                 api_key=encrypt_device_secret(dev_data.get("api_key", "")),
-                username=dev_data.get("username", ""),
-                password=dev_data.get("password", ""),
+                username=encrypt_device_secret(dev_data.get("username", "")),
+                password=encrypt_device_secret(dev_data.get("password", "")),
                 enabled=bool(dev_data.get("enabled", True)),
                 description=dev_data.get("description", ""),
                 auth_type=dev_data.get("auth_type", "api_key"),
@@ -789,6 +813,97 @@ def test_device_connection(
         "latency_ms": latency,
         "error": error,
         "device": to_dict(device, exclude={"api_key", "password"}),
+    }
+
+
+# ============ 设备信息及动作查询 ============
+
+def _params_to_json_schema(params_schema: str) -> dict:
+    """把动作的 params_schema（JSON 数组: name/type/required/description）
+    转换为标准 JSON Schema（type=object + properties + required）。
+
+    解析失败时返回空对象结构，保证接口不因脏数据报错。
+    """
+    try:
+        items = json.loads(params_schema or "[]")
+    except Exception:  # noqa: BLE001
+        items = []
+    if not isinstance(items, list):
+        items = []
+    properties: dict = {}
+    required: list[str] = []
+    for it in items:
+        if not isinstance(it, dict) or not it.get("name"):
+            continue
+        properties[it["name"]] = {
+            "type": it.get("type", "string"),
+            "description": it.get("description", ""),
+        }
+        if it.get("required"):
+            required.append(it["name"])
+    return {"type": "object", "properties": properties, "required": required}
+
+
+def _parse_response_fields(action: DeviceAction) -> list[str]:
+    """解析动作 example_response 中存放的返回结果字段说明列表（容错）。"""
+    try:
+        data = json.loads(action.example_response or "{}")
+    except Exception:  # noqa: BLE001
+        return []
+    if isinstance(data, dict) and isinstance(data.get("fields"), list):
+        return data["fields"]
+    if isinstance(data, list):
+        return data
+    return []
+
+
+@router.get("/{device_id}/detail", dependencies=[Depends(get_current_user)])
+def get_device_detail(
+    device_id: int,
+    enabled_only: bool = Query(False, description="true 时仅返回启用（可用）的动作"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """设备信息及其动作查询：返回设备基础信息 + 该设备当前可用动作的清单。
+
+    出参结构：
+    - device: 设备基础信息（不含 api_key/username/password 凭据字段）
+    - actions: 动作清单，每个动作含 action_type/name/description/
+      http_method/api_path/params_schema（参数定义数组）/
+      parameters_json_schema（标准 JSON Schema）/response_fields（返回字段说明）
+    - total: 动作总数
+
+    智能体工具（query_device_actions）复用本逻辑，用于在执行动作前
+    感知设备支持哪些动作及其参数定义。
+    """
+    logger.info("查询设备详情及动作清单: device_id=%s, enabled_only=%s", device_id, enabled_only)
+    device = db.query(Device).filter(Device.id == device_id).first()
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+    query = db.query(DeviceAction).filter(DeviceAction.device_id == device_id)
+    if enabled_only:
+        query = query.filter(DeviceAction.enabled.is_(True))
+    actions = query.order_by(DeviceAction.id.asc()).all()
+    action_list = []
+    for a in actions:
+        action_list.append({
+            "id": a.id,
+            "action_type": a.action_type,
+            "name": a.name,
+            "description": a.description,
+            "http_method": a.http_method,
+            "api_path": a.api_path,
+            "category": a.category,
+            "risk_level": a.risk_level,
+            "enabled": bool(a.enabled),
+            "auth_type": a.auth_type,
+            "params_schema": json.loads(a.params_schema or "[]"),
+            "parameters_json_schema": _params_to_json_schema(a.params_schema),
+            "response_fields": _parse_response_fields(a),
+        })
+    return {
+        "device": to_dict(device, exclude={"api_key", "username", "password"}),
+        "actions": action_list,
+        "total": len(action_list),
     }
 
 

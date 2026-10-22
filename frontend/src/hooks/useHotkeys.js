@@ -28,6 +28,7 @@
 // - 监听 keydown,useEffect 挂载一次
 import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { hasPermission } from '../utils/permissions'
 
 const IGNORE_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT'])
 
@@ -72,23 +73,23 @@ export function useHotkeys() {
       if (lastGRef.current > 0 && Date.now() - lastGRef.current < 800) {
         if (e.key === 'd' && !isTyping()) {
           e.preventDefault()
-          navigate('/dashboard')
+          if (hasPermission('dashboard', 'view')) navigate('/dashboard')
           lastGRef.current = 0
         } else if (e.key === 'a' && !isTyping()) {
           e.preventDefault()
-          navigate('/studio')
+          if (hasPermission('agent', 'view') || hasPermission('workflow_list', 'view') || hasPermission('workflow_editor', 'view')) navigate('/studio')
           lastGRef.current = 0
         } else if (e.key === 'w' && !isTyping()) {
           e.preventDefault()
-          navigate('/studio?tab=workflow')
+          if (hasPermission('workflow_list', 'view')) navigate('/studio?tab=workflow')
           lastGRef.current = 0
         } else if (e.key === 't' && !isTyping()) {
           e.preventDefault()
-          navigate('/tools')
+          if (hasPermission('tool', 'view')) navigate('/tools')
           lastGRef.current = 0
         } else if (e.key === 'e' && !isTyping()) {
           e.preventDefault()
-          navigate('/executions')
+          if (hasPermission('execution', 'view')) navigate('/executions')
           lastGRef.current = 0
         } else {
           // 其他键取消 g 状态

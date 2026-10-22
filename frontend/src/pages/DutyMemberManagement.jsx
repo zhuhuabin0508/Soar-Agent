@@ -5,7 +5,7 @@ import { toast } from '../store/toastStore'
 import { confirm } from '../components/ConfirmDialog'
 import { Modal } from '../components/Dialog'
 import { inputCls, inputBaseCls, labelCls } from '../components/property/FormControls'
-import { Button, PageContainer, DataTable, Pagination, Badge } from '../components/ui'
+import { Button, PageContainer, DataTable, Pagination, Badge, CompactSelect, DatePicker } from '../components/ui'
 import { hasPermission } from '../utils/permissions'
 import dutyApi from '../api/duty'
 
@@ -215,7 +215,7 @@ export default function DutyMemberManagement() {
   const columns = [
     ...(canDrag ? [{
       key: '__drag', header: '', width: '40px',
-      render: () => <GripVertical className="h-4 w-4 cursor-grab text-muted-foreground/40" />,
+      render: () => <GripVertical className="h-4 w-4 cursor-grab text-muted-foreground" />,
     }] : []),
     {
       key: 'name', header: '姓名', width: '140px',
@@ -228,27 +228,27 @@ export default function DutyMemberManagement() {
         </span>
       ),
     },
-    { key: 'phone', header: '电话', width: '140px' },
+    { key: 'phone', header: '电话', width: '140px', render: (r) => <span className="tabular-nums">{r.phone || '-'}</span> },
     { key: 'group_name', header: '组别', width: '120px', render: (r) => r.group_name || '-' },
     {
       key: 'duty_category', header: '值班类别', width: '110px',
       render: (r) => {
         const m = CATEGORY_META[r.duty_category] || { label: r.duty_category, style: 'bg-muted text-muted-foreground' }
-        return <span className={`inline-block whitespace-nowrap rounded px-2.5 py-1 text-xs ${m.style}`}>{m.label}</span>
+        return <span className={`inline-block whitespace-nowrap rounded px-2.5 py-1 text-xs font-medium ${m.style}`}>{m.label}</span>
       },
     },
     {
       key: 'is_primary', header: '主值班人', width: '90px',
       render: (r) => (r.duty_category === 'PERMANENT_DAY' ? (r.is_primary ? <Badge variant="success">是</Badge> : '否') : '-'),
     },
-    { key: 'sort_order', header: '排序', width: '70px', numeric: true },
+    { key: 'sort_order', header: '排序', width: '70px', numeric: true, render: (r) => (r.sort_order ? r.sort_order : <span className="text-muted-foreground">0</span>) },
     {
       key: 'status', header: '状态', width: '90px',
       render: (r) => (
         <button
-          onClick={() => handleToggleStatus(r)}
+          onClick={(e) => { e.stopPropagation(); handleToggleStatus(r) }}
           disabled={!canEdit || togglingId === r.id}
-          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${r.status === 'active' ? 'bg-success' : 'bg-muted-foreground/30'}`}
+          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${r.status === 'active' ? 'bg-success hover:bg-success/90' : 'bg-input hover:opacity-80'}`}
           title={canEdit ? `${r.status === 'active' ? '停用' : '启用'}该人员` : r.status === 'active' ? '启用' : '停用'}
         >
           <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${r.status === 'active' ? 'translate-x-4' : 'translate-x-0.5'}`} />
@@ -260,12 +260,12 @@ export default function DutyMemberManagement() {
       render: (r) => (
         <div className="flex items-center gap-1">
           {canEdit && (
-            <button onClick={() => openEdit(r)} className="rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary" title="编辑">
+            <button onClick={(e) => { e.stopPropagation(); openEdit(r) }} className="rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary" title="编辑">
               <Pencil className="h-3.5 w-3.5" />
             </button>
           )}
           {canDelete && (
-            <button onClick={() => handleDelete(r)} className="rounded p-1 text-red-500 hover:bg-red-500/10" title="删除">
+            <button onClick={(e) => { e.stopPropagation(); handleDelete(r) }} className="rounded p-1 text-red-500 hover:bg-red-500/10" title="删除">
               <Trash2 className="h-3.5 w-3.5" />
             </button>
           )}
@@ -276,10 +276,10 @@ export default function DutyMemberManagement() {
 
   return (
     <PageContainer>
-      <div className="mb-6 flex items-center justify-between gap-4">
+      <div className="mb-6 flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="text-[22px] font-bold text-foreground">值班人员管理</h1>
-          <p className="mt-2 text-[13px] text-muted-foreground">管理值班人员信息，按值班类别（长期白班 / 白班 / 晚班）参与排班</p>
+          <h1 className="text-[22px] font-bold tracking-tight text-foreground">值班人员管理</h1>
+          <p className="mt-1.5 text-sm text-muted-foreground">管理值班人员信息，按值班类别（长期白班 / 白班 / 晚班）参与排班</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <Button variant="ghost" size="sm" onClick={openStats}>
@@ -320,23 +320,25 @@ export default function DutyMemberManagement() {
           onChange={(e) => setFilters((f) => ({ ...f, group_name: e.target.value }))}
           onKeyDown={(e) => { if (e.key === 'Enter') { setPage(1); load() } }}
         />
-        <select
-          className={`${inputBaseCls} h-9 w-40`}
+        <CompactSelect
+          size="lg"
+          className="w-40"
           value={filters.duty_category}
           onChange={(e) => { setFilters((f) => ({ ...f, duty_category: e.target.value })); setPage(1); }}
         >
           <option value="">全部类别</option>
           {CATEGORY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <select
-          className={`${inputBaseCls} h-9 w-32`}
+        </CompactSelect>
+        <CompactSelect
+          size="lg"
+          className="w-32"
           value={filters.status}
           onChange={(e) => { setFilters((f) => ({ ...f, status: e.target.value })); setPage(1) }}
         >
           <option value="">全部状态</option>
           <option value="active">启用</option>
           <option value="inactive">停用</option>
-        </select>
+        </CompactSelect>
         <div className="flex-1" />
         <Button size="sm" variant="secondary" className="h-9 whitespace-nowrap" onClick={() => { setPage(1); load() }}>查询</Button>
         <Button size="sm" variant="ghost" className="h-9 whitespace-nowrap" onClick={() => { setFilters({ group_name: '', duty_category: '', keyword: '', status: '' }); setPage(1) }}>重置</Button>
@@ -345,15 +347,15 @@ export default function DutyMemberManagement() {
       {/* 批量操作栏（选中时出现） */}
       {canEdit && selectedKeys.length > 0 && (
         <div className="mb-3 flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
-          <span className="text-muted-foreground">已选 <span className="font-semibold text-primary">{selectedKeys.length}</span> 名</span>
+          <span className="text-muted-foreground">已选 <span className="font-semibold tabular-nums text-primary">{selectedKeys.length}</span> 名</span>
           <div className="flex-1" />
-          <button onClick={() => handleBatchStatus('active')} className="flex items-center gap-1 rounded px-2 py-1 text-xs text-success hover:bg-success/10" title="批量启用">
+          <button onClick={() => handleBatchStatus('active')} className="flex h-9 items-center gap-1 whitespace-nowrap rounded px-3 text-xs font-medium text-success transition hover:bg-success/10" title="批量启用">
             <Power className="h-3.5 w-3.5" />批量启用
           </button>
-          <button onClick={() => handleBatchStatus('inactive')} className="flex items-center gap-1 rounded px-2 py-1 text-xs text-destructive hover:bg-destructive/10" title="批量停用">
+          <button onClick={() => handleBatchStatus('inactive')} className="flex h-9 items-center gap-1 whitespace-nowrap rounded px-3 text-xs font-medium text-destructive transition hover:bg-destructive/10" title="批量停用">
             <PowerOff className="h-3.5 w-3.5" />批量停用
           </button>
-          <button onClick={() => setSelectedKeys([])} className="rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent">取消选择</button>
+          <button onClick={() => setSelectedKeys([])} className="flex h-9 items-center whitespace-nowrap rounded px-3 text-xs text-muted-foreground transition hover:bg-accent hover:text-foreground">取消选择</button>
         </div>
       )}
 
@@ -378,7 +380,9 @@ export default function DutyMemberManagement() {
           selectable={canEdit}
           selectedKeys={selectedKeys}
           onSelectChange={setSelectedKeys}
-          rowClassName={() => 'hover:bg-secondary/20'}
+          onRowClick={canEdit ? (r) => openEdit(r) : undefined}
+          rowClickHint="点击编辑"
+          rowClassName={() => 'hover:bg-secondary'}
           draggable={canDrag}
           onReorder={handleReorder}
           emptyText="暂无值班人员"
@@ -427,9 +431,9 @@ export default function DutyMemberManagement() {
           </div>
           <div>
             <label className={labelCls}>值班类别</label>
-            <select className={inputCls} value={form.duty_category} onChange={(e) => setForm({ ...form, duty_category: e.target.value })}>
+            <CompactSelect size="lg" block value={form.duty_category} onChange={(e) => setForm({ ...form, duty_category: e.target.value })}>
               {CATEGORY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
+            </CompactSelect>
           </div>
           <div>
             <label className={labelCls}>排序权重</label>
@@ -437,10 +441,10 @@ export default function DutyMemberManagement() {
           </div>
           <div>
             <label className={labelCls}>状态</label>
-            <select className={inputCls} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+            <CompactSelect size="lg" block value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
               <option value="active">启用</option>
               <option value="inactive">停用</option>
-            </select>
+            </CompactSelect>
           </div>
           <div className="col-span-2">
             <label className="flex items-center gap-2 text-sm text-foreground">
@@ -453,7 +457,7 @@ export default function DutyMemberManagement() {
             </label>
           </div>
           {editing && (
-            <p className="col-span-2 text-[11px] text-muted-foreground/70">提示：修改值班类别将影响后续值班表生成。</p>
+            <p className="col-span-2 text-[11px] text-muted-foreground">提示：修改值班类别将影响后续值班表生成。</p>
           )}
         </div>
       </Modal>
@@ -483,7 +487,7 @@ export default function DutyMemberManagement() {
             />
           </div>
           {importResult && (
-            <div className="rounded-md border border-border bg-muted/40 p-3 text-xs">
+            <div className="rounded-md border border-border bg-muted p-3 text-xs">
               <div className="text-success">成功 {importResult.success} 条</div>
               {importResult.total_errors > 0 && (
                 <div className="mt-1 text-destructive">失败 {importResult.total_errors} 条：</div>
@@ -510,14 +514,14 @@ export default function DutyMemberManagement() {
           <div className="flex flex-wrap items-end gap-2">
             <div>
               <label className={labelCls}>起始日期</label>
-              <input type="date" className={`${inputCls} w-40`} value={statsRange.start_date} onChange={(e) => setStatsRange((r) => ({ ...r, start_date: e.target.value }))} />
+              <DatePicker value={statsRange.start_date} onChange={(e) => setStatsRange((r) => ({ ...r, start_date: e.target.value }))} />
             </div>
             <div>
               <label className={labelCls}>结束日期</label>
-              <input type="date" className={`${inputCls} w-40`} value={statsRange.end_date} onChange={(e) => setStatsRange((r) => ({ ...r, end_date: e.target.value }))} />
+              <DatePicker value={statsRange.end_date} onChange={(e) => setStatsRange((r) => ({ ...r, end_date: e.target.value }))} />
             </div>
             <Button size="sm" variant="secondary" onClick={loadStats}>查询</Button>
-            <span className="text-xs text-muted-foreground/70">默认近 90 天</span>
+            <span className="text-xs text-muted-foreground">默认近 90 天</span>
           </div>
 
           {statsLoading ? (
@@ -545,7 +549,7 @@ export default function DutyMemberManagement() {
               {/* 人员明细 */}
               <div className="max-h-72 overflow-y-auto rounded-md border border-border">
                 <table className="w-full text-xs">
-                  <thead className="sticky top-0 bg-muted/40 text-muted-foreground">
+                  <thead className="sticky top-0 bg-muted text-muted-foreground">
                     <tr>
                       <th className="px-2 py-1.5 text-left">姓名</th>
                       <th className="px-2 py-1.5 text-left">组别</th>
@@ -559,7 +563,7 @@ export default function DutyMemberManagement() {
                     {(statsData.items || []).map((it) => {
                       const m = CATEGORY_META[it.duty_category] || { label: it.duty_category, variant: 'neutral' }
                       return (
-                        <tr key={it.id} className="border-t border-border/50">
+                        <tr key={it.id} className="border-t border-border">
                           <td className="px-2 py-1 font-medium">{it.name}</td>
                           <td className="px-2 py-1 text-muted-foreground">{it.group_name || '-'}</td>
                           <td className="px-2 py-1"><Badge variant={m.variant}>{m.label}</Badge></td>
@@ -572,7 +576,7 @@ export default function DutyMemberManagement() {
                   </tbody>
                 </table>
               </div>
-              <p className="text-[11px] text-muted-foreground/70">统计区间：{statsData.start_date} ~ {statsData.end_date}。差距为同类别内最多与最少之差，差距越大轮班越不均衡。</p>
+              <p className="text-[11px] text-muted-foreground">统计区间：{statsData.start_date} ~ {statsData.end_date}。差距为同类别内最多与最少之差，差距越大轮班越不均衡。</p>
             </>
           ) : (
             <div className="py-8 text-center text-sm text-muted-foreground">暂无数据</div>

@@ -1,14 +1,17 @@
 // 反馈管理页（admin）：全量反馈的筛选 / 批量处理 / 详情处理抽屉
 // 功能：多条件筛选 + 复选框批量操作 + 详情抽屉（字段/附件 lightbox/回复/改状态/重新打开/时间线）
-import { useCallback, useEffect, useMemo, useRef, useState, Children } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Bug, Eye, RotateCcw, Paperclip, MessageSquareWarning, X, Search, XCircle,
-  Trash2, Plus, Clock, Calendar, AlertTriangle, ChevronDown,
+  Trash2, Plus, Clock, Calendar, AlertTriangle,
 } from 'lucide-react'
 import { feedbackApi } from '../api/client'
 import { toast } from '../store/toastStore'
-import { PageContainer, PageHeader, DataTable, Pagination, Button } from '../components/ui'
+import {
+  PageContainer, PageHeader, DataTable, Pagination, Button,
+  CompactSelect, DatePicker,
+} from '../components/ui'
 import {
   FEEDBACK_TYPES,
   FEEDBACK_STATUSES,
@@ -35,163 +38,13 @@ function Tag({ cls, children }) {
   )
 }
 
-/** 主题化下拉：Portal 菜单，避免原生 select 在深色主题下弹出浅色系统列表且错位 */
-function CompactSelect({
-  value,
-  onChange,
-  disabled,
-  children,
-  size = 'sm',
-  variant = 'field',
-  className = '',
-  title,
-  onClick,
-  onMouseDown,
-}) {
-  const [open, setOpen] = useState(false)
-  const btnRef = useRef(null)
-  const [pos, setPos] = useState({ top: 0, left: 0, minWidth: 0 })
-  const tall = size === 'md'
-  const ghost = variant === 'ghost'
-  const empty = value === '' || value == null
-
-  const options = useMemo(() => (
-    Children.toArray(children).flatMap((child) => {
-      if (!child || child.type !== 'option') return []
-      return [{
-        value: child.props.value == null ? '' : String(child.props.value),
-        label: child.props.children,
-        disabled: Boolean(child.props.disabled),
-      }]
-    })
-  ), [children])
-
-  const selected = options.find((o) => o.value === String(value ?? ''))
-  const label = selected?.label ?? '请选择'
-
-  const chrome = ghost
-    ? `border-transparent bg-transparent hover:border-border/40 hover:bg-muted/25 focus:border-border/60 focus:bg-muted/30 ${
-        empty ? 'text-muted-foreground' : 'text-foreground'
-      }`
-    : 'border-border/70 bg-secondary text-secondary-foreground hover:bg-accent focus:border-primary'
-
-  const close = () => setOpen(false)
-
-  const toggle = (e) => {
-    e.stopPropagation()
-    onClick?.(e)
-    if (disabled) return
-    if (!open && btnRef.current) {
-      const rect = btnRef.current.getBoundingClientRect()
-      const menuH = Math.min(options.length * 32 + 8, 280)
-      let top = rect.bottom + 4
-      if (top + menuH > window.innerHeight - 8) {
-        top = Math.max(8, rect.top - menuH - 4)
-      }
-      let left = rect.left
-      const minWidth = Math.max(rect.width, tall ? 132 : 112)
-      if (left + minWidth > window.innerWidth - 8) {
-        left = Math.max(8, window.innerWidth - minWidth - 8)
-      }
-      setPos({ top, left, minWidth })
-    }
-    setOpen((v) => !v)
-  }
-
-  useEffect(() => {
-    if (!open) return undefined
-    const onDoc = (e) => {
-      if (btnRef.current?.contains(e.target)) return
-      if (e.target.closest?.('[data-compact-select-menu]')) return
-      close()
-    }
-    const onKey = (e) => { if (e.key === 'Escape') close() }
-    const onScroll = () => close()
-    document.addEventListener('mousedown', onDoc)
-    document.addEventListener('keydown', onKey)
-    document.addEventListener('scroll', onScroll, true)
-    window.addEventListener('resize', close)
-    return () => {
-      document.removeEventListener('mousedown', onDoc)
-      document.removeEventListener('keydown', onKey)
-      document.removeEventListener('scroll', onScroll, true)
-      window.removeEventListener('resize', close)
-    }
-  }, [open])
-
-  const pick = (opt) => {
-    if (opt.disabled) return
-    close()
-    if (String(opt.value) === String(value ?? '')) return
-    onChange?.({ target: { value: opt.value }, stopPropagation() {} })
-  }
-
-  return (
-    <div
-      className={`relative inline-flex items-center ${className}`}
-      onMouseDown={onMouseDown}
-    >
-      <button
-        ref={btnRef}
-        type="button"
-        disabled={disabled}
-        title={title}
-        onClick={toggle}
-        className={`inline-flex items-center rounded-md border text-left outline-none transition disabled:cursor-not-allowed disabled:opacity-60 ${chrome} ${
-          tall
-            ? 'h-8 min-w-[7.5rem] py-0 pl-2.5 pr-8 text-sm'
-            : 'h-7 min-w-[6.25rem] max-w-[8rem] py-0 pl-2 pr-7 text-xs'
-        }`}
-      >
-        <span className="block min-w-0 flex-1 truncate">{label}</span>
-      </button>
-      <ChevronDown
-        className={`pointer-events-none absolute top-1/2 -translate-y-1/2 transition ${
-          tall ? 'right-2 h-3.5 w-3.5' : 'right-1.5 h-3 w-3'
-        } ${open ? 'rotate-180' : ''} ${ghost ? 'text-muted-foreground/45' : 'text-muted-foreground/70'}`}
-      />
-      {open && createPortal(
-        <div
-          data-compact-select-menu
-          data-allow-scroll
-          className="fixed z-[10000] max-h-[280px] overflow-y-auto overscroll-contain rounded-md border border-border bg-card py-1 text-foreground shadow-2xl"
-          style={{ top: pos.top, left: pos.left, minWidth: pos.minWidth }}
-          role="listbox"
-        >
-          {options.map((opt) => {
-            const active = opt.value === String(value ?? '')
-            return (
-              <button
-                key={opt.value || '__empty'}
-                type="button"
-                role="option"
-                aria-selected={active}
-                disabled={opt.disabled}
-                onClick={() => pick(opt)}
-                className={`flex w-full items-center px-3 py-1.5 text-left text-xs transition disabled:opacity-50 ${
-                  active
-                    ? 'bg-primary/20 text-primary'
-                    : 'text-foreground hover:bg-accent'
-                }`}
-              >
-                <span className="truncate">{opt.label}</span>
-              </button>
-            )
-          })}
-        </div>,
-        document.body,
-      )}
-    </div>
-  )
-}
-
 // 字段展示行
 function Field({ label, children }) {
   return (
     <div className="flex flex-col gap-1 py-2 sm:flex-row sm:gap-4">
       <div className="w-28 shrink-0 text-xs text-muted-foreground">{label}</div>
       <div className="min-w-0 flex-1 whitespace-pre-wrap break-words text-sm text-foreground">
-        {children || <span className="text-muted-foreground/70">—</span>}
+        {children || <span className="text-muted-foreground">—</span>}
       </div>
     </div>
   )
@@ -220,15 +73,17 @@ function HistoryTimeline({ histories }) {
               </span>
             )}
             {h.operator_name && (
-              <span className="text-xs text-muted-foreground/80">操作人：{h.operator_name}</span>
+              <span className="text-xs text-muted-foreground">操作人：{h.operator_name}</span>
             )}
           </div>
           {h.content && (
-            <p className="mt-1 whitespace-pre-wrap break-words text-sm text-muted-foreground">
-              {h.content}
-            </p>
+            <div className="mt-1.5 border-l-2 border-primary/30 bg-muted py-1.5 pl-3 pr-2">
+              <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">
+                {h.content}
+              </p>
+            </div>
           )}
-          <div className="mt-1 text-xs tabular-nums text-muted-foreground/60">
+          <div className="mt-1 text-xs tabular-nums text-muted-foreground">
             {fmtTime(h.created_at)}
           </div>
         </li>
@@ -596,7 +451,7 @@ function AdminDetailDrawer({ open, onClose, feedbackId, onChanged }) {
             className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-5"
           >
             {loading || !detail ? (
-              <div className="flex h-40 items-center justify-center text-sm text-muted-foreground/70">
+              <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
                 加载中...
               </div>
             ) : (
@@ -612,7 +467,7 @@ function AdminDetailDrawer({ open, onClose, feedbackId, onChanged }) {
                   </h3>
                 </div>
 
-                <div className="divide-y divide-border/60 rounded-lg border border-border bg-muted/30 px-4 py-1">
+                <div className="divide-y divide-border rounded-lg border border-border bg-muted px-4 py-1">
                   <Field label="提交人">
                     {detail.user_name || `#${detail.user_id}`}
                   </Field>
@@ -672,7 +527,7 @@ function AdminDetailDrawer({ open, onClose, feedbackId, onChanged }) {
                               src={url}
                               alt={a.name}
                               loading="lazy"
-                              className="h-24 w-full object-cover bg-muted/50"
+                              className="h-24 w-full object-cover bg-muted"
                             />
                             <div className="truncate px-2 py-1 text-[11px] text-muted-foreground">
                               {a.name} · {fmtSize(a.size)}
@@ -684,7 +539,7 @@ function AdminDetailDrawer({ open, onClose, feedbackId, onChanged }) {
                             href={url}
                             target="_blank"
                             rel="noreferrer"
-                            className="flex items-center gap-2 rounded-md border border-border bg-muted/50 px-3 py-2 text-xs transition-colors hover:border-primary"
+                            className="flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2 text-xs transition-colors hover:border-primary"
                           >
                             <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                             <span className="min-w-0 flex-1 truncate" title={a.name}>
@@ -765,7 +620,7 @@ function AdminDetailDrawer({ open, onClose, feedbackId, onChanged }) {
                     onChange={(e) => setReplyContent(e.target.value)}
                     maxLength={2000}
                     placeholder="填写回复内容（提交后将通知反馈提交者）"
-                    className="w-full resize-y rounded-md border border-border bg-muted/50 px-3 py-2 text-sm text-foreground placeholder-muted-foreground transition focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    className="w-full resize-y rounded-md border border-border bg-muted px-3 py-2 text-sm text-foreground placeholder-muted-foreground transition focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                   />
 
                   <div className="mt-3 flex justify-end">
@@ -821,9 +676,9 @@ function AdminDetailDrawer({ open, onClose, feedbackId, onChanged }) {
   )
 }
 
-// 筛选输入通用样式
+// 筛选输入通用样式：h-9 基准控件 + 悬停主色反馈
 const filterInputCls =
-  'rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground placeholder-muted-foreground outline-none transition focus:border-primary'
+  'h-9 rounded-md border border-border bg-background px-2.5 text-sm text-foreground placeholder-muted-foreground outline-none transition hover:border-primary/45 focus:border-primary'
 
 // ===== 反馈管理列表页（admin） =====
 function FeedbackAdmin() {
@@ -1098,13 +953,13 @@ function FeedbackAdmin() {
       header: '提交时间',
       width: '165px',
       render: (r) => (
-        <span className="text-muted-foreground tabular-nums">{fmtTime(r.created_at)}</span>
+        <span className="text-xs tabular-nums text-muted-foreground">{fmtTime(r.created_at)}</span>
       ),
     },
     {
       key: 'actions',
       header: '操作',
-      width: '110px',
+      width: '140px',
       render: (r) => (
         <div className="flex items-center gap-3">
           <button
@@ -1182,38 +1037,38 @@ function FeedbackAdmin() {
       {/* 顶部紧凑统计 */}
       <StatsBar stats={stats} loading={statsLoading} />
 
-      {/* 筛选区 */}
-      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card p-3">
-        <select
+      {/* 筛选区：基准卡片条（下拉/日期均为自绘弹层，规避原生弹层黑闪） */}
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-border bg-card px-4 py-2.5">
+        <CompactSelect
+          size="lg"
           value={draft.type}
           onChange={(e) => setDraft({ ...draft, type: e.target.value })}
-          className={filterInputCls}
         >
           <option value="">全部类型</option>
           {FEEDBACK_TYPES.map((t) => (
             <option key={t.value} value={t.value}>{t.label}</option>
           ))}
-        </select>
-        <select
+        </CompactSelect>
+        <CompactSelect
+          size="lg"
           value={draft.status}
           onChange={(e) => setDraft({ ...draft, status: e.target.value })}
-          className={filterInputCls}
         >
           <option value="">全部状态</option>
           {FEEDBACK_STATUSES.map((s) => (
             <option key={s.value} value={s.value}>{s.label}</option>
           ))}
-        </select>
-        <select
+        </CompactSelect>
+        <CompactSelect
+          size="lg"
           value={draft.priority}
           onChange={(e) => setDraft({ ...draft, priority: e.target.value })}
-          className={filterInputCls}
         >
           <option value="">全部优先级</option>
           {FEEDBACK_PRIORITIES.map((p) => (
             <option key={p.value} value={p.value}>{p.label}</option>
           ))}
-        </select>
+        </CompactSelect>
         <input
           type="text"
           value={draft.module}
@@ -1229,20 +1084,18 @@ function FeedbackAdmin() {
           className={`${filterInputCls} w-40`}
         />
         <div className="flex items-center gap-1.5">
-          <input
-            type="date"
+          <DatePicker
             value={draft.start_date}
             onChange={(e) => setDraft({ ...draft, start_date: e.target.value })}
-            className={`${filterInputCls} w-[130px]`}
-            aria-label="开始日期"
+            placeholder="开始日期"
+            title="开始日期"
           />
           <span className="text-xs text-muted-foreground">至</span>
-          <input
-            type="date"
+          <DatePicker
             value={draft.end_date}
             onChange={(e) => setDraft({ ...draft, end_date: e.target.value })}
-            className={`${filterInputCls} w-[130px]`}
-            aria-label="结束日期"
+            placeholder="结束日期"
+            title="结束日期"
           />
         </div>
         <div className="relative">

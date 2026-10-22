@@ -19,7 +19,7 @@ import {
   Users, Workflow, Bot, Wrench, BrainCircuit, BookOpen,
 } from 'lucide-react'
 import { Modal } from './Dialog'
-import { inputCls } from './property/FormControls'
+import { CompactSelect } from './ui'
 import { resourceShares } from '../api/client'
 import { usersApi } from '../api/users'
 import { rolesApi } from '../api/roles'
@@ -55,7 +55,7 @@ function PermissionPicker({ value, onChange, disabled }) {
     { value: 'edit', label: '编辑', Icon: Pencil, active: 'bg-primary/15 text-primary' },
   ]
   return (
-    <div className="inline-flex shrink-0 rounded-md border border-border bg-muted/40 p-0.5">
+    <div className="inline-flex shrink-0 rounded-md border border-border bg-muted p-0.5">
       {opts.map((o) => {
         const active = value === o.value
         return (
@@ -326,7 +326,7 @@ export default function ShareDialog({
       }
     >
       {/* 资源信息卡：让用户清楚正在共享什么 */}
-      <div className="flex items-center gap-3 rounded-md border border-border bg-secondary/30 px-3 py-2.5">
+      <div className="flex items-center gap-3 rounded-md border border-border bg-secondary px-3 py-2.5">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
           <TypeIcon className="h-4.5 w-4.5" />
         </div>
@@ -417,7 +417,7 @@ export default function ShareDialog({
                 return (
                   <label
                     key={u.id}
-                    className={`flex cursor-pointer items-center gap-2 border-b border-border px-2.5 py-1.5 last:border-b-0 hover:bg-secondary/40 ${
+                    className={`flex cursor-pointer items-center gap-2 border-b border-border px-2.5 py-1.5 last:border-b-0 hover:bg-secondary ${
                       checked ? 'bg-primary/5' : ''
                     }`}
                   >
@@ -430,7 +430,7 @@ export default function ShareDialog({
                     />
                     <Avatar
                       name={u.display_name || u.username}
-                      color={checked ? (selectedPermission === 'edit' ? 'bg-primary' : 'bg-blue-500') : 'bg-muted-foreground/40'}
+                      color={checked ? (selectedPermission === 'edit' ? 'bg-primary' : 'bg-blue-500') : 'bg-muted-foreground'}
                     />
                     <div className="flex min-w-0 flex-1 items-center gap-1.5">
                       <span className="truncate text-xs text-card-foreground">
@@ -479,7 +479,7 @@ export default function ShareDialog({
         </div>
 
         {/* 权限说明随选择切换，更直观 */}
-        <div className="mt-2 flex items-start gap-1.5 text-[11px] text-muted-foreground/80">
+        <div className="mt-2 flex items-start gap-1.5 text-[11px] text-muted-foreground">
           {selectedPermission === 'edit' ? (
             <>
               <Pencil className="mt-0.5 h-3 w-3 shrink-0 text-primary" />
@@ -507,8 +507,10 @@ export default function ShareDialog({
           />
         </div>
         <div className="flex gap-2">
-          <select
-            className={`${inputCls} flex-1 text-xs`}
+          <CompactSelect
+            size="lg"
+            block
+            className="flex-1"
             value={selectedRoleId}
             onChange={(e) => setSelectedRoleId(e.target.value)}
             disabled={submitting}
@@ -517,7 +519,7 @@ export default function ShareDialog({
             {availableRoles.map((r) => (
               <option key={r.id} value={r.id}>{r.name}</option>
             ))}
-          </select>
+          </CompactSelect>
           <button
             type="button"
             onClick={handleAddRole}
@@ -527,7 +529,7 @@ export default function ShareDialog({
             授权角色
           </button>
         </div>
-        <p className="mt-2 text-[11px] text-muted-foreground/80">
+        <p className="mt-2 text-[11px] text-muted-foreground">
           该角色下所有用户将获得对应权限（查看或编辑）。
         </p>
       </div>
@@ -592,7 +594,7 @@ export default function ShareDialog({
           <div className="flex flex-col items-center justify-center rounded-md border border-dashed border-border py-6 text-center text-xs text-muted-foreground">
             <Users className="mb-1.5 h-5 w-5 opacity-50" />
             暂无被授权用户或角色
-            <span className="mt-0.5 text-[11px] text-muted-foreground/60">
+            <span className="mt-0.5 text-[11px] text-muted-foreground">
               在上方选择用户或角色并授权后，将出现在这里
             </span>
           </div>

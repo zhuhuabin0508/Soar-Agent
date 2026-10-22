@@ -21,12 +21,12 @@ export function getChartTheme() {
     return {
       text: '#e5e7eb',        // gray-200,主要文字(对比度 13.6:1,AAA)
       textMuted: '#cbd5e1',   // slate-300,次要文字(对比度 10.3:1,AAA,比 gray-400 更亮)
-      axisLine: '#475569',    // slate-600
+      axisLine: '#64748b',    // slate-500,轴线在暗色背景/投影下更清晰
       splitLine: '#1e293b',   // slate-800
       tooltip: {
         backgroundColor: 'rgba(15,23,42,0.95)',
         borderColor: '#334155',
-        textStyle: { color: '#e2e8f0' },
+        textStyle: { color: '#e2e8f0', fontSize: 13 },
       },
       pieBorderColor: '#0f172a',
       palette: ['#22d3ee', '#3b82f6', '#a855f7', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#6366f1'],
@@ -40,7 +40,7 @@ export function getChartTheme() {
     tooltip: {
       backgroundColor: 'rgba(255,255,255,0.98)',
       borderColor: '#cbd5e1',
-      textStyle: { color: '#0f172a' },
+      textStyle: { color: '#0f172a', fontSize: 13 },
     },
     pieBorderColor: '#ffffff',
     palette: ['#0891b2', '#2563eb', '#9333ea', '#db2777', '#d97706', '#059669', '#dc2626', '#4f46e5'],

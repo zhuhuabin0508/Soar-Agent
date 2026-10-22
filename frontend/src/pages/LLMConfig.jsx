@@ -17,7 +17,7 @@ import { TutorialButton, TutorialDrawer } from '../components/TutorialDrawer'
 import { LLM_TUTORIAL } from '../components/tutorialContent'
 import { toast } from '../store/toastStore'
 import { confirm } from '../components/ConfirmDialog'
-import { DataTable, Pagination } from '../components/ui'
+import { DataTable, Pagination, CompactSelect } from '../components/ui'
 import FilterBar from '../components/FilterBar'
 import BatchActions from '../components/BatchActions'
 import { usePagination } from '../hooks/usePagination'
@@ -36,7 +36,7 @@ const MODEL_TYPE_META = {
 const HEALTH_META = {
   healthy: { label: '正常', cls: 'bg-success/20 text-success', dot: 'bg-success' },
   unhealthy: { label: '异常', cls: 'bg-destructive/20 text-destructive', dot: 'bg-destructive' },
-  untested: { label: '未测试', cls: 'bg-muted-foreground/20 text-muted-foreground', dot: 'bg-muted-foreground' },
+  untested: { label: '未测试', cls: 'bg-muted text-muted-foreground', dot: 'bg-muted-foreground' },
 }
 // 来源映射
 const TRIGGER_LABELS = {
@@ -80,7 +80,7 @@ const PROVIDER_ICONS = {
 
 // ============ 迷你折线图（Sparkline，纯 SVG） ============
 function Sparkline({ data, color = '#6366f1', height = 40, width = 120 }) {
-  if (!data || data.length < 2) return <div className="text-[10px] text-muted-foreground/50">暂无趋势</div>
+  if (!data || data.length < 2) return <div className="text-[10px] text-muted-foreground">暂无趋势</div>
   const max = Math.max(...data, 1)
   const min = Math.min(...data, 0)
   const range = max - min || 1
@@ -181,22 +181,21 @@ function MonitorTab() {
   const dailyTrend = data?.daily_trend || []
 
   const dayOptions = [1, 7, 14, 30]
-  const selectCls = 'rounded-md border border-border bg-secondary px-2 py-1 text-xs text-foreground outline-none focus:border-primary'
 
   return (
     <div className="flex flex-col gap-4">
       {/* 工具栏 */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card/60 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-4">
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">时间范围：</span>
           {dayOptions.map((d) => (
             <button key={d} onClick={() => setDays(d)} className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${days === d ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'}`}>{d} 天</button>
           ))}
           <span className="ml-2 text-xs text-muted-foreground">来源：</span>
-          <select value={triggerType} onChange={(e) => setTriggerType(e.target.value)} className={selectCls}>
+          <CompactSelect value={triggerType} onChange={(e) => setTriggerType(e.target.value)} size="lg">
             <option value="">全部</option>
             {Object.entries(TRIGGER_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+          </CompactSelect>
         </div>
         <button onClick={load} disabled={loading} className="btn-secondary btn-sm">{loading ? '刷新中…' : '刷新'}</button>
       </div>
@@ -212,7 +211,7 @@ function MonitorTab() {
               <Activity className="h-4 w-4 text-primary" />
             </div>
             <div className="text-2xl font-bold text-foreground">{summary.total_calls ?? 0}</div>
-            <div className="mt-1 text-[11px] text-muted-foreground/70">{summary.total_success ?? 0} 成功 / {summary.total_failed ?? 0} 失败</div>
+            <div className="mt-1 text-[11px] text-muted-foreground">{summary.total_success ?? 0} 成功 / {summary.total_failed ?? 0} 失败</div>
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="mb-2 flex items-center justify-between">
@@ -220,7 +219,7 @@ function MonitorTab() {
               <TrendingUp className={`h-4 w-4 ${(summary.avg_success_rate ?? 0) >= 0.9 ? 'text-success' : 'text-warning'}`} />
             </div>
             <div className={`text-2xl font-bold ${(summary.avg_success_rate ?? 0) >= 0.9 ? 'text-success' : 'text-warning'}`}>{((summary.avg_success_rate ?? 0) * 100).toFixed(1)}<span className="text-sm text-muted-foreground">%</span></div>
-            <div className="mt-1 text-[11px] text-muted-foreground/70">最近 {days} 天</div>
+            <div className="mt-1 text-[11px] text-muted-foreground">最近 {days} 天</div>
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="mb-2 flex items-center justify-between">
@@ -228,7 +227,7 @@ function MonitorTab() {
               <Timer className="h-4 w-4 text-primary" />
             </div>
             <div className="text-2xl font-bold text-foreground">{summary.avg_latency_ms ?? 0}<span className="text-sm text-muted-foreground"> ms</span></div>
-            <div className="mt-1 text-[11px] text-muted-foreground/70">所有模型平均</div>
+            <div className="mt-1 text-[11px] text-muted-foreground">所有模型平均</div>
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="mb-2 flex items-center justify-between">
@@ -236,7 +235,7 @@ function MonitorTab() {
               <Zap className="h-4 w-4 text-warning" />
             </div>
             <div className="text-2xl font-bold text-foreground">{(summary.total_tokens ?? 0).toLocaleString()}</div>
-            <div className="mt-1 text-[11px] text-muted-foreground/70">入 + 出合计</div>
+            <div className="mt-1 text-[11px] text-muted-foreground">入 + 出合计</div>
           </div>
         </div>
       )}
@@ -248,7 +247,7 @@ function MonitorTab() {
           <div className="rounded-lg border border-border bg-card p-4 lg:col-span-2">
             <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold"><TrendingUp className="h-4 w-4 text-primary" />调用趋势</h3>
             {dailyTrend.length < 2 ? (
-              <div className="flex h-32 items-center justify-center text-xs text-muted-foreground/70">数据不足以绘制趋势</div>
+              <div className="flex h-32 items-center justify-center text-xs text-muted-foreground">数据不足以绘制趋势</div>
             ) : (
               <div className="flex flex-col gap-3">
                 <div>
@@ -266,7 +265,7 @@ function MonitorTab() {
           <div className="rounded-lg border border-border bg-card p-4">
             <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold"><BarChart3 className="h-4 w-4 text-primary" />来源分布</h3>
             {sourceDist.length === 0 ? (
-              <div className="text-xs text-muted-foreground/70">暂无数据</div>
+              <div className="text-xs text-muted-foreground">暂无数据</div>
             ) : (
               <div className="flex flex-col gap-2">
                 {sourceDist.map((s) => {
@@ -294,7 +293,7 @@ function MonitorTab() {
           <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-destructive"><AlertTriangle className="h-4 w-4" />Top3 失败原因</h3>
           <div className="flex flex-col gap-2">
             {errorTop.map((e, i) => (
-              <div key={i} className="flex items-start gap-2 rounded-md border border-destructive/20 bg-background/60 px-3 py-2">
+              <div key={i} className="flex items-start gap-2 rounded-md border border-destructive/20 bg-background px-3 py-2">
                 <span className="shrink-0 rounded bg-destructive/20 px-1.5 py-0.5 text-[10px] font-bold text-destructive">#{i + 1}</span>
                 <code className="flex-1 break-all text-[11px] text-destructive/90">{e.error}</code>
                 <span className="shrink-0 text-[11px] font-mono text-muted-foreground">{e.count} 次</span>
@@ -306,9 +305,9 @@ function MonitorTab() {
 
       {/* 统计表格 */}
       {loading ? (
-        <div className="flex h-40 items-center justify-center text-sm text-muted-foreground/70">加载中…</div>
+        <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">加载中…</div>
       ) : stats.length === 0 ? (
-        <div className="flex h-60 flex-col items-center justify-center gap-2 text-muted-foreground/70">
+        <div className="flex h-60 flex-col items-center justify-center gap-2 text-muted-foreground">
           <BarChart3 className="h-10 w-10" />
           <div className="text-sm">暂无调用记录</div>
           <div className="text-xs">进行智能体对话或测试模型配置后，此处将显示调用统计</div>
@@ -333,7 +332,7 @@ function MonitorTab() {
             </thead>
             <tbody>
               {stats.map((s, idx) => (
-                <tr key={s.model_config_id || idx} className={`border-t border-border hover:bg-primary/5 ${idx % 2 === 0 ? 'bg-card/40' : 'bg-card/20'}`}>
+                <tr key={s.model_config_id || idx} className={`border-t border-border hover:bg-primary/5 ${idx % 2 === 0 ? 'bg-card' : 'bg-card'}`}>
                   <td className="truncate px-4 py-3 text-foreground">{s.config_name}</td>
                   <td className="truncate px-4 py-3 text-muted-foreground">{s.model_name || '-'}</td>
                   <td className="px-4 py-3 text-right font-mono text-foreground">{s.total_calls}</td>
@@ -347,7 +346,7 @@ function MonitorTab() {
                   <td className="px-4 py-3 text-right font-mono text-muted-foreground">{s.max_latency_ms}ms</td>
                   <td className="px-4 py-3 text-right font-mono text-muted-foreground">{s.total_input_tokens}</td>
                   <td className="px-4 py-3 text-right font-mono text-muted-foreground">{s.total_output_tokens}</td>
-                  <td className="px-4 py-3 text-muted-foreground/70" title={fmtTime(s.last_call_at)}>{fmtRelative(s.last_call_at)}</td>
+                  <td className="px-4 py-3 text-muted-foreground" title={fmtTime(s.last_call_at)}>{fmtRelative(s.last_call_at)}</td>
                   <td className="px-4 py-3 text-center">
                     <button onClick={() => openDetail(s)} className="btn-secondary btn-sm">明细</button>
                   </td>
@@ -363,21 +362,21 @@ function MonitorTab() {
         footer={<button onClick={() => setDetailOpen(false)} className="btn-primary">关闭</button>}>
         {/* 明细内筛选 */}
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <select value={callFilter.trigger_type} onChange={(e) => setCallFilter((p) => ({ ...p, trigger_type: e.target.value }))} className={selectCls}>
+          <CompactSelect value={callFilter.trigger_type} onChange={(e) => setCallFilter((p) => ({ ...p, trigger_type: e.target.value }))} size="lg">
             <option value="">全部来源</option>
             {Object.entries(TRIGGER_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-          <select value={callFilter.status} onChange={(e) => setCallFilter((p) => ({ ...p, status: e.target.value }))} className={selectCls}>
+          </CompactSelect>
+          <CompactSelect value={callFilter.status} onChange={(e) => setCallFilter((p) => ({ ...p, status: e.target.value }))} size="lg">
             <option value="">全部状态</option>
             <option value="success">成功</option>
             <option value="failed">失败</option>
-          </select>
+          </CompactSelect>
           <button onClick={reloadCalls} className="btn-secondary btn-sm">应用</button>
         </div>
         {callsLoading ? (
-          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground/70">加载中…</div>
+          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">加载中…</div>
         ) : calls.length === 0 ? (
-          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground/70">暂无调用记录</div>
+          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">暂无调用记录</div>
         ) : (
           <div className="max-h-[60vh] overflow-auto rounded-lg border border-border">
             <table className="w-full table-fixed border-collapse text-sm">
@@ -395,7 +394,7 @@ function MonitorTab() {
               </thead>
               <tbody>
                 {calls.map((c, idx) => (
-                  <tr key={c.id || idx} className={`border-t border-border ${c.status === 'failed' ? 'bg-destructive/5' : idx % 2 === 0 ? 'bg-card/30' : ''}`}>
+                  <tr key={c.id || idx} className={`border-t border-border ${c.status === 'failed' ? 'bg-destructive/5' : idx % 2 === 0 ? 'bg-card' : ''}`}>
                     <td className="px-3 py-2 text-[11px] text-muted-foreground" title={fmtTime(c.created_at)}>{fmtTime(c.created_at)}</td>
                     <td className="px-3 py-2">
                       <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${c.status === 'success' ? 'bg-success/20 text-success' : 'bg-destructive/20 text-destructive'}`}>
@@ -441,9 +440,9 @@ function TestHistoryModal({ open, configId, configName, onClose }) {
     <Modal open={open} title={`测试历史：${configName || ''}`} onClose={onClose} maxWidth="max-w-2xl"
       footer={<button onClick={onClose} className="btn-primary">关闭</button>}>
       {loading ? (
-        <div className="flex h-32 items-center justify-center text-sm text-muted-foreground/70">加载中…</div>
+        <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">加载中…</div>
       ) : history.length === 0 ? (
-        <div className="flex h-32 items-center justify-center text-sm text-muted-foreground/70">暂无测试记录</div>
+        <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">暂无测试记录</div>
       ) : (
         <div className="max-h-[60vh] overflow-auto rounded-lg border border-border">
           <table className="w-full table-fixed border-collapse text-sm">
@@ -457,7 +456,7 @@ function TestHistoryModal({ open, configId, configName, onClose }) {
             </thead>
             <tbody>
               {history.map((h, idx) => (
-                <tr key={h.id || idx} className={`border-t border-border ${h.status === 'failed' ? 'bg-destructive/5' : idx % 2 === 0 ? 'bg-card/30' : ''}`}>
+                <tr key={h.id || idx} className={`border-t border-border ${h.status === 'failed' ? 'bg-destructive/5' : idx % 2 === 0 ? 'bg-card' : ''}`}>
                   <td className="px-3 py-2 text-[11px] text-muted-foreground" title={fmtTime(h.created_at)}>{fmtRelative(h.created_at)}</td>
                   <td className="px-3 py-2">
                     <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${h.status === 'success' ? 'bg-success/20 text-success' : 'bg-destructive/20 text-destructive'}`}>
@@ -778,7 +777,7 @@ function LLMConfig() {
     { key: 'name', header: '名称', render: (r) => (
       <div className="flex flex-col gap-0.5">
         <span className="truncate text-foreground">{r.name || '-'}</span>
-        {!r.enabled && <span className="text-[10px] text-muted-foreground/60">已禁用</span>}
+        {!r.enabled && <span className="text-[10px] text-muted-foreground">已禁用</span>}
       </div>
     ) },
     { key: 'provider', header: 'Provider', width: '160px', render: (r) => <ProviderCell provider={r.provider} providers={providers} /> },
@@ -822,7 +821,7 @@ function LLMConfig() {
       render: (r) => (
         <div className="flex flex-col gap-0.5" title={r.last_test_error || ''}>
           <HealthBadge status={r.health_status} />
-          {r.last_test_at && <span className="text-[10px] text-muted-foreground/60" title={fmtTime(r.last_test_at)}>{fmtRelative(r.last_test_at)}</span>}
+          {r.last_test_at && <span className="text-[10px] text-muted-foreground" title={fmtTime(r.last_test_at)}>{fmtRelative(r.last_test_at)}</span>}
         </div>
       ),
     },
@@ -830,10 +829,10 @@ function LLMConfig() {
       key: 'is_default', header: '默认', width: '70px',
       render: (r) => r.is_default
         ? <span className="rounded bg-success/20 px-2 py-0.5 text-[11px] font-medium text-success">默认</span>
-        : <span className="text-xs text-muted-foreground/60">-</span>,
+        : <span className="text-xs text-muted-foreground">-</span>,
     },
     {
-      key: '__actions', header: '操作', width: '260px',
+      key: '__actions', header: '操作', width: '300px',
       render: (r) => (
         <div className="flex flex-wrap gap-1.5" onClick={(e) => e.stopPropagation()}>
           <button type="button" onClick={() => handleTest(r)} disabled={testing === r.id} className="btn-secondary btn-sm" title="测试连通性">
@@ -857,15 +856,15 @@ function LLMConfig() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
-      <header className="flex items-center justify-between gap-4 border-b border-border bg-card/60 px-6 py-4">
+      <header className="flex items-center justify-between gap-4 border-b border-border bg-card px-6 py-4">
         <div className="flex min-w-0 items-center gap-3">
           <h1 className="text-xl font-semibold text-foreground">模型设置</h1>
-          {activeTab === 'configs' && <span className="text-xs text-muted-foreground/70">共 {filteredRows.length} 个</span>}
+          {activeTab === 'configs' && <span className="text-xs text-muted-foreground">共 {filteredRows.length} 个</span>}
         </div>
         {activeTab === 'configs' && (
           <div className="flex shrink-0 items-center gap-2">
             <TutorialButton onClick={() => setTutorialOpen(true)} />
-            <div className="flex items-center gap-1.5 rounded-md border border-border bg-card/60 px-2 py-1" title="自动健康检查的循环间隔（60-3600 秒，保存后下次循环生效）">
+            <div className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1" title="自动健康检查的循环间隔（60-3600 秒，保存后下次循环生效）">
               <span className="text-xs text-muted-foreground">检查间隔</span>
               <input
                 type="number"
@@ -897,7 +896,7 @@ function LLMConfig() {
       </header>
 
       {/* Tab 切换 */}
-      <div className="flex items-center gap-1 border-b border-border bg-card/30 px-6">
+      <div className="flex items-center gap-1 border-b border-border bg-card px-6">
         {tabs.map((t) => (
           <button key={t.key} type="button" onClick={() => setActiveTab(t.key)}
             className={`-mb-px border-b-2 px-4 py-3 text-sm transition ${activeTab === t.key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
@@ -934,6 +933,8 @@ function LLMConfig() {
                 selectedKeys={selectedKeys}
                 onSelectChange={setSelectedKeys}
                 rowKey="id"
+                onRowClick={(r) => openEdit(r)}
+                rowClickHint="点击编辑"
                 emptyText="暂无模型配置"
               />
             </div>
@@ -1059,10 +1060,10 @@ function LLMConfig() {
               <Check className="h-4 w-4 text-success" /><span className="text-sm text-success">连接成功 · 延迟 {testResult.latency_ms ?? '-'}ms</span>
             </div>
             <div>
-              <div className="mb-1 text-xs text-muted-foreground/70">模型回复</div>
+              <div className="mb-1 text-xs text-muted-foreground">模型回复</div>
               <pre className="w-full overflow-auto rounded-md bg-background p-4 font-mono text-xs text-foreground ring-1 ring-border">{testResult.response || '(空)'}</pre>
             </div>
-            {testResult.model && <div className="text-xs text-muted-foreground/70">模型: {testResult.model}</div>}
+            {testResult.model && <div className="text-xs text-muted-foreground">模型: {testResult.model}</div>}
           </div>
         ) : (
           <div className="flex flex-col gap-3">
@@ -1070,10 +1071,10 @@ function LLMConfig() {
               <X className="h-4 w-4 text-destructive" /><span className="text-sm text-destructive">连接失败</span>
             </div>
             <div>
-              <div className="mb-1 text-xs text-muted-foreground/70">错误信息</div>
+              <div className="mb-1 text-xs text-muted-foreground">错误信息</div>
               <pre className="w-full overflow-auto rounded-md bg-background p-4 font-mono text-xs text-destructive ring-1 ring-border">{testResult?.error || '未知错误'}</pre>
             </div>
-            <div className="text-[11px] text-muted-foreground/70">常见原因：API Key 无效、Base URL 错误、模型名不存在、网络不通</div>
+            <div className="text-[11px] text-muted-foreground">常见原因：API Key 无效、Base URL 错误、模型名不存在、网络不通</div>
           </div>
         )}
       </Modal>
@@ -1110,11 +1111,10 @@ function ModelNameInput({ form, providers, setField }) {
         )}
       </div>
       {!useCustom && modelOptions.length > 0 ? (
-        <select value={form.model_name} onChange={(e) => setField('model_name')(e.target.value)}
-          className="w-full rounded-md border border-border bg-secondary px-3 py-2 text-sm text-foreground outline-none focus:border-primary">
+        <CompactSelect value={form.model_name} onChange={(e) => setField('model_name')(e.target.value)} size="lg" block>
           <option value="">请选择模型</option>
           {modelOptions.map((m) => <option key={m} value={m}>{m}</option>)}
-        </select>
+        </CompactSelect>
       ) : (
         <input type="text" value={form.model_name} onChange={(e) => setField('model_name')(e.target.value)}
           placeholder={form.model_type === 'embedding' ? '如：doubao-embedding-text-240715' : '如：claude-3-5-sonnet-20240620'}

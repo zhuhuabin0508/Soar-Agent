@@ -9,6 +9,7 @@
 //   />
 import { Search, X } from 'lucide-react'
 import { inputCls } from './property/FormControls'
+import { CompactSelect } from './ui'
 
 export function FilterBar({ search, filters = [], actions, className = '' }) {
   const hasSearch = !!search
@@ -42,8 +43,8 @@ export function FilterBar({ search, filters = [], actions, className = '' }) {
         filters.map((f) => (
           <label key={f.key} className="flex items-center gap-1.5 text-xs text-muted-foreground">
             {f.label && <span className="whitespace-nowrap">{f.label}</span>}
-            <select
-              className="rounded border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-primary"
+            <CompactSelect
+              size="lg"
               value={f.value}
               onChange={(e) => f.onChange(e.target.value)}
             >
@@ -52,7 +53,7 @@ export function FilterBar({ search, filters = [], actions, className = '' }) {
                   {opt.label}
                 </option>
               ))}
-            </select>
+            </CompactSelect>
           </label>
         ))}
       {actions && <div className="ml-auto flex items-center gap-2">{actions}</div>}

@@ -21,9 +21,9 @@ import { GlobalHotkeys } from '../App'
 
 // 导航分组配置：按业务逻辑分类排序
 // icon 使用 lucide-react 矢量图标组件（替代 emoji，保证跨平台一致与可调色）
-// 每项可指定 perm: [module, action] 用于权限过滤
+// 每项可指定 perm: [module, action] 用于权限过滤；permAny: [[module, action], ...] 满足任一即可
 // 支持 children 子项：父项可展开/收起，子项缩进渲染
-const NAV_GROUPS = [
+export const NAV_GROUPS = [
   {
     title: '运营中心',
     items: [
@@ -43,6 +43,8 @@ const NAV_GROUPS = [
         icon: Bot,
         label: '应用',
         matchPrefix: ['/studio', '/agents', '/workflows', '/editor'],
+        // 工作室聚合页（智能体/工作流）：任一模块有查看权限即可见
+        permAny: [['agent', 'view'], ['workflow_list', 'view'], ['workflow_editor', 'view']],
       },
       { to: '/skills', icon: Library, label: '技能库', perm: ['skill', 'view'] },
       { to: '/tools', icon: Wrench, label: '工具', perm: ['tool', 'view'] },
@@ -139,6 +141,36 @@ const NAV_GROUPS = [
     ],
   },
 ]
+
+// 单个导航项对当前用户是否可见：
+// - perm: [module, action] 必须满足
+// - permAny: [[module, action], ...] 满足任一即可
+function navItemAllowed(it) {
+  if (it.perm && !hasPermission(it.perm[0], it.perm[1])) return false
+  if (it.permAny && !it.permAny.some(([m, a]) => hasPermission(m, a))) return false
+  return true
+}
+
+/**
+ * 计算当前用户有权限访问的第一个页面路径。
+ * 按导航分组顺序遍历（父级取第一个有权限的子项），用于：
+ * - 首页 `/` 与未匹配路由 `*` 的重定向目标
+ * - 登录成功后的落地页
+ * 无任何可见菜单权限时回退到个人中心。
+ */
+export function getFirstPermittedPath() {
+  for (const g of NAV_GROUPS) {
+    for (const it of g.items) {
+      if (it.children) {
+        const child = it.children.find((c) => navItemAllowed(c))
+        if (child) return child.to
+      } else if (navItemAllowed(it)) {
+        return it.to
+      }
+    }
+  }
+  return '/profile'
+}
 
 // 角色中文映射
 const ROLE_LABELS = {
@@ -518,15 +550,13 @@ function AppShell() {
         it.children
           ? {
               ...it,
-              children: it.children.filter(
-                (c) => !c.perm || hasPermission(c.perm[0], c.perm[1])
-              ),
+              children: it.children.filter(navItemAllowed),
             }
           : it
       )
-      // 父级目录：只要有任一可见子项即保留；叶子项：按自身权限过滤
+      // 父级目录：只要有任一可见子项即保留；叶子项：按自身权限（perm/permAny）过滤
       .filter((it) =>
-        it.children ? it.children.length > 0 : !it.perm || hasPermission(it.perm[0], it.perm[1])
+        it.children ? it.children.length > 0 : navItemAllowed(it)
       ),
   })).filter((g) => g.items.length > 0)
 
@@ -534,7 +564,7 @@ function AppShell() {
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
       {/* 左侧垂直导航栏（可折叠） */}
       <aside
-        className={`relative z-sticky flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-all duration-200 ${
+        className={`sidebar-sep relative z-sticky flex shrink-0 flex-col bg-sidebar transition-all duration-200 ${
           collapsed ? 'w-[56px]' : 'w-[220px]'
         }`}
       >
@@ -544,12 +574,12 @@ function AppShell() {
             collapsed ? 'justify-center px-2' : 'gap-2 px-4'
           }`}
         >
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-primary to-primary/70 text-sm font-bold text-primary-foreground">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/60 text-sm font-bold text-primary-foreground shadow-md shadow-primary/30 ring-1 ring-primary/40 transition-transform duration-200 hover:scale-105">
             S
           </div>
           {!collapsed && (
             <div className="min-w-0 flex-1 leading-tight">
-              <div className="truncate text-sm font-semibold text-sidebar-foreground">
+              <div className="truncate text-sm font-semibold tracking-wide text-sidebar-foreground">
                 {platformName}
               </div>
             </div>
@@ -592,11 +622,16 @@ function AppShell() {
               <div key={gi} className="flex flex-col gap-1">
                 {group.title && !collapsed && (
                   <div
-                    className={`px-3 pt-2 pb-1 text-[11px] font-medium uppercase tracking-wider transition-colors ${
-                      groupHasActive ? 'text-primary/80' : 'text-muted-foreground/70'
+                    className={`flex items-center gap-2 px-3 pt-2 pb-1 text-[11px] font-medium uppercase tracking-wider transition-colors ${
+                      groupHasActive ? 'text-primary/80' : 'text-muted-foreground'
                     }`}
                   >
-                    {group.title}
+                    <span>{group.title}</span>
+                    <span
+                      className={`h-px flex-1 bg-gradient-to-r to-transparent transition-opacity ${
+                        groupHasActive ? 'from-primary/40 opacity-100' : 'from-border opacity-60'
+                      }`}
+                    />
                   </div>
                 )}
                 {group.items.map((item, itemIdx) => {
@@ -616,7 +651,7 @@ function AppShell() {
                   return (
                     <div key={item.to} className="flex flex-col gap-1">
                       {showSubsection && (
-                        <div className="px-3 pt-1.5 pb-0.5 text-[10px] font-medium tracking-wide text-muted-foreground/60">
+                        <div className="px-3 pt-1.5 pb-0.5 text-[10px] font-medium tracking-wide text-muted-foreground">
                           {item.subsection}
                         </div>
                       )}
@@ -626,20 +661,24 @@ function AppShell() {
                           end={item.end}
                           title={collapsed ? item.label : undefined}
                           className={({ isActive }) =>
-                            `flex flex-1 items-center rounded-md text-sm transition-colors ${
+                            `relative flex flex-1 items-center rounded-md text-sm transition-all duration-150 ${
                               collapsed
                                 ? 'justify-center px-2 py-2.5'
                                 : 'gap-3 px-3 py-2.5'
                             } ${
                               isActive || childActive || prefixActive
-                                ? 'bg-primary/10 text-primary ring-1 ring-primary/30'
-                                : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground'
+                                ? `nav-indicator bg-primary/10 font-medium text-primary ring-1 ring-primary/25 ${collapsed ? '' : 'ml-1 shadow-[inset_0_1px_0_oklch(1_0_0/0.04)]'}`
+                                : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground hover:translate-x-0.5'
                             }`
                           }
                         >
-                          {ItemIcon && <ItemIcon className="h-[18px] w-[18px] shrink-0" />}
-                          {!collapsed && (
-                            <span className="font-medium">{item.label}</span>
+                          {({ isActive }) => (
+                            <>
+                              {ItemIcon && <ItemIcon className={`h-[18px] w-[18px] shrink-0 transition-transform duration-150 ${isActive || childActive || prefixActive ? 'scale-105' : ''}`} />}
+                              {!collapsed && (
+                                <span className="font-medium">{item.label}</span>
+                              )}
+                            </>
                           )}
                         </NavLink>
                         {/* 展开/收起按钮（仅有子项且侧边栏展开时显示） */}
@@ -670,13 +709,13 @@ function AppShell() {
                                 to={child.to}
                                 end={child.end}
                                 title={child.label}
-                                className={`flex items-center rounded-md px-3 py-1.5 text-[13px] transition-colors ${
+                                className={`flex items-center rounded-md px-3 py-1.5 text-[13px] transition-all duration-150 ${
                                   selfActive
-                                    ? 'bg-primary/10 text-primary ring-1 ring-primary/30'
-                                    : 'text-muted-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground'
+                                    ? 'bg-primary/10 font-medium text-primary ring-1 ring-primary/25'
+                                    : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground hover:translate-x-0.5'
                                 }`}
                               >
-                                {ChildIcon && <ChildIcon className="mr-2 h-3.5 w-3.5" />}
+                                {ChildIcon && <ChildIcon className="mr-2 h-3.5 w-3.5 shrink-0" />}
                                 <span className="font-normal">{child.label}</span>
                               </NavLink>
                             )
@@ -702,7 +741,7 @@ function AppShell() {
               <NavLink
                 to="/profile"
                 title="个人中心"
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary transition-colors hover:bg-primary/30"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary ring-1 ring-primary/25 transition-all hover:bg-primary/30 hover:ring-primary/45"
               >
                 {(user.username || '?')[0].toUpperCase()}
               </NavLink>
@@ -744,17 +783,17 @@ function AppShell() {
             relative z-sticky：顶栏整体抬升至 z-30，避免下方 overflow-auto 页面内容区
             （同样形成层叠上下文）覆盖下拉菜单的溢出部分 */}
         {!isEmbedScreen && (
-        <div className="relative z-sticky flex h-11 shrink-0 items-center justify-between border-b border-border bg-background/80 px-4 backdrop-blur">
+        <div className="topbar-border relative z-sticky flex h-11 shrink-0 items-center justify-between bg-background px-4 backdrop-blur">
           {/* 左侧：面包屑 */}
           <div className="flex min-w-0 items-center gap-1.5 text-sm">
             {breadcrumbs.length > 0 ? (
               breadcrumbs.map((crumb, idx) => (
                 <span key={idx} className="flex items-center gap-1.5">
-                  {idx > 0 && <ChevronsRight className="h-3.5 w-3.5 text-muted-foreground/50" />}
+                  {idx > 0 && <ChevronsRight className="h-3.5 w-3.5 text-muted-foreground" />}
                   <span
                     className={
                       idx === breadcrumbs.length - 1
-                        ? 'text-foreground'
+                        ? 'font-semibold text-foreground'
                         : 'text-muted-foreground'
                     }
                   >
@@ -775,9 +814,11 @@ function AppShell() {
               <button
                 type="button"
                 onClick={() => setUserMenuOpen((o) => !o)}
-                className="flex items-center gap-2 rounded-md px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                className={`flex items-center gap-2 rounded-md px-2 py-1 text-sm transition-colors hover:bg-accent hover:text-foreground ${
+                  userMenuOpen ? 'bg-accent text-foreground' : 'text-muted-foreground'
+                }`}
               >
-                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
+                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary ring-1 ring-primary/25">
                   {(user?.username || 'U').charAt(0).toUpperCase()}
                 </div>
                 <span className="hidden max-w-[120px] truncate sm:inline">
@@ -841,7 +882,8 @@ function AppShell() {
                 </div>
               )}
             </div>
-            <NotificationBell />
+            {/* 通知铃铛：无通知中心查看权限时不渲染，避免后台轮询 403 触发全局权限提示 */}
+            {hasPermission('notification', 'view') && <NotificationBell />}
           </div>
         </div>
         )}

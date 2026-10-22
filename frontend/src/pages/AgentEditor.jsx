@@ -32,10 +32,11 @@ import { inputCls, textareaCls } from '../components/property/FormControls'
 import MiddlewareConfig from '../components/MiddlewareConfig'
 import ToolSearchStatus from '../components/ToolSearchStatus'
 import InfoTip from '../components/InfoTip'
+import { CompactSelect } from '../components/ui'
 import { CATEGORY_META, UNCATEGORIZED, groupToolsByCategory } from '../constants/toolCategories'
 import { useUnsavedChanges } from '../hooks/useUnsavedChanges'
 import { toast } from '../store/toastStore'
-import { canEditResource } from '../utils/permissions'
+import { canEditResource, guardNavPermission } from '../utils/permissions'
 import {
   AGENT_TEMPLATES,
   loadStashedAgentTemplate,
@@ -87,11 +88,11 @@ function Card({ title, icon, children, defaultOpen = true, hint, extra, status, 
   // 状态徽章颜色
   const badgeCls = {
     ok: 'bg-emerald-500',
-    empty: 'bg-muted-foreground/30',
+    empty: 'bg-muted-foreground',
     required: 'bg-red-500',
   }[status] || ''
   return (
-    <div className="rounded-lg border border-border bg-card/40" data-section-title={typeof title === 'string' ? title : ''}>
+    <div className="rounded-lg border border-border bg-card" data-section-title={typeof title === 'string' ? title : ''}>
       <div className="flex w-full items-center justify-between px-4 py-2.5">
         <button
           type="button"
@@ -107,7 +108,7 @@ function Card({ title, icon, children, defaultOpen = true, hint, extra, status, 
           {status && (
             <span className={`h-2 w-2 shrink-0 rounded-full ${badgeCls}`} title={status === 'ok' ? '已配置' : status === 'required' ? '必填未填写' : '未配置'} />
           )}
-          <span className="text-muted-foreground/60">{open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}</span>
+          <span className="text-muted-foreground">{open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}</span>
         </button>
         {extra && <div className="shrink-0">{extra}</div>}
       </div>
@@ -318,7 +319,7 @@ function AgentEditor() {
 
   // JSON 语法高亮（简易版：key/string/number/boolean/null 着色）
   const highlightJson = useCallback((obj) => {
-    if (!obj || Object.keys(obj).length === 0) return '<span class="text-muted-foreground/40">{}</span>'
+    if (!obj || Object.keys(obj).length === 0) return '<span class="text-muted-foreground">{}</span>'
     try {
       const json = JSON.stringify(obj, null, 2)
       return json
@@ -330,7 +331,7 @@ function AgentEditor() {
               if (/:$/.test(match)) cls = 'text-sky-400' // key
               else cls = 'text-emerald-400' // string
             } else if (/true|false/.test(match)) cls = 'text-purple-400'
-            else if (/null/.test(match)) cls = 'text-muted-foreground/40'
+            else if (/null/.test(match)) cls = 'text-muted-foreground'
             return `<span class="${cls}">${match}</span>`
           })
     } catch { return '{}' }
@@ -851,6 +852,17 @@ function AgentEditor() {
                   statusMsgs.push(data.message || '')
                   flush({ statusMsgs: [...statusMsgs] })
                   break
+                case 'clarify': {
+                  // 澄清提问：调试面板展示问题与选项（用户在测试输入框中回答）
+                  const choices = Array.isArray(data.choices) ? data.choices : []
+                  statusMsgs.push(
+                    `[clarify] ${data.question || ''}${
+                      choices.length ? ` 选项: ${choices.join(' / ')}` : ''
+                    }`
+                  )
+                  flush({ statusMsgs: [...statusMsgs] })
+                  break
+                }
                 case 'tool_start': {
                   // 工具开始执行：加入 toolCalls（状态 running）
                   toolCalls.push({
@@ -1014,7 +1026,7 @@ function AgentEditor() {
 
   if (loading) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-background text-sm text-muted-foreground/70">
+      <div className="flex h-full w-full items-center justify-center bg-background text-sm text-muted-foreground">
         加载中...
       </div>
     )
@@ -1025,7 +1037,7 @@ function AgentEditor() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
-      <header className="flex shrink-0 items-center justify-between border-b border-border bg-card/60 px-6 py-4">
+      <header className="flex shrink-0 items-center justify-between border-b border-border bg-card px-6 py-4">
         <div className="flex items-center gap-4">
           <button type="button" onClick={() => navigate('/studio')} className="btn-secondary btn-sm">
             ← 返回工作室
@@ -1033,7 +1045,7 @@ function AgentEditor() {
           <h1 className="text-xl font-semibold">{isEdit ? '编辑智能体' : '新建智能体'}</h1>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center rounded-md border border-border bg-secondary/50 p-0.5 text-xs">
+          <div className="flex items-center rounded-md border border-border bg-secondary p-0.5 text-xs">
             <button
               type="button"
               onClick={() => setEditorModePersist('simple')}
@@ -1118,19 +1130,19 @@ function AgentEditor() {
               <span className="flex items-center gap-1 text-muted-foreground">
                 <Database className="h-3.5 w-3.5" /> 知识库 <span className="font-semibold text-foreground">{configSummary.kbs}</span>
               </span>
-              <span className="text-muted-foreground/30">·</span>
+              <span className="text-muted-foreground">·</span>
               <span className="flex items-center gap-1 text-muted-foreground">
                 <Wrench className="h-3.5 w-3.5" /> 工具 <span className="font-semibold text-foreground">{configSummary.tools}</span>
               </span>
-              <span className="text-muted-foreground/30">·</span>
+              <span className="text-muted-foreground">·</span>
               <span className="flex items-center gap-1 text-muted-foreground">
                 <FolderKanban className="h-3.5 w-3.5" /> 工作流 <span className="font-semibold text-foreground">{configSummary.workflows}</span>
               </span>
-              <span className="text-muted-foreground/30">·</span>
+              <span className="text-muted-foreground">·</span>
               <span className="flex items-center gap-1 text-muted-foreground">
                 <Zap className="h-3.5 w-3.5" /> 技能 <span className="font-semibold text-foreground">{configSummary.skills}</span>
               </span>
-              <span className="text-muted-foreground/30">·</span>
+              <span className="text-muted-foreground">·</span>
               <span className="flex items-center gap-1 text-muted-foreground">
                 <Package className="h-3.5 w-3.5" /> 资产 <span className="font-semibold text-foreground">{configSummary.assets}</span>
               </span>
@@ -1162,10 +1174,10 @@ function AgentEditor() {
 
             {/* 四步向导（高级模式） */}
             {editorMode === 'advanced' && (
-            <div className="rounded-lg border border-border bg-card/40 p-3">
+            <div className="rounded-lg border border-border bg-card p-3">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <span className="text-xs font-medium text-muted-foreground">配置向导</span>
-                <span className="text-[10px] text-muted-foreground/60">每步可保存草稿，右侧随时调试</span>
+                <span className="text-[10px] text-muted-foreground">每步可保存草稿，右侧随时调试</span>
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {WIZARD_STEPS.map((step, idx) => {
@@ -1181,11 +1193,11 @@ function AgentEditor() {
                           ? 'bg-primary text-primary-foreground shadow-sm'
                           : done
                             ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/15'
-                            : 'bg-secondary text-muted-foreground hover:bg-secondary/80 hover:text-foreground'
+                            : 'bg-secondary text-muted-foreground hover:bg-secondary hover:text-foreground'
                       }`}
                     >
                       <span className={`flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-semibold ${
-                        active ? 'bg-primary-foreground/20' : 'bg-background/60'
+                        active ? 'bg-primary-foreground' : 'bg-background'
                       }`}>
                         {idx + 1}
                       </span>
@@ -1200,19 +1212,19 @@ function AgentEditor() {
             {/* 工具栏：搜索 + 展开/收起 */}
             <div className="flex items-center gap-2">
               <div className="relative flex-1">
-                <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
+                <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                 <input
                   type="text"
                   value={sectionSearch}
                   onChange={(e) => setSectionSearch(e.target.value)}
                   placeholder="搜索配置项…"
-                  className="h-8 w-full rounded-md border border-border bg-secondary pl-7 pr-2 text-xs text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
+                  className="h-8 w-full rounded-md border border-border bg-secondary pl-7 pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
                 />
                 {sectionSearch && (
                   <button
                     type="button"
                     onClick={() => setSectionSearch('')}
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-foreground"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -1303,7 +1315,7 @@ function AgentEditor() {
                           setForm((prev) => ({ ...prev, variables: varObj }))
                           setDirty(true)
                         }}
-                        className="flex shrink-0 items-center rounded border border-border px-1.5 py-1 text-muted-foreground/70 hover:text-destructive"
+                        className="flex shrink-0 items-center rounded border border-border px-1.5 py-1 text-muted-foreground hover:text-destructive"
                       >
                         <X className="h-3 w-3" />
                       </button>
@@ -1356,7 +1368,7 @@ function AgentEditor() {
               onToggle={toggleCard('能力配置')}
               extra={
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] text-muted-foreground/70">标准</span>
+                  <span className="text-[10px] text-muted-foreground">标准</span>
                   <button
                     type="button"
                     onClick={() => setDevMode((d) => !d)}
@@ -1366,14 +1378,14 @@ function AgentEditor() {
                       className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${devMode ? 'left-4' : 'left-0.5'}`}
                     />
                   </button>
-                  <span className="text-[10px] text-muted-foreground/70">开发者</span>
+                  <span className="text-[10px] text-muted-foreground">开发者</span>
                 </div>
               }
             >
               {/* 已选能力 chips（顶部展示，可一键移除） */}
               {(form.enabled_tools.length > 0 || form.enabled_kbs.length > 0 || form.enabled_skills.length > 0 || form.enabled_workflows.length > 0 || form.enabled_asset_types.length > 0) && (
-                <div className="mb-3 rounded-md border border-border bg-muted/40 p-2">
-                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">已选能力</div>
+                <div className="mb-3 rounded-md border border-border bg-muted p-2">
+                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">已选能力</div>
                   <div className="flex flex-wrap gap-1.5">
                     {form.enabled_tools.map((tv) => {
                       const t = toolOptions.find((x) => x.value === tv)
@@ -1439,15 +1451,15 @@ function AgentEditor() {
 
               {/* 全局搜索框 */}
               <div className="relative mb-3">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                 <input
                   value={abilitySearch}
                   onChange={(e) => setAbilitySearch(e.target.value)}
                   placeholder="搜索工具、工作流、技能、知识库、资产…"
-                  className="h-8 w-full rounded-md border border-border bg-secondary pl-8 pr-2 text-xs text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
+                  className="h-8 w-full rounded-md border border-border bg-secondary pl-8 pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
                 />
                 {abilitySearch && (
-                  <button type="button" onClick={() => setAbilitySearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-foreground">
+                  <button type="button" onClick={() => setAbilitySearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                     <X className="h-3.5 w-3.5" />
                   </button>
                 )}
@@ -1457,7 +1469,7 @@ function AgentEditor() {
               {abilitySearchResults ? (
                 <div className="flex flex-col gap-3">
                   {abilitySearchResults.tools.length === 0 && abilitySearchResults.kbs.length === 0 && abilitySearchResults.skills.length === 0 && abilitySearchResults.workflows.length === 0 && abilitySearchResults.assets.length === 0 ? (
-                    <p className="py-4 text-center text-[11px] text-muted-foreground/60">未找到匹配项</p>
+                    <p className="py-4 text-center text-[11px] text-muted-foreground">未找到匹配项</p>
                   ) : (
                     <>
                       {abilitySearchResults.kbs.length > 0 && (
@@ -1518,7 +1530,7 @@ function AgentEditor() {
                         >
                           <Icon className="h-3.5 w-3.5" />
                           {t.label}
-                          <span className={`rounded px-1 text-[10px] ${t.count > 0 ? 'bg-primary/15 text-primary' : 'bg-secondary text-muted-foreground/50'}`}>
+                          <span className={`rounded px-1 text-[10px] ${t.count > 0 ? 'bg-primary/15 text-primary' : 'bg-secondary text-muted-foreground'}`}>
                             {t.count}
                           </span>
                         </button>
@@ -1619,15 +1631,15 @@ function AgentEditor() {
                         >
                           折叠全部
                         </button>
-                        <span className="ml-auto text-[10px] text-muted-foreground/60">
+                        <span className="ml-auto text-[10px] text-muted-foreground">
                           已选 {form.enabled_tools.length} / {toolOptions.length}
                         </span>
                       </div>
 
                       {toolOptions.length === 0 ? (
-                        <p className="py-4 text-center text-[11px] text-muted-foreground/60">暂无可用工具</p>
+                        <p className="py-4 text-center text-[11px] text-muted-foreground">暂无可用工具</p>
                       ) : filteredGroupedTools.length === 0 ? (
-                        <p className="py-4 text-center text-[11px] text-muted-foreground/60">
+                        <p className="py-4 text-center text-[11px] text-muted-foreground">
                           {onlySelectedTools ? '未选中任何工具' : '未匹配到工具'}
                         </p>
                       ) : !devMode ? (
@@ -1644,10 +1656,10 @@ function AgentEditor() {
                                   onClick={() => setCollapsedGroups((c) => ({ ...c, [grp.category]: !c[grp.category] }))}
                                   className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left"
                                 >
-                                  {grpCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/50" />}
+                                  {grpCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
                                   <GrpIcon className="h-3.5 w-3.5 text-primary" />
                                   <span className="text-[11px] font-semibold text-muted-foreground">{grp.meta.label}</span>
-                                  <span className={`rounded px-1 text-[10px] ${selectedInGrp > 0 ? 'bg-primary/15 text-primary' : 'bg-secondary text-muted-foreground/50'}`}>
+                                  <span className={`rounded px-1 text-[10px] ${selectedInGrp > 0 ? 'bg-primary/15 text-primary' : 'bg-secondary text-muted-foreground'}`}>
                                     {selectedInGrp}/{grp.tools.length}
                                   </span>
                                 </button>
@@ -1667,7 +1679,7 @@ function AgentEditor() {
                                               ? isSensitive
                                                 ? 'border-destructive/30 bg-destructive/5'
                                                 : 'border-primary/30 bg-primary/5'
-                                              : 'border-border bg-muted/40 hover:border-primary/30'
+                                              : 'border-border bg-muted hover:border-primary/30'
                                           }`}
                                         >
                                           <input
@@ -1689,7 +1701,7 @@ function AgentEditor() {
                                               {isSensitive && <span className="shrink-0 rounded bg-destructive/15 px-1 py-0.5 text-[9px] text-destructive">⚠ 危险</span>}
                                             </div>
                                             {tool.description && (
-                                              <div className="mt-0.5 truncate text-[10px] text-muted-foreground/70" title={tool.description}>
+                                              <div className="mt-0.5 truncate text-[10px] text-muted-foreground" title={tool.description}>
                                                 {tool.description}
                                               </div>
                                             )}
@@ -1717,10 +1729,10 @@ function AgentEditor() {
                                   onClick={() => setCollapsedGroups((c) => ({ ...c, [grp.category]: !c[grp.category] }))}
                                   className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left"
                                 >
-                                  {grpCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/50" />}
+                                  {grpCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
                                   <GrpIcon className="h-3.5 w-3.5 text-primary" />
                                   <span className="text-[11px] font-semibold text-muted-foreground">{grp.meta.label}</span>
-                                  <span className={`rounded px-1 text-[10px] ${selectedInGrp > 0 ? 'bg-primary/15 text-primary' : 'bg-secondary text-muted-foreground/50'}`}>
+                                  <span className={`rounded px-1 text-[10px] ${selectedInGrp > 0 ? 'bg-primary/15 text-primary' : 'bg-secondary text-muted-foreground'}`}>
                                     {selectedInGrp}/{grp.tools.length}
                                   </span>
                                 </button>
@@ -1765,7 +1777,7 @@ function AgentEditor() {
                                           {enabled && isExpanded && (
                                             <div className="grid grid-cols-3 gap-2 border-t border-border p-2">
                                               <label>
-                                                <div className="mb-0.5 text-[10px] text-muted-foreground/70">超时（秒）</div>
+                                                <div className="mb-0.5 text-[10px] text-muted-foreground">超时（秒）</div>
                                                 <input
                                                   type="number"
                                                   className={inputCls}
@@ -1780,7 +1792,7 @@ function AgentEditor() {
                                                 />
                                               </label>
                                               <label>
-                                                <div className="mb-0.5 text-[10px] text-muted-foreground/70">失败重试</div>
+                                                <div className="mb-0.5 text-[10px] text-muted-foreground">失败重试</div>
                                                 <input
                                                   type="number"
                                                   className={inputCls}
@@ -1795,9 +1807,10 @@ function AgentEditor() {
                                                 />
                                               </label>
                                               <label className="flex flex-col">
-                                                <div className="mb-0.5 text-[10px] text-muted-foreground/70">执行模式</div>
-                                                <select
-                                                  className={inputCls}
+                                                <div className="mb-0.5 text-[10px] text-muted-foreground">执行模式</div>
+                                                <CompactSelect
+                                                  size="lg"
+                                                  block
                                                   value={cfg.require_confirm ? 'confirm' : 'auto'}
                                                   onChange={(e) => {
                                                     const next = { ...form.tool_configs }
@@ -1807,7 +1820,7 @@ function AgentEditor() {
                                                 >
                                                   <option value="auto">自动调用</option>
                                                   <option value="confirm">需用户确认</option>
-                                                </select>
+                                                </CompactSelect>
                                               </label>
                                               {cfg.require_confirm && (
                                                 <div className="col-span-3 flex items-start gap-1.5 rounded bg-warning/10 px-2 py-1 text-[10px] text-warning">
@@ -1835,15 +1848,15 @@ function AgentEditor() {
                   {abilityTab === 'workflows' && (
                     <div>
                       <div className="mb-2 flex items-center justify-between">
-                        <span className="text-[11px] text-muted-foreground/70">
+                        <span className="text-[11px] text-muted-foreground">
                           勾选后，该工作流会作为独立工具挂到智能体上，模型按需调用
                         </span>
-                        <span className="text-[10px] text-muted-foreground/60">
+                        <span className="text-[10px] text-muted-foreground">
                           已选 {form.enabled_workflows.length} / {workflowOptions.length}
                         </span>
                       </div>
                       {workflowOptions.length === 0 ? (
-                        <p className="py-4 text-center text-[11px] text-muted-foreground/60">暂无可用工作流，请先到「工作流」页面创建并启用</p>
+                        <p className="py-4 text-center text-[11px] text-muted-foreground">暂无可用工作流，请先到「工作流」页面创建并启用</p>
                       ) : (
                         <div className="grid grid-cols-1 gap-1.5">
                           {workflowOptions.map((wf) => {
@@ -1852,7 +1865,7 @@ function AgentEditor() {
                               <label
                                 key={wf.value}
                                 className={`flex cursor-pointer items-start gap-2 rounded-md border p-2 transition ${
-                                  enabled ? 'border-cyan-500/30 bg-cyan-500/5' : 'border-border bg-muted/40 hover:border-cyan-500/30'
+                                  enabled ? 'border-cyan-500/30 bg-cyan-500/5' : 'border-border bg-muted hover:border-cyan-500/30'
                                 }`}
                               >
                                 <input
@@ -1877,7 +1890,7 @@ function AgentEditor() {
                                   {wf.description ? (
                                     <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">{wf.description}</p>
                                   ) : (
-                                    <p className="mt-0.5 text-[11px] text-muted-foreground/60">运行此工作流并返回结果</p>
+                                    <p className="mt-0.5 text-[11px] text-muted-foreground">运行此工作流并返回结果</p>
                                   )}
                                 </div>
                               </label>
@@ -1892,22 +1905,22 @@ function AgentEditor() {
                   {abilityTab === 'knowledge' && (
                     <div>
                       <div className="mb-2 flex items-center justify-between">
-                        <span className="text-[11px] text-muted-foreground/70">
+                        <span className="text-[11px] text-muted-foreground">
                           勾选后，智能体可检索该知识库中的文档分段
                         </span>
-                        <span className="text-[10px] text-muted-foreground/60">
+                        <span className="text-[10px] text-muted-foreground">
                           已选 {form.enabled_kbs.length} / {kbOptions.length}
                         </span>
                       </div>
                       {kbOptions.length === 0 ? (
                         <div className="rounded-md border border-dashed border-emerald-500/30 bg-emerald-500/5 p-4 text-center">
                           <p className="text-xs font-medium text-foreground">还没有知识库</p>
-                          <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground/70">
+                          <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
                             ① 上传文档 → ② 自动分段/向量化 → ③ 在此勾选启用
                           </p>
                           <button
                             type="button"
-                            onClick={() => navigate('/knowledge-base')}
+                            onClick={() => { if (!guardNavPermission('knowledge_base', 'view', '知识库')) return; navigate('/knowledge-base') }}
                             className="mt-3 text-[11px] text-primary hover:underline"
                           >
                             前往知识库页面创建 →
@@ -1918,7 +1931,7 @@ function AgentEditor() {
                           {form.enabled_kbs.length === 0 && (
                             <div className="mb-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-2.5 py-2 text-[11px] text-muted-foreground">
                               未勾选知识库时，智能体无法检索文档。
-                              <button type="button" onClick={() => navigate('/knowledge-base')} className="ml-1 text-primary hover:underline">
+                              <button type="button" onClick={() => { if (!guardNavPermission('knowledge_base', 'view', '知识库')) return; navigate('/knowledge-base') }} className="ml-1 text-primary hover:underline">
                                 管理知识库
                               </button>
                             </div>
@@ -1933,7 +1946,7 @@ function AgentEditor() {
                                 <label
                                   key={kb.value}
                                   className={`flex cursor-pointer items-start gap-2 rounded-md border p-2 transition ${
-                                    enabled ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-border bg-muted/40 hover:border-emerald-500/30'
+                                    enabled ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-border bg-muted hover:border-emerald-500/30'
                                   }`}
                                 >
                                   <input
@@ -1952,12 +1965,12 @@ function AgentEditor() {
                                       <Database className="h-3 w-3 shrink-0 text-emerald-500" />
                                       <span className="truncate text-xs font-medium text-foreground">{kb.label}</span>
                                     </div>
-                                    <div className="mt-0.5 text-[10px] text-muted-foreground/70">
+                                    <div className="mt-0.5 text-[10px] text-muted-foreground">
                                       {kb.doc_count ?? 0} 篇文档
                                       {updatedLabel ? ` · 更新于 ${updatedLabel}` : ''}
                                     </div>
                                     {kb.description && (
-                                      <div className="mt-0.5 truncate text-[10px] text-muted-foreground/50" title={kb.description}>
+                                      <div className="mt-0.5 truncate text-[10px] text-muted-foreground" title={kb.description}>
                                         {kb.description}
                                       </div>
                                     )}
@@ -1975,15 +1988,15 @@ function AgentEditor() {
                   {abilityTab === 'skills' && (
                     <div>
                       <div className="mb-2 flex items-center justify-between">
-                        <span className="text-[11px] text-muted-foreground/70">
+                        <span className="text-[11px] text-muted-foreground">
                           选中的技能正文会拼接到 system prompt 末尾。Skill 只收说明文字，脚本请到工具库添加。
                           <InfoTip text={<>技能正文支持 <code className="rounded bg-secondary px-1 text-primary">{'{{key}}'}</code> 引用变量</>} />
                         </span>
-                        <span className="text-[10px] text-muted-foreground/60">
+                        <span className="text-[10px] text-muted-foreground">
                           已选 {form.enabled_skills.length} / {skillOptions.length}
                         </span>
                       </div>
-                      <div className="mb-3 rounded-md border border-border bg-card/40 p-2.5">
+                      <div className="mb-3 rounded-md border border-border bg-card p-2.5">
                         <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
                           <span className="text-[11px] font-medium text-foreground">导入文本新建技能</span>
                           <div className="flex items-center gap-2 text-[11px]">
@@ -2077,7 +2090,7 @@ function AgentEditor() {
                         </div>
                       </div>
                       {skillOptions.length === 0 ? (
-                        <p className="py-4 text-center text-[11px] text-muted-foreground/60">暂无可用技能，可在上方导入文本，或到「技能」页面创建</p>
+                        <p className="py-4 text-center text-[11px] text-muted-foreground">暂无可用技能，可在上方导入文本，或到「技能」页面创建</p>
                       ) : (
                         <div className="grid grid-cols-1 gap-1.5">
                           {skillOptions.map((sk) => {
@@ -2086,7 +2099,7 @@ function AgentEditor() {
                               <label
                                 key={sk.value}
                                 className={`flex cursor-pointer items-start gap-2 rounded-md border p-2 transition ${
-                                  enabled ? 'border-amber-500/30 bg-amber-500/5' : 'border-border bg-muted/40 hover:border-amber-500/30'
+                                  enabled ? 'border-amber-500/30 bg-amber-500/5' : 'border-border bg-muted hover:border-amber-500/30'
                                 }`}
                               >
                                 <input
@@ -2106,7 +2119,7 @@ function AgentEditor() {
                                     <span className="truncate text-xs font-medium text-foreground">{sk.label}</span>
                                   </div>
                                   {sk.description && (
-                                    <div className="mt-0.5 truncate text-[10px] text-muted-foreground/70" title={sk.description}>
+                                    <div className="mt-0.5 truncate text-[10px] text-muted-foreground" title={sk.description}>
                                       {sk.description}
                                     </div>
                                   )}
@@ -2123,15 +2136,15 @@ function AgentEditor() {
                   {abilityTab === 'assets' && (
                     <div>
                       <div className="mb-2 flex items-center justify-between">
-                        <span className="text-[11px] text-muted-foreground/70">
+                        <span className="text-[11px] text-muted-foreground">
                           勾选后，智能体可按需检索该类型下的资产（IP/名称/部门等）
                         </span>
-                        <span className="text-[10px] text-muted-foreground/60">
+                        <span className="text-[10px] text-muted-foreground">
                           已选 {form.enabled_asset_types.length} / {assetTypeOptions.length}
                         </span>
                       </div>
                       {assetTypeOptions.length === 0 ? (
-                        <p className="py-4 text-center text-[11px] text-muted-foreground/60">暂无资产类型，请先到「资产管理」配置类型模板</p>
+                        <p className="py-4 text-center text-[11px] text-muted-foreground">暂无资产类型，请先到「资产管理」配置类型模板</p>
                       ) : (
                         <CheckboxGroup
                           value={form.enabled_asset_types}
@@ -2159,7 +2172,7 @@ function AgentEditor() {
                 />
                 <span className="text-sm text-foreground">自动记住对话关键信息</span>
               </label>
-              <p className="mt-0.5 pl-6 text-[11px] text-muted-foreground/70">
+              <p className="mt-0.5 pl-6 text-[11px] text-muted-foreground">
                 开启后，智能体会自动提取并记住对话中的关键信息（如用户偏好、历史结论），便于多轮上下文理解
               </p>
               <SelectInput
@@ -2201,14 +2214,14 @@ function AgentEditor() {
               open={sectionOpen('高级选项')}
               onToggle={toggleCard('高级选项')}
             >
-              <p className="mb-3 text-[11px] text-muted-foreground/70">
+              <p className="mb-3 text-[11px] text-muted-foreground">
                 默认配置已覆盖大多数场景。仅在需要自定义工具行为、写操作验证或 tool_search 策略时再修改。
               </p>
               <MiddlewareConfig
                 value={form.tool_configs}
                 onChange={setField('tool_configs')}
               />
-              <div className="mt-3 rounded-md border border-border bg-card/40 p-2">
+              <div className="mt-3 rounded-md border border-border bg-card p-2">
                 <div className="mb-1 flex items-center justify-between">
                   <span className="text-[10px] text-muted-foreground">tool_configs 预览</span>
                   <div className="flex items-center gap-1">
@@ -2240,7 +2253,7 @@ function AgentEditor() {
                   </div>
                 </div>
                 <pre
-                  className="max-h-32 overflow-auto whitespace-pre-wrap break-all rounded bg-background/80 p-2 font-mono text-[10px] leading-relaxed"
+                  className="max-h-32 overflow-auto whitespace-pre-wrap break-all rounded bg-background p-2 font-mono text-[10px] leading-relaxed"
                   dangerouslySetInnerHTML={{ __html: highlightJson(form.tool_configs) }}
                 />
               </div>
@@ -2269,7 +2282,7 @@ function AgentEditor() {
         {/* ===== 右侧：调试预览面板 ===== */}
         <div className="flex w-1/2 min-w-0 flex-col overflow-hidden">
           {/* 头部：标题 + 运行历史 */}
-          <div className="flex shrink-0 items-center justify-between border-b border-border bg-card/40 px-4 py-2.5">
+          <div className="flex shrink-0 items-center justify-between border-b border-border bg-card px-4 py-2.5">
             <div className="flex items-center gap-2 text-sm font-medium text-foreground">
               <TestTube className="h-4 w-4" />
               <span>调试与预览</span>
@@ -2287,7 +2300,7 @@ function AgentEditor() {
           <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
             {/* 快捷测试用例 */}
             <div className="shrink-0">
-              <div className="mb-1.5 text-[11px] font-medium text-muted-foreground/70">快捷测试用例</div>
+              <div className="mb-1.5 text-[11px] font-medium text-muted-foreground">快捷测试用例</div>
               <div className="flex flex-wrap gap-1.5">
                 {QUICK_TEST_CASES.map((tc) => (
                   <button
@@ -2330,7 +2343,7 @@ function AgentEditor() {
                 onChange={(e) => setTestInput(e.target.value)}
                 rows={6}
                 placeholder='输入测试 IP 或 JSON，例如 89.124.70.92 或 {"alert_type": "brute_force", ...}'
-                className={`w-full resize-y rounded-md border bg-card px-3 py-2 font-mono text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none transition hover:border-primary/50 ${
+                className={`w-full resize-y rounded-md border bg-card px-3 py-2 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none transition hover:border-primary/50 ${
                   jsonError ? 'border-destructive/60' : 'border-border'
                 }`}
               />
@@ -2340,7 +2353,7 @@ function AgentEditor() {
                 </div>
               )}
               <div className="mt-2 flex items-center justify-between">
-                <span className="text-[11px] text-muted-foreground/60">
+                <span className="text-[11px] text-muted-foreground">
                   {!isEdit && '新建模式：调试时将自动保存'}
                   {isEdit && dirty && '有未保存的修改，调试时将自动保存'}
                   {isEdit && !dirty && '可直接调试'}
@@ -2358,8 +2371,8 @@ function AgentEditor() {
 
             {/* 运行历史（可折叠） */}
             {showHistory && (
-              <div className="shrink-0 rounded-lg border border-border bg-card/40">
-                <div className="flex items-center justify-between px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
+              <div className="shrink-0 rounded-lg border border-border bg-card">
+                <div className="flex items-center justify-between px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   <span>最近 {runHistory.length} 次运行</span>
                   {runHistory.length > 0 && (
                     <button
@@ -2368,14 +2381,14 @@ function AgentEditor() {
                         setRunHistory([])
                         try { localStorage.removeItem(historyKey) } catch { /* ignore */ }
                       }}
-                      className="text-[10px] text-muted-foreground/60 hover:text-destructive"
+                      className="text-[10px] text-muted-foreground hover:text-destructive"
                     >
                       清空
                     </button>
                   )}
                 </div>
                 {runHistory.length === 0 ? (
-                  <div className="px-3 py-3 text-center text-[11px] text-muted-foreground/50">暂无运行记录</div>
+                  <div className="px-3 py-3 text-center text-[11px] text-muted-foreground">暂无运行记录</div>
                 ) : (
                   <div className="max-h-[200px] overflow-y-auto border-t border-border">
                     {runHistory.map((h) => (
@@ -2386,16 +2399,16 @@ function AgentEditor() {
                           setTestInput(h.input)
                           setShowHistory(false)
                         }}
-                        className="block w-full border-b border-border/50 px-3 py-2 text-left transition hover:bg-muted last:border-0"
+                        className="block w-full border-b border-border px-3 py-2 text-left transition hover:bg-muted last:border-0"
                       >
                         <div className="flex items-center justify-between">
                           <span className="truncate font-mono text-[11px] text-foreground">{h.input.slice(0, 60)}</span>
-                          <span className="ml-2 shrink-0 text-[10px] text-muted-foreground/50">{h.timestamp}</span>
+                          <span className="ml-2 shrink-0 text-[10px] text-muted-foreground">{h.timestamp}</span>
                         </div>
                         {h.reply && (
-                          <div className="mt-0.5 truncate text-[10px] text-muted-foreground/60">{h.reply.slice(0, 80)}…</div>
+                          <div className="mt-0.5 truncate text-[10px] text-muted-foreground">{h.reply.slice(0, 80)}…</div>
                         )}
-                        <div className="mt-0.5 flex items-center gap-3 text-[10px] text-muted-foreground/50">
+                        <div className="mt-0.5 flex items-center gap-3 text-[10px] text-muted-foreground">
                           {h.mode && <span>{h.mode}</span>}
                           {h.tokens && (
                             <span>入 {h.tokens.input_tokens ?? 0} · 出 {h.tokens.output_tokens ?? 0}</span>
@@ -2484,9 +2497,9 @@ function AgentEditor() {
                     <div className="flex flex-col gap-3">
                       {/* 流式文本输出 */}
                       {testResult.reply !== undefined && (
-                        <div className="rounded-lg border border-border bg-card/60 p-3">
+                        <div className="rounded-lg border border-border bg-card p-3">
                           <div className="mb-2 flex items-center justify-between">
-                            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
+                            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                               {testResult.mode === 'chat'
                                 ? '对话回复'
                                 : testResult.mode === 'hermes'
@@ -2512,8 +2525,8 @@ function AgentEditor() {
 
                       {/* 思考过程 */}
                       {(testResult.thinking || testResult.streaming) && (
-                        <details className="rounded-lg border border-border bg-card/40" open={!!testResult.streaming}>
-                          <summary className="flex cursor-pointer items-center gap-1.5 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground/70 hover:text-muted-foreground">
+                        <details className="rounded-lg border border-border bg-card" open={!!testResult.streaming}>
+                          <summary className="flex cursor-pointer items-center gap-1.5 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-muted-foreground">
                             <Brain className="h-4 w-4" />
                             思考过程
                           </summary>
@@ -2529,9 +2542,9 @@ function AgentEditor() {
 
                       {/* 决策结果 */}
                       {testResult.decision !== undefined && (
-                        <div className="rounded-lg border border-border bg-card/60 p-3">
+                        <div className="rounded-lg border border-border bg-card p-3">
                           <div className="mb-2 flex items-center justify-between">
-                            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">决策结果</span>
+                            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">决策结果</span>
                           </div>
                           <div className="flex flex-col gap-2">
                             {testResult.decision && (
@@ -2560,7 +2573,7 @@ function AgentEditor() {
                     <div className="flex flex-col gap-3">
                       {/* 工具调用 */}
                       {testResult.toolCalls && testResult.toolCalls.length > 0 && (
-                        <div className="overflow-hidden rounded-lg border border-border bg-card/40">
+                        <div className="overflow-hidden rounded-lg border border-border bg-card">
                           <button
                             type="button"
                             onClick={() => setShowToolCalls((s) => !s)}
@@ -2570,7 +2583,7 @@ function AgentEditor() {
                               <Wrench className="h-4 w-4" />
                               工具调用（{testResult.toolCalls.length} 次）
                             </span>
-                            <span className="text-muted-foreground/60">{showToolCalls ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}</span>
+                            <span className="text-muted-foreground">{showToolCalls ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}</span>
                           </button>
                           {showToolCalls && (
                             <div className="max-h-[300px] overflow-y-auto border-t border-border p-2">
@@ -2592,7 +2605,7 @@ function AgentEditor() {
                               <GitBranch className="h-4 w-4" />
                               子代理委派（{testResult.delegateGroups.length} 个子代理）
                             </span>
-                            <span className="text-muted-foreground/60">{showDelegates ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}</span>
+                            <span className="text-muted-foreground">{showDelegates ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}</span>
                           </button>
                           {showDelegates && (
                             <div className="max-h-[400px] overflow-y-auto border-t border-primary/30 p-2">
@@ -2608,14 +2621,14 @@ function AgentEditor() {
 
                       {/* 推理过程 */}
                       {testResult.messages && testResult.messages.length > 0 && (
-                        <div className="overflow-hidden rounded-lg border border-border bg-card/40">
+                        <div className="overflow-hidden rounded-lg border border-border bg-card">
                           <button
                             type="button"
                             onClick={() => setShowMessages((s) => !s)}
                             className="flex w-full items-center justify-between px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground transition hover:bg-muted"
                           >
                             <span>推理过程（{testResult.messages.length} 条消息）</span>
-                            <span className="text-muted-foreground/60">{showMessages ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}</span>
+                            <span className="text-muted-foreground">{showMessages ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}</span>
                           </button>
                           {showMessages && (
                             <div className="max-h-[300px] overflow-y-auto border-t border-border p-2">
@@ -2627,20 +2640,20 @@ function AgentEditor() {
 
                       {/* 执行日志 */}
                       {testResult.logs && testResult.logs.length > 0 ? (
-                        <div className="overflow-hidden rounded-lg border border-border bg-card/40">
+                        <div className="overflow-hidden rounded-lg border border-border bg-card">
                           <button
                             type="button"
                             onClick={() => setShowLogs((s) => !s)}
                             className="flex w-full items-center justify-between px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground transition hover:bg-muted"
                           >
                             <span>执行日志（{testResult.logs.length} 条）</span>
-                            <span className="text-muted-foreground/60">{showLogs ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}</span>
+                            <span className="text-muted-foreground">{showLogs ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}</span>
                           </button>
                           {showLogs && (
                             <div className="max-h-[200px] overflow-y-auto border-t border-border p-2 font-mono text-[11px]">
                               {testResult.logs.map((log, idx) => (
                                 <div key={idx} className="border-b border-border py-1 last:border-0">
-                                  <span className="text-muted-foreground/60">[{log.level || log.type || 'INFO'}]</span>{' '}
+                                  <span className="text-muted-foreground">[{log.level || log.type || 'INFO'}]</span>{' '}
                                   <span className="text-muted-foreground">{log.message || log.msg || JSON.stringify(log)}</span>
                                 </div>
                               ))}
@@ -2651,7 +2664,7 @@ function AgentEditor() {
                         (!testResult.toolCalls || testResult.toolCalls.length === 0) &&
                         (!testResult.delegateGroups || testResult.delegateGroups.length === 0) &&
                         (!testResult.messages || testResult.messages.length === 0) && (
-                          <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground/50">
+                          <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
                             暂无执行日志
                           </div>
                         )
@@ -2666,7 +2679,7 @@ function AgentEditor() {
                         const usage = testResult.tokenUsage || tokenUsage
                         if (!usage) {
                           return (
-                            <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground/50">
+                            <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
                               暂无 Token 消耗数据
                             </div>
                           )
@@ -2677,23 +2690,23 @@ function AgentEditor() {
                         return (
                           <div className="flex flex-col gap-3">
                             <div className="grid grid-cols-3 gap-2">
-                              <div className="rounded-lg border border-border bg-card/60 p-3 text-center">
-                                <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60">输入</div>
+                              <div className="rounded-lg border border-border bg-card p-3 text-center">
+                                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">输入</div>
                                 <div className="mt-1 text-xl font-bold text-info">{usage.input_tokens ?? 0}</div>
-                                <div className="text-[10px] text-muted-foreground/50">tokens</div>
+                                <div className="text-[10px] text-muted-foreground">tokens</div>
                               </div>
-                              <div className="rounded-lg border border-border bg-card/60 p-3 text-center">
-                                <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60">输出</div>
+                              <div className="rounded-lg border border-border bg-card p-3 text-center">
+                                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">输出</div>
                                 <div className="mt-1 text-xl font-bold text-success">{usage.output_tokens ?? 0}</div>
-                                <div className="text-[10px] text-muted-foreground/50">tokens</div>
+                                <div className="text-[10px] text-muted-foreground">tokens</div>
                               </div>
                               <div className="rounded-lg border border-primary/40 bg-primary/5 p-3 text-center">
                                 <div className="text-[10px] uppercase tracking-wider text-primary/70">总计</div>
                                 <div className="mt-1 text-xl font-bold text-primary">{total}</div>
-                                <div className="text-[10px] text-muted-foreground/50">tokens</div>
+                                <div className="text-[10px] text-muted-foreground">tokens</div>
                               </div>
                             </div>
-                            <div className="rounded-lg border border-border bg-card/40 p-3">
+                            <div className="rounded-lg border border-border bg-card p-3">
                               <div className="mb-1.5 flex items-center justify-between text-[11px]">
                                 <span className="text-info">输入 {inputPct}%</span>
                                 <span className="text-success">输出 {outputPct}%</span>
@@ -2716,7 +2729,7 @@ function AgentEditor() {
                         const dur = testDuration ?? testResult.duration
                         if (dur == null) {
                           return (
-                            <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground/50">
+                            <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
                               暂无耗时数据
                             </div>
                           )
@@ -2728,19 +2741,19 @@ function AgentEditor() {
                               <div className="mt-1 text-3xl font-bold text-primary">
                                 {(dur / 1000).toFixed(2)}<span className="text-lg">s</span>
                               </div>
-                              <div className="mt-1 text-[11px] text-muted-foreground/50">{dur} ms</div>
+                              <div className="mt-1 text-[11px] text-muted-foreground">{dur} ms</div>
                             </div>
                             {testResult.toolCalls && (
                               <div className="grid grid-cols-2 gap-2">
-                                <div className="rounded-lg border border-border bg-card/60 p-3 text-center">
-                                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60">工具调用</div>
+                                <div className="rounded-lg border border-border bg-card p-3 text-center">
+                                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground">工具调用</div>
                                   <div className="mt-1 text-lg font-bold text-foreground">{testResult.toolCalls.length}</div>
-                                  <div className="text-[10px] text-muted-foreground/50">次</div>
+                                  <div className="text-[10px] text-muted-foreground">次</div>
                                 </div>
-                                <div className="rounded-lg border border-border bg-card/60 p-3 text-center">
-                                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60">推理轮次</div>
+                                <div className="rounded-lg border border-border bg-card p-3 text-center">
+                                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground">推理轮次</div>
                                   <div className="mt-1 text-lg font-bold text-foreground">{testResult.messages?.length || 0}</div>
-                                  <div className="text-[10px] text-muted-foreground/50">条消息</div>
+                                  <div className="text-[10px] text-muted-foreground">条消息</div>
                                 </div>
                               </div>
                             )}
@@ -2755,10 +2768,10 @@ function AgentEditor() {
 
             {/* 空状态 */}
             {!testResult && !testing && !testError && (
-              <div className="flex flex-1 flex-col items-center justify-center text-center text-muted-foreground/60">
+              <div className="flex flex-1 flex-col items-center justify-center text-center text-muted-foreground">
                 <Bot className="mb-3 h-16 w-16 opacity-40" />
                 <div className="text-sm font-medium">输入测试 IP 或 JSON，点击调试运行查看报告</div>
-                <div className="mt-1 text-xs text-muted-foreground/50">智能体将使用当前配置进行推理，结果在此实时展示</div>
+                <div className="mt-1 text-xs text-muted-foreground">智能体将使用当前配置进行推理，结果在此实时展示</div>
                 <div className="mt-3 flex flex-wrap items-center justify-center gap-1.5">
                   {QUICK_TEST_CASES.slice(0, 2).map((tc) => (
                     <button
@@ -2864,7 +2877,7 @@ function SuggestedQuestionsEditor({ value, onChange }) {
                   <button
                     type="button"
                     onClick={() => removeQuestion(idx)}
-                    className="text-muted-foreground/50 transition hover:text-destructive"
+                    className="text-muted-foreground transition hover:text-destructive"
                     title="删除"
                   >
                     <X className="h-3 w-3" />
@@ -2896,7 +2909,7 @@ function SuggestedQuestionsEditor({ value, onChange }) {
         </div>
       )}
       {questions.length === 0 && (
-        <p className="text-[11px] text-muted-foreground/50">输入问题后回车添加，拖拽 chip 可调整顺序，点击文字可编辑</p>
+        <p className="text-[11px] text-muted-foreground">输入问题后回车添加，拖拽 chip 可调整顺序，点击文字可编辑</p>
       )}
     </div>
   )
@@ -2923,7 +2936,7 @@ function MessageItem({ msg, idx }) {
         <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${roleColors[role] || 'text-muted-foreground bg-secondary'}`}>
           {role}
         </span>
-        {msg.name && <span className="font-mono text-[10px] text-muted-foreground/70">{msg.name}</span>}
+        {msg.name && <span className="font-mono text-[10px] text-muted-foreground">{msg.name}</span>}
         {isLong && (
           <button type="button" onClick={() => setExpanded((e) => !e)} className="ml-auto text-[10px] text-primary hover:text-primary">
             {expanded ? '收起' : '展开'}
@@ -2971,7 +2984,7 @@ function ToolCallList({ toolCalls }) {
             )}
           </div>
           {tc.message && (
-            <div className="mt-0.5 text-[10px] text-muted-foreground/70">{tc.message}</div>
+            <div className="mt-0.5 text-[10px] text-muted-foreground">{tc.message}</div>
           )}
           {tc.result !== null && tc.result !== undefined && (
             <ToolCallResult name={tc.name} result={tc.result} />
@@ -2986,14 +2999,14 @@ function ToolCallList({ toolCalls }) {
 function KbHitSummary({ result }) {
   const hits = Array.isArray(result) ? result : (result?.matches || result?.segments || [])
   if (!hits.length) {
-    return <p className="text-[10px] text-muted-foreground/60">未命中知识库片段</p>
+    return <p className="text-[10px] text-muted-foreground">未命中知识库片段</p>
   }
   return (
     <div className="flex flex-col gap-1.5">
       <p className="text-[10px] text-emerald-500">命中 {hits.length} 条片段</p>
       {hits.slice(0, 5).map((hit, i) => (
         <div key={i} className="rounded border border-emerald-500/20 bg-emerald-500/5 p-1.5">
-          <div className="flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground/70">
+          <div className="flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground">
             {hit.kb_name && <span className="text-emerald-600 dark:text-emerald-400">[{hit.kb_name}]</span>}
             {hit.title && <span>{hit.title}</span>}
             {hit.score != null && <span>score={Number(hit.score).toFixed(3)}</span>}
@@ -3005,7 +3018,7 @@ function KbHitSummary({ result }) {
         </div>
       ))}
       {hits.length > 5 && (
-        <p className="text-[10px] text-muted-foreground/50">另有 {hits.length - 5} 条未展示</p>
+        <p className="text-[10px] text-muted-foreground">另有 {hits.length - 5} 条未展示</p>
       )}
     </div>
   )
@@ -3022,9 +3035,9 @@ function ToolCallResult({ name, result }) {
   const isLong = text.length > 300
 
   return (
-    <div className="mt-1 rounded border border-border bg-card/50 p-1.5">
+    <div className="mt-1 rounded border border-border bg-card p-1.5">
       <div className="mb-0.5 flex items-center justify-between">
-        <span className="text-[10px] text-muted-foreground/60">结果</span>
+        <span className="text-[10px] text-muted-foreground">结果</span>
         {!isKbTool && isLong && (
           <button
             type="button"
@@ -3078,13 +3091,13 @@ function DelegateEventItem({ evt, idx }) {
     status: <ClipboardList className="h-3.5 w-3.5" />,
     log: <FileText className="h-3.5 w-3.5" />,
   }
-  const icon = iconMap[evt.type] || <span className="text-muted-foreground/60">•</span>
+  const icon = iconMap[evt.type] || <span className="text-muted-foreground">•</span>
 
   // token 事件合并展示（避免过多 token 行）
   if (evt.type === 'token') {
     return (
       <div className="flex items-start gap-1.5 py-0.5 text-[11px]">
-        <span className="text-muted-foreground/60">{icon}</span>
+        <span className="text-muted-foreground">{icon}</span>
         <span className="text-muted-foreground">{evt.content}</span>
       </div>
     )
@@ -3101,10 +3114,10 @@ function DelegateEventItem({ evt, idx }) {
     const isLong = resultText.length > 200
     return (
       <div className="flex items-start gap-1.5 py-0.5 text-[11px]">
-        <span className="text-muted-foreground/60">{icon}</span>
+        <span className="text-muted-foreground">{icon}</span>
         <div className="min-w-0 flex-1">
           <span className="font-mono text-primary">{evt.tool_name || 'tool'}</span>
-          {evt.message && <span className="ml-1 text-muted-foreground/70">{evt.message}</span>}
+          {evt.message && <span className="ml-1 text-muted-foreground">{evt.message}</span>}
           {hasResult && (
             <div className="mt-0.5">
               {isLong ? (
@@ -3117,7 +3130,7 @@ function DelegateEventItem({ evt, idx }) {
                     {expanded ? '收起结果' : `展开结果（${resultText.length} 字符）`}
                   </button>
                   {expanded && (
-                    <pre className="mt-0.5 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded border border-border bg-card/50 p-1 font-mono text-[10px] text-muted-foreground">
+                    <pre className="mt-0.5 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded border border-border bg-card p-1 font-mono text-[10px] text-muted-foreground">
                       {resultText}
                     </pre>
                   )}
@@ -3144,7 +3157,7 @@ function DelegateEventItem({ evt, idx }) {
   }
   return (
     <div className="flex items-start gap-1.5 py-0.5 text-[11px]">
-      <span className="text-muted-foreground/60">{icon}</span>
+      <span className="text-muted-foreground">{icon}</span>
       <span className={colorMap[evt.type] || 'text-muted-foreground'}>
         {text || evt.type}
       </span>
@@ -3168,17 +3181,17 @@ function DelegateGroupCard({ group, onToggle }) {
         onClick={() => onToggle(group.subagent_id)}
         className="flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-primary/10"
       >
-        <span className="text-[10px] text-muted-foreground/70">
+        <span className="text-[10px] text-muted-foreground">
           {group.expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
         </span>
         <span className="font-mono text-[11px] font-semibold text-primary">
           {group.subagent_id}
         </span>
-        <span className="text-[10px] text-muted-foreground/60">
+        <span className="text-[10px] text-muted-foreground">
           task#{group.task_index}
         </span>
         <DelegateStatusBadge status={group.status} />
-        <span className="ml-auto flex items-center gap-2 text-[10px] text-muted-foreground/60">
+        <span className="ml-auto flex items-center gap-2 text-[10px] text-muted-foreground">
           {toolCount > 0 && (
             <span className="flex items-center gap-0.5">
               <Wrench className="h-3 w-3" />
@@ -3195,7 +3208,7 @@ function DelegateGroupCard({ group, onToggle }) {
       {/* 分组目标 */}
       {group.goal && (
         <div className="border-t border-primary/30 px-3 py-1 text-[11px] text-muted-foreground">
-          <span className="text-muted-foreground/60">目标：</span>
+          <span className="text-muted-foreground">目标：</span>
           {group.goal}
         </div>
       )}
@@ -3213,7 +3226,7 @@ function DelegateGroupCard({ group, onToggle }) {
 
       {/* 空状态 */}
       {group.expanded && eventCount === 0 && (
-        <div className="border-t border-primary/30 px-3 py-3 text-center text-[11px] text-muted-foreground/60">
+        <div className="border-t border-primary/30 px-3 py-3 text-center text-[11px] text-muted-foreground">
           暂无事件
         </div>
       )}
@@ -3231,7 +3244,7 @@ function DelegateEventTree({ groups, onToggle, onToggleAll }) {
   return (
     <div className="flex flex-col gap-2">
       {/* 统计栏 + 全部展开/折叠 */}
-      <div className="flex items-center gap-3 text-[11px] text-muted-foreground/70">
+      <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
         <span>共 {groups.length} 个子代理</span>
         {running > 0 && <span className="text-primary">运行中 {running}</span>}
         {completed > 0 && <span className="text-emerald-300">完成 {completed}</span>}

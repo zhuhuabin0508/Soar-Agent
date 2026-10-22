@@ -18,15 +18,19 @@ from app.models import Agent, ChatMessage, Execution, ExecutionTrace, LLMConfig,
 
 logger = logging.getLogger(__name__)
 
+# 路由级基线：强制登录；统计接口只读，按接口单独声明 dashboard:view
 router = APIRouter(
     prefix="/dashboard",
     tags=["dashboard"],
-    dependencies=[Depends(require_permission("dashboard", "view"))],
+    dependencies=[Depends(get_current_user)],
 )
 
 
 @router.get("/stats")
-def get_dashboard_stats(db: Session = Depends(get_db)) -> dict[str, Any]:
+def get_dashboard_stats(
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("dashboard", "view")),
+) -> dict[str, Any]:
     """获取大屏统计数据（最近 7 天）。
 
     统计内容：
@@ -227,6 +231,7 @@ def _extract_exec_info(execution: Execution) -> dict[str, Any]:
 def get_ai_usage_stats(
     days: int = 7,
     db: Session = Depends(get_db),
+    current_user=Depends(require_permission("dashboard", "view")),
 ) -> dict[str, Any]:
     """获取智能体与大模型使用情况统计（默认最近 7 天）。
 

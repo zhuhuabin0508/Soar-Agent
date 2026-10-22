@@ -480,6 +480,8 @@ def get_workflow(
     """获取单个工作流详情（含 webhook_secret，供前端展示与触发配置）。
 
     附带 ``can_edit`` 标志（admin/owner/被授权用户为 True）。
+    安全收敛：无编辑权限的用户不返回 ``webhook_secret``，
+    防止任意登录用户读取他人工作流密钥后经 webhook 触发（含封禁类工作流）。
     """
     logger.info("Fetching workflow: id=%s", workflow_id)
     db_workflow = db.query(Workflow).filter(Workflow.id == workflow_id).first()
@@ -489,6 +491,9 @@ def get_workflow(
     out = WorkflowOut.model_validate(db_workflow)
     shared_ids = compute_can_edit_ids(db, current_user, "workflow", [db_workflow.id])
     out.can_edit = resource_can_edit(current_user, db, db_workflow, shared_ids)
+    # 密钥仅对可编辑者（admin/owner/被授权）返回
+    if not out.can_edit:
+        out.webhook_secret = None
     return out
 
 
@@ -784,7 +789,7 @@ async def test_run_workflow(
         execution.result = {"error": str(exc)}
         execution.finished_at = beijing_now()
         db.commit()
-        raise HTTPException(status_code=500, detail=f"workflow run failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"workflow run failed ({type(exc).__name__}), see server logs")
 
     status = result.get("status", "success")
     traces = result.get("traces", [])

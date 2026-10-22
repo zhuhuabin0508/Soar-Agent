@@ -28,6 +28,7 @@ import { Modal } from '../components/Dialog'
 import { confirm } from '../components/ConfirmDialog'
 import { toast } from '../store/toastStore'
 import { inputCls, inputBaseCls } from '../components/property/FormControls'
+import { CompactSelect } from './ui'
 
 // 封禁等级中文映射 + 配色
 const LEVEL_META = {
@@ -131,7 +132,7 @@ function DetailModal({ open, record, onClose, onUnban, onHardDelete, canUnban, u
         <div className="grid grid-cols-2 gap-x-4 gap-y-3">
           {fields.map((f) => (
             <div key={f.label} className="min-w-0">
-              <div className="mb-1 text-xs font-medium text-muted-foreground/70">{f.label}</div>
+              <div className="mb-1 text-xs font-medium text-muted-foreground">{f.label}</div>
               {f.badge ? (
                 <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${f.badge}`}>{f.value}</span>
               ) : (
@@ -141,8 +142,8 @@ function DetailModal({ open, record, onClose, onUnban, onHardDelete, canUnban, u
           ))}
         </div>
         <div className="min-w-0">
-          <div className="mb-1 text-xs font-medium text-muted-foreground/70">封禁原因</div>
-          <div className="w-full rounded-md border border-border bg-background/60 p-3 text-sm text-muted-foreground">
+          <div className="mb-1 text-xs font-medium text-muted-foreground">封禁原因</div>
+          <div className="w-full rounded-md border border-border bg-background p-3 text-sm text-muted-foreground">
             {record.reason || '（未填写）'}
           </div>
         </div>
@@ -376,9 +377,9 @@ function BannedIPsPanel() {
       {/* 统计卡片 */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 mb-4">
         {statCards.map((c) => (
-          <div key={c.key} className="w-full rounded-lg border border-border bg-card/40 px-4 py-3">
+          <div key={c.key} className="w-full rounded-lg border border-border bg-card px-4 py-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground/70">{c.label}</span>
+              <span className="text-xs text-muted-foreground">{c.label}</span>
               <span className={`${c.cls}`}>{c.icon}</span>
             </div>
             <div className={`mt-1 text-2xl font-semibold ${c.cls}`}>{c.value}</div>
@@ -387,22 +388,23 @@ function BannedIPsPanel() {
       </div>
 
       {/* 工具栏：搜索 + 筛选 + 操作按钮 */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-border bg-card/30 py-3 mb-4">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border bg-card py-3 mb-4">
         <input
           className={`${inputBaseCls} max-w-xs`}
           placeholder="搜索 IP 地址..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <select
-          className={inputCls}
+        <CompactSelect
+          size="lg"
+          block
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
         >
           {STATUS_FILTERS.map((s) => (
             <option key={s.value} value={s.value}>{s.label}</option>
           ))}
-        </select>
+        </CompactSelect>
         <div className="flex items-center gap-2">
           {canUnban && (
             <button type="button" onClick={() => setCreateOpen(true)} className="btn-primary btn-sm">
@@ -415,7 +417,7 @@ function BannedIPsPanel() {
           {canUnban && (
             <div className="relative">
               <details className="group">
-                <summary className="flex cursor-pointer list-none items-center gap-1 rounded-md border border-border bg-secondary px-2.5 py-1 text-xs text-muted-foreground transition hover:bg-secondary/80">
+                <summary className="flex cursor-pointer list-none items-center gap-1 rounded-md border border-border bg-secondary px-2.5 py-1 text-xs text-muted-foreground transition hover:bg-secondary">
                   导入 CSV
                   <ChevronDown className="h-3 w-3" />
                 </summary>
@@ -450,11 +452,11 @@ function BannedIPsPanel() {
                 <Trash2 className="h-3 w-3" /> 批量删除
               </button>
             )}
-            <button type="button" onClick={handleBatchExport} disabled={batchBusy} className="flex items-center gap-1 rounded-md border border-border bg-secondary px-2 py-1 text-[11px] text-muted-foreground transition hover:bg-secondary/80">
+            <button type="button" onClick={handleBatchExport} disabled={batchBusy} className="flex items-center gap-1 rounded-md border border-border bg-secondary px-2 py-1 text-[11px] text-muted-foreground transition hover:bg-secondary">
               <Download className="h-3 w-3" /> 导出选中
             </button>
           </div>
-          <button type="button" onClick={() => setSelectedIds(new Set())} className="ml-auto text-[11px] text-muted-foreground/60 hover:text-foreground">
+          <button type="button" onClick={() => setSelectedIds(new Set())} className="ml-auto text-[11px] text-muted-foreground hover:text-foreground">
             取消选择
           </button>
         </div>
@@ -468,9 +470,9 @@ function BannedIPsPanel() {
           </div>
         )}
         {loading ? (
-          <div className="flex h-40 items-center justify-center text-sm text-muted-foreground/70">加载中...</div>
+          <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">加载中...</div>
         ) : records.length === 0 ? (
-          <div className="flex h-60 flex-col items-center justify-center gap-3 text-muted-foreground/70">
+          <div className="flex h-60 flex-col items-center justify-center gap-3 text-muted-foreground">
             <Shield className="h-14 w-14 opacity-40" />
             <div className="text-sm font-medium">{search || statusFilter ? '没有匹配的封禁记录' : '暂无已封禁 IP 记录'}</div>
             {!search && !statusFilter && canUnban && (
@@ -517,7 +519,7 @@ function BannedIPsPanel() {
                   const isUnblocked = r.status === 'unblocked'
                   const isSelected = selectedIds.has(r.id)
                   return (
-                    <tr key={r.id} className={`border-t border-border transition-colors ${isSelected ? 'bg-primary/5' : idx % 2 === 0 ? 'bg-card/30' : ''} hover:bg-muted/40`}>
+                    <tr key={r.id} className={`border-t border-border transition-colors ${isSelected ? 'bg-primary/5' : idx % 2 === 0 ? 'bg-card' : ''} hover:bg-muted`}>
                       {canUnban && (
                         <td className="px-3 py-3">
                           <input
@@ -547,7 +549,7 @@ function BannedIPsPanel() {
                             {copiedIp === r.ip ? (
                               <CheckCircle2 className="h-3 w-3 text-emerald-500" />
                             ) : (
-                              <Copy className="h-3 w-3 text-muted-foreground/50 hover:text-foreground" />
+                              <Copy className="h-3 w-3 text-muted-foreground hover:text-foreground" />
                             )}
                           </button>
                         </div>
@@ -558,7 +560,7 @@ function BannedIPsPanel() {
                       <td className="whitespace-nowrap px-4 py-3 text-xs text-muted-foreground">
                         <div>{humanizeDuration(r.ban_duration)}</div>
                         {r.ban_duration > 0 && (
-                          <div className="text-[10px] text-muted-foreground/50">{fmtExpiry(r.expired_at)}</div>
+                          <div className="text-[10px] text-muted-foreground">{fmtExpiry(r.expired_at)}</div>
                         )}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{r.violation_count ?? 0}</td>
@@ -656,28 +658,33 @@ function BannedIPsPanel() {
         <div className="flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground/70">IP 地址 *</label>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">IP 地址 *</label>
               <input className={inputCls} placeholder="如 1.2.3.4" value={createForm.ip} onChange={(e) => setCreateForm({ ...createForm, ip: e.target.value })} />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground/70">封禁等级</label>
-              <select className={inputCls} value={createForm.ban_level} onChange={(e) => setCreateForm({ ...createForm, ban_level: e.target.value })}>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">封禁等级</label>
+              <CompactSelect
+                size="lg"
+                block
+                value={createForm.ban_level}
+                onChange={(e) => setCreateForm({ ...createForm, ban_level: e.target.value })}
+              >
                 {LEVEL_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
+              </CompactSelect>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground/70">封禁时长（秒，0=永久）</label>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">封禁时长（秒，0=永久）</label>
               <input type="number" className={inputCls} placeholder="3600" value={createForm.ban_duration} onChange={(e) => setCreateForm({ ...createForm, ban_duration: e.target.value })} />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground/70">归属地区</label>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">归属地区</label>
               <input className={inputCls} placeholder="如 中国 北京" value={createForm.region} onChange={(e) => setCreateForm({ ...createForm, region: e.target.value })} />
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground/70">封禁原因</label>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">封禁原因</label>
             <textarea className={`${inputCls} min-h-[72px] resize-y`} placeholder="说明封禁原因..." value={createForm.reason} onChange={(e) => setCreateForm({ ...createForm, reason: e.target.value })} />
           </div>
           <div className="flex items-start gap-1.5 rounded-md border border-primary/30 bg-primary/10 px-4 py-3 text-xs text-primary">
@@ -709,9 +716,10 @@ function BannedIPsPanel() {
       >
         <div className="flex flex-col gap-4">
           <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground/70">执行封禁的设备 *</label>
-            <select
-              className={inputCls}
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">执行封禁的设备 *</label>
+            <CompactSelect
+              size="lg"
+              block
               value={importDeviceId}
               onChange={(e) => setImportDeviceId(e.target.value)}
             >
@@ -719,8 +727,8 @@ function BannedIPsPanel() {
               {devices.map((d) => (
                 <option key={d.id} value={String(d.id)}>{d.name}</option>
               ))}
-            </select>
-            <p className="mt-1 text-[11px] text-muted-foreground/60">导入的每条 IP 都会调用该设备的 block_ip 动作实际封禁</p>
+            </CompactSelect>
+            <p className="mt-1 text-[11px] text-muted-foreground">导入的每条 IP 都会调用该设备的 block_ip 动作实际封禁</p>
           </div>
           <div className="flex items-start gap-1.5 rounded-md border border-primary/30 bg-primary/10 px-4 py-3 text-xs text-primary">
             <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />

@@ -24,6 +24,17 @@ AGENT_MAX_ATTEMPTS = 3
 
 REQUIRED_FIELDS = ("is_banned", "risk_level", "action", "need_confirm", "ban_plan", "monitoring_advice", "reasons")
 
+# 研判输入附带的输出契约指令：约束智能体最终回答为纯 JSON
+#（部分智能体 system_prompt 未约束输出格式，会导致 adapt_ban_risk_analyze 解析失败）
+_OUTPUT_CONTRACT = (
+    "输出要求：最终回答必须只包含一个 JSON 对象，不要任何解释文字或 markdown 代码块标记，"
+    '字段：is_banned(bool)、risk_level(str)、action(str)、need_confirm(bool)、'
+    "ban_plan(object)、monitoring_advice(str)、reasons(str数组)。"
+    "数据要求：reasons 等字段必须引用本次工具调用实际返回的数据"
+    "（威胁标签、置信度、恶意软件等以 get_threat_intel 返回值为准），"
+    "严禁照搬系统提示词示例中的数值。"
+)
+
 
 class AgentCallError(Exception):
     """智能体调用失败（网络/超时/HTTP 错误/JSON 结构不完整）。"""
@@ -80,7 +91,7 @@ async def _invoke_ban_risk_analyze(
     result = await invoke_agent(
         db=db,
         agent_id=agent_id,
-        input={"ip": ip, "alert_context": alert_context},
+        input={"ip": ip, "alert_context": alert_context, "output_format": _OUTPUT_CONTRACT},
         user=resolve_runtime_user(db),
         channel="ban_workflow",
         output_mode=OUTPUT_MODE_BAN_RISK_ANALYZE,
@@ -219,13 +230,20 @@ def analyze_ip_risk(
     *,
     instance_id: Optional[int] = None,
     node_key: str = "agent_analyze",
+    agent_id: Optional[int] = None,
 ) -> dict[str, Any]:
-    agent_id = int(getattr(settings, "BAN_ANALYST_AGENT_ID", 0) or 0)
-    if agent_id > 0:
+    """调用 IP 风险研判智能体（ban_risk_analyze）。
+
+    Args:
+        agent_id: 显式指定智能体 ID（如工单自动研判按名称解析后传入）；
+            缺省走 ``BAN_ANALYST_AGENT_ID`` 配置（封禁工作流口径不变）。
+    """
+    aid = agent_id if agent_id and agent_id > 0 else int(getattr(settings, "BAN_ANALYST_AGENT_ID", 0) or 0)
+    if aid > 0:
         return asyncio.run(
             _analyze_ip_risk_via_runtime(
                 db, ip, alert_context,
-                agent_id=agent_id,
+                agent_id=aid,
                 instance_id=instance_id,
                 node_key=node_key,
             )

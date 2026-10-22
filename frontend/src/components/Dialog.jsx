@@ -107,7 +107,7 @@ export function Modal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-modal flex items-center justify-center bg-black/60 p-4 modal-overlay-enter"
+      className="fixed inset-0 z-modal flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px] modal-overlay-enter"
       onClick={closeOnOverlayClick ? onClose : undefined}
       role="presentation"
     >
@@ -212,7 +212,7 @@ export function Drawer({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-drawer flex justify-end bg-black/60 modal-overlay-enter"
+      className="fixed inset-0 z-drawer flex justify-end bg-black/60 backdrop-blur-[2px] modal-overlay-enter"
       onClick={closeOnOverlayClick ? onClose : undefined}
       role="presentation"
     >
@@ -240,7 +240,7 @@ export function Drawer({
         <div data-allow-scroll className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">{children}</div>
         {/* 底部操作栏（sticky） */}
         {footer && (
-          <div className="flex shrink-0 justify-end gap-2 border-t border-border bg-card/80 px-5 py-3">
+          <div className="flex shrink-0 justify-end gap-2 border-t border-border bg-card px-5 py-3">
             {footer}
           </div>
         )}

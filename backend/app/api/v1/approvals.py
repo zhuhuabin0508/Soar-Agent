@@ -13,10 +13,11 @@ from datetime import datetime, timedelta
 from app.core.timezone import beijing_now, beijing_now_iso
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
+from app.core.audit import get_client_ip, log_audit
 from app.core.redis_client import get_redis
 from app.database import get_db
 from app.dependencies import get_current_user, is_admin, require_permission
@@ -25,11 +26,12 @@ from app.schemas.approval import ApprovalActionResponse, ApprovalItem
 
 logger = logging.getLogger(__name__)
 
-# P0-1：审批相关接口强制登录（查看工单 + approve/reject 操作）
+# P0-1：审批相关接口强制登录；权限按接口单独声明
+# （列表/统计=approval:view，approve/reject=approval:approve，删除=admin）
 router = APIRouter(
     prefix="/approvals",
     tags=["approvals"],
-    dependencies=[Depends(require_permission("approval", "view"))],
+    dependencies=[Depends(get_current_user)],
 )
 
 
@@ -54,7 +56,10 @@ def _build_item(exec_row: Execution) -> ApprovalItem:
 
 
 @router.get("/stats")
-def approval_stats(db: Session = Depends(get_db)) -> dict:
+def approval_stats(
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("approval", "view")),
+) -> dict:
     """返回工作台统计看板数据。
 
     指标：
@@ -134,6 +139,7 @@ def list_approvals(
     q: Optional[str] = Query(None, description="关键词搜索（告警类型/IP/工作流名）"),
     limit: int = Query(100, ge=1, le=500, description="返回条数上限"),
     db: Session = Depends(get_db),
+    current_user=Depends(require_permission("approval", "view")),
 ) -> list[ApprovalItem]:
     """查询审批工单列表，支持状态/工作流/关键词筛选。
 
@@ -203,21 +209,29 @@ def list_approvals(
 
 @router.post("/{execution_id}/approve", response_model=ApprovalActionResponse)
 def approve_execution(
-    execution_id: int, db: Session = Depends(get_db)
+    execution_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("approval", "approve")),
 ) -> ApprovalActionResponse:
     """通过审批，向 Redis 写入 approve 信号唤醒阻塞的工作流。
+
+    鉴权：需 ``approval:approve`` 权限（viewer 仅有 view 权限，不能审批），
+    审批人身份写入 result 与审计日志，确保高敏操作可追责。
 
     同时在 ``Execution.result`` 中写入 ``outcome=approved`` 与 ``finished_at``，
     供工作台统计看板即时统计（不依赖 Celery 任务结束）。
 
     Args:
         execution_id: 待审批的执行记录 ID。
+        request: 请求对象（审计用）。
         db: 数据库会话。
+        current_user: 当前用户（须持 approval:approve 权限）。
 
     Returns:
         审批操作响应。
     """
-    logger.info("通过审批: execution_id=%s", execution_id)
+    logger.info("通过审批: execution_id=%s, by=%s", execution_id, current_user.username)
     execution = (
         db.query(Execution).filter(Execution.id == execution_id).first()
     )
@@ -235,12 +249,25 @@ def approve_execution(
             detail=f"Execution status is {execution.status}, not waiting_for_approval",
         )
 
-    # 先写 outcome 到 result，供 stats 即时统计
+    # 先写 outcome 到 result，供 stats 即时统计；记录审批人确保可追责
     result = dict(execution.result or {})
     result["outcome"] = "approved"
     result["handled_at"] = beijing_now_iso()
+    result["handled_by"] = current_user.username
+    result["handled_by_id"] = current_user.id
     execution.result = result
     db.commit()
+
+    log_audit(
+        db,
+        user_id=current_user.id,
+        username=current_user.username,
+        action="approve",
+        resource_type="approval",
+        resource_id=str(execution_id),
+        detail="审批通过（approve）",
+        ip_address=get_client_ip(request),
+    )
 
     redis_client = get_redis()
     redis_client.lpush(f"approval:{execution_id}", "approve")
@@ -255,21 +282,28 @@ def approve_execution(
 
 @router.post("/{execution_id}/reject", response_model=ApprovalActionResponse)
 def reject_execution(
-    execution_id: int, db: Session = Depends(get_db)
+    execution_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("approval", "approve")),
 ) -> ApprovalActionResponse:
     """拒绝审批，向 Redis 写入 reject 信号终止工作流。
+
+    鉴权：需 ``approval:approve`` 权限；审批人身份写入 result 与审计日志。
 
     同时在 ``Execution.result`` 中写入 ``outcome=rejected`` 与 ``finished_at``，
     供工作台统计看板即时统计。
 
     Args:
         execution_id: 待审批的执行记录 ID。
+        request: 请求对象（审计用）。
         db: 数据库会话。
+        current_user: 当前用户（须持 approval:approve 权限）。
 
     Returns:
         审批操作响应。
     """
-    logger.info("拒绝审批: execution_id=%s", execution_id)
+    logger.info("拒绝审批: execution_id=%s, by=%s", execution_id, current_user.username)
     execution = (
         db.query(Execution).filter(Execution.id == execution_id).first()
     )
@@ -287,14 +321,27 @@ def reject_execution(
             detail=f"Execution status is {execution.status}, not waiting_for_approval",
         )
 
-    # 写 outcome 与结束时间，供 stats 即时统计
+    # 写 outcome 与结束时间，供 stats 即时统计；记录审批人确保可追责
     result = dict(execution.result or {})
     result["outcome"] = "rejected"
     result["handled_at"] = beijing_now_iso()
+    result["handled_by"] = current_user.username
+    result["handled_by_id"] = current_user.id
     execution.result = result
     execution.status = "success"
     execution.finished_at = beijing_now()
     db.commit()
+
+    log_audit(
+        db,
+        user_id=current_user.id,
+        username=current_user.username,
+        action="reject",
+        resource_type="approval",
+        resource_id=str(execution_id),
+        detail="审批拒绝（reject）",
+        ip_address=get_client_ip(request),
+    )
 
     redis_client = get_redis()
     redis_client.lpush(f"approval:{execution_id}", "reject")

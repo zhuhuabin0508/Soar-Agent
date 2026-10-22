@@ -56,7 +56,7 @@ const TOC = [
 // 可复用：配置项卡片
 function ConfigCard({ icon, title, name, children }) {
   return (
-    <div className="rounded-lg border border-border bg-card/40 p-4">
+    <div className="rounded-lg border border-border bg-card p-4">
       <div className="mb-2 flex items-center gap-2">
         {renderTutorialIcon(icon, 'h-4 w-4 shrink-0 text-primary')}
         <h4 className="text-sm font-semibold text-foreground">{title}</h4>
@@ -95,7 +95,7 @@ function Section({ id, icon, title, subtitle, children }) {
         </span>
         <div>
           <h2 className="text-lg font-semibold text-foreground">{title}</h2>
-          {subtitle && <p className="text-xs text-muted-foreground/70">{subtitle}</p>}
+          {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
         </div>
       </div>
       <div className="space-y-3 pl-1">{children}</div>
@@ -132,8 +132,8 @@ function AgentTutorial() {
   return (
     <div className="flex h-full w-full overflow-hidden bg-background text-foreground">
       {/* 左侧目录 */}
-      <aside className="hidden w-56 shrink-0 overflow-y-auto border-r border-border bg-card/40 p-3 lg:block">
-        <div className="mb-3 flex items-center gap-1.5 px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
+      <aside className="hidden w-56 shrink-0 overflow-y-auto border-r border-border bg-card p-3 lg:block">
+        <div className="mb-3 flex items-center gap-1.5 px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           <ClipboardList className="h-3.5 w-3.5" />
           目录
         </div>
@@ -200,8 +200,8 @@ function AgentTutorial() {
               智能体 = <strong>LLM 大脑</strong> + <strong>工具双手</strong> + <strong>知识记忆</strong> +
               <strong>技能规范</strong>。配置智能体就是为它装配这些能力。
             </Tip>
-            <div className="rounded-lg border border-border bg-card/60 p-4">
-              <div className="mb-2 text-xs font-semibold text-muted-foreground/70">架构示意</div>
+            <div className="rounded-lg border border-border bg-card p-4">
+              <div className="mb-2 text-xs font-semibold text-muted-foreground">架构示意</div>
               <pre className="overflow-x-auto text-xs text-muted-foreground">{`用户输入
    ↓
 ┌──────────────────────────────────┐
@@ -308,15 +308,15 @@ function AgentTutorial() {
               <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
                 <div className="rounded border border-border bg-muted p-2">
                   <div className="font-semibold text-foreground">0 ~ 0.3</div>
-                  <div className="text-muted-foreground/70">严谨确定。适合安全分析、工具调用、数据查询</div>
+                  <div className="text-muted-foreground">严谨确定。适合安全分析、工具调用、数据查询</div>
                 </div>
                 <div className="rounded border border-border bg-muted p-2">
                   <div className="font-semibold text-foreground">0.4 ~ 0.8</div>
-                  <div className="text-muted-foreground/70">均衡。适合对话助手、通用问答</div>
+                  <div className="text-muted-foreground">均衡。适合对话助手、通用问答</div>
                 </div>
                 <div className="rounded border border-border bg-muted p-2">
                   <div className="font-semibold text-foreground">0.9 ~ 2.0</div>
-                  <div className="text-muted-foreground/70">创造性。适合文案生成、头脑风暴</div>
+                  <div className="text-muted-foreground">创造性。适合文案生成、头脑风暴</div>
                 </div>
               </div>
               <Tip>安全运营场景建议设为 <strong>0.3</strong> 以下，确保分析结论稳定可靠。</Tip>
@@ -356,8 +356,8 @@ function AgentTutorial() {
                 <li><strong className="text-foreground">安全约束</strong>：危险操作前需确认、不泄露敏感信息</li>
               </ol>
             </ConfigCard>
-            <div className="rounded-lg border border-border bg-card/60 p-4">
-              <div className="mb-2 text-xs font-semibold text-muted-foreground/70">示例：告警研判助手</div>
+            <div className="rounded-lg border border-border bg-card p-4">
+              <div className="mb-2 text-xs font-semibold text-muted-foreground">示例：告警研判助手</div>
               <pre className="overflow-x-auto text-xs text-muted-foreground">{`你是一名 SOC 高级安全分析师，负责告警研判。
 
 ## 工作流程

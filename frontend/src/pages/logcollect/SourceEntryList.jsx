@@ -3,12 +3,12 @@
 // 点击行进入详情页（基本信息 / 解析模板 / 日志预览三 Tab）。支持 ?receiver= 按接收器筛选（接收器页跳转）。
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ChevronRight, Inbox, ListTree, RefreshCw, Search } from 'lucide-react'
+import { ChevronRight, Inbox, ListTree, Radio, RefreshCw } from 'lucide-react'
 import { toast } from '../../store/toastStore'
-import { inputCls } from '../../components/property/FormControls'
 import { Drawer, Modal } from '../../components/Dialog'
 import { devices as devicesApi } from '../../api/client'
-import { Button, PageContainer, PageHeader, DataTable, Pagination, Badge, EmptyState } from '../../components/ui'
+import { Button, DataTable, Pagination, Badge, EmptyState } from '../../components/ui'
+import FilterBar from '../../components/FilterBar'
 import {
   SOURCE_TYPE_META, PROTOCOL_TAG_CLS, ENTRY_STATUS_META, DEVICE_TYPE_LABELS,
 } from './receiverMeta'
@@ -17,13 +17,13 @@ const PAGE_SIZE = 20
 const fmtCount = (n) => (n ?? 0).toLocaleString()
 const fmtTime = (t) => (t ? new Date(t).toLocaleString() : '—')
 
-// 状态色图例圆点（规范：已接入=绿 / 待配置=橙 / 解析异常=红 / 已停用=灰）
-const ENTRY_DOT_CLS = {
-  pending: 'bg-warning',
-  active: 'bg-success',
-  parse_error: 'bg-destructive',
-  disabled: 'bg-muted-foreground',
-}
+// 状态指标 chips：圆点色 + 激活态配色（规范：已接入=绿 / 待配置=橙 / 解析异常=红 / 已停用=灰）
+const STATUS_CHIPS = [
+  { key: 'active', label: '已接入', dot: 'bg-success', active: 'bg-success/15 text-success ring-success/40' },
+  { key: 'pending', label: '待配置', dot: 'bg-warning', active: 'bg-warning/15 text-warning ring-warning/40' },
+  { key: 'parse_error', label: '解析异常', dot: 'bg-destructive', active: 'bg-destructive/15 text-destructive ring-destructive/40' },
+  { key: 'disabled', label: '已停用', dot: 'bg-zinc-500', active: 'bg-zinc-500/15 text-zinc-400 ring-zinc-500/40' },
+]
 
 // 绑定模板来源徽标
 const BOUND_SOURCE_LABELS = {
@@ -85,6 +85,16 @@ export default function SourceEntryList() {
 
   const applyFilter = (setter) => (v) => { setter(v); setPage(1) }
 
+  // 是否存在筛选条件（空态区分「无数据」与「筛选无结果」两分）
+  const hasFilter = !!(receiverId || status || search)
+  const clearFilters = () => {
+    setSearchInput('')
+    setSearch('')
+    setReceiverId('')
+    setStatus('')
+    setPage(1)
+  }
+
   // 失败样本原文查看
   const [sampleView, setSampleView] = useState(null)
 
@@ -117,13 +127,6 @@ export default function SourceEntryList() {
     if (drill) loadDrill(drill.entryId, next, 1)
   }
 
-  const cards = [
-    { key: 'all', label: '条目总数', value: total, cls: '', icon: ListTree, tip: '全部数据源条目（含停用）' },
-    { key: 'active', label: '已接入', value: statusCounts.active ?? 0, cls: 'text-success', icon: Inbox, tip: '今日解析无失败且已完成配置的条目数' },
-    { key: 'pending', label: '待配置', value: statusCounts.pending ?? 0, cls: 'text-warning', icon: Search, tip: '自动发现后尚未绑定设备/模板的条目数' },
-    { key: 'parse_error', label: '解析异常', value: statusCounts.parse_error ?? 0, cls: statusCounts.parse_error ? 'text-destructive' : 'text-muted-foreground', icon: RefreshCw, tip: '今日解析失败数（fail/unknown）> 0 的条目数，即使另有成功也计入' },
-  ]
-
   const columns = [
     {
       key: 'name', header: '来源 IP / 名称', width: '210px',
@@ -132,7 +135,7 @@ export default function SourceEntryList() {
           <div className="truncate font-mono text-xs font-semibold">
             {r.name !== r.source_ip ? r.name : r.source_ip}
           </div>
-          <div className="truncate text-[11px] text-muted-foreground/70" title={r.source_ip}>
+          <div className="truncate text-[11px] text-muted-foreground" title={r.source_ip}>
             {r.name !== r.source_ip ? r.source_ip : (r.auto_created ? '自动发现' : '手工创建')}
           </div>
         </div>
@@ -142,7 +145,7 @@ export default function SourceEntryList() {
       key: 'device_type', header: '设备类型', width: '110px',
       render: (r) => (r.device_type
         ? <span className="text-xs">{DEVICE_TYPE_LABELS[r.device_type] || r.device_type}</span>
-        : <span className="text-xs text-muted-foreground/40" title="未绑定设备">--</span>),
+        : <span className="text-xs text-muted-foreground" title="未绑定设备">--</span>),
     },
     {
       key: 'strategy', header: '绑定模板', width: '180px',
@@ -188,9 +191,9 @@ export default function SourceEntryList() {
               ? 'cursor-pointer hover:bg-primary/10 hover:text-primary'
               : 'cursor-default'}`}
         >
-          <span className={r.today_received ? '' : 'text-muted-foreground/50'}>{fmtCount(r.today_received)}</span>
-          <span className="mx-1 text-muted-foreground/40">/</span>
-          <span className={r.today_received && !r.today_parsed ? 'text-destructive' : r.today_parsed ? '' : 'text-muted-foreground/50'}>
+          <span className={r.today_received ? '' : 'text-muted-foreground'}>{fmtCount(r.today_received)}</span>
+          <span className="mx-1 text-muted-foreground">/</span>
+          <span className={r.today_received && !r.today_parsed ? 'text-destructive' : r.today_parsed ? '' : 'text-muted-foreground'}>
             {fmtCount(r.today_parsed)}
           </span>
         </button>
@@ -209,90 +212,120 @@ export default function SourceEntryList() {
     },
     {
       key: 'go', header: '', width: '50px',
-      render: () => <ChevronRight className="h-4 w-4 text-muted-foreground/50" />,
+      render: () => <ChevronRight className="h-4 w-4 text-muted-foreground" />,
     },
   ]
 
   return (
-    <PageContainer>
-      <PageHeader
-        title="数据源条目"
-        description="接收器按来源 IP 自动发现的接入实例：点击条目配置归属设备、解析模板与流水线覆盖，查看原始日志与解析结果对照"
-        actions={(
-          <Button variant="secondary" onClick={load} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> 刷新
-          </Button>
-        )}
-      />
-
-      {/* 状态统计卡片（可点击筛选） */}
-      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {cards.map((c) => (
-          <div
-            key={c.key}
-            role="button"
-            tabIndex={0}
-            title={`${c.tip}（点击按此状态筛选）`}
-            onClick={() => applyFilter(setStatus)(c.key === 'all' ? '' : c.key)}
-            className={`card cursor-pointer px-5 py-4 transition hover:border-primary/40 hover:shadow-md ${status === (c.key === 'all' ? '' : c.key) ? 'border-primary/40 ring-1 ring-primary/20' : ''}`}
-          >
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <c.icon className="h-3.5 w-3.5" />
-              {c.label}
-            </div>
-            <div className={`mt-1 text-2xl font-semibold tabular-nums ${c.cls}`}>{fmtCount(c.value)}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* 筛选栏 + 列表 */}
-      <div className="card">
-        <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-3">
-          <input
-            className={`${inputCls} max-w-xs`}
-            placeholder="搜索来源 IP / 名称"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-          />
-          <select className={`${inputCls} w-auto`} value={receiverId} onChange={(e) => applyFilter(setReceiverId)(e.target.value)}>
-            <option value="">全部接收器</option>
-            {receivers.map((r) => (<option key={r.id} value={r.id}>{r.name}</option>))}
-          </select>
-          <select className={`${inputCls} w-auto`} value={status} onChange={(e) => applyFilter(setStatus)(e.target.value)}>
-            <option value="">全部状态</option>
-            {Object.entries(ENTRY_STATUS_META).map(([v, m]) => (<option key={v} value={v}>{m.label}</option>))}
-          </select>
-          <div className="ml-auto flex items-center gap-3">
-            {/* 状态色图例（与状态徽标同色系） */}
-            {Object.entries(ENTRY_STATUS_META).map(([v, m]) => (
-              <span key={v} className="inline-flex items-center gap-1.5 text-xs text-muted-foreground" title={m.desc}>
-                <span className={`h-2 w-2 shrink-0 rounded-full ${ENTRY_DOT_CLS[v] || 'bg-muted-foreground'}`} />
-                {m.label}
-              </span>
-            ))}
-            <span className="border-l border-border pl-3 text-xs text-muted-foreground">点击行进入条目详情</span>
-          </div>
+    <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
+      <header className="flex items-center justify-between gap-4 border-b border-border bg-card px-6 py-4">
+        <div className="flex min-w-0 items-baseline gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">数据源条目</h1>
+          {!loading && (
+            <span className="text-xs text-muted-foreground">
+              共 <span className="font-medium tabular-nums text-foreground">{fmtCount(total)}</span> 个条目
+            </span>
+          )}
+          <span className="hidden text-xs text-muted-foreground xl:inline">接收器按来源 IP 自动发现的接入实例</span>
         </div>
-        <DataTable
-          columns={columns}
-          data={items}
-          loading={loading}
-          rowKey="id"
-          onRowClick={(r) => navigate(`/source-entries/${r.id}`)}
-          emptyIcon={ListTree}
-          emptyText="暂无数据源条目"
-          emptyDescription={receiverId
-            ? '该接收器启用后，设备日志到达即按来源 IP 自动生成条目'
-            : '请先在「接收器」页配置监听端点；设备日志到达后按来源 IP 自动生成条目'}
+        <div className="flex shrink-0 items-center gap-2">
+          <button type="button" onClick={load} className="btn-secondary btn-sm" title="刷新数据源条目">
+            <RefreshCw className={`mr-1 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> 刷新
+          </button>
+        </div>
+      </header>
+
+      <div className="flex-1 overflow-y-auto p-6">
+        {/* 筛选栏：搜索 + 接收器 + 状态 */}
+        <FilterBar
+          search={{ value: searchInput, onChange: setSearchInput, placeholder: '搜索来源 IP / 名称' }}
+          filters={[
+            {
+              key: 'receiver', label: '接收器', value: receiverId,
+              onChange: applyFilter(setReceiverId),
+              options: [{ value: '', label: '全部接收器' }, ...receivers.map((r) => ({ value: r.id, label: r.name }))],
+            },
+            {
+              key: 'status', label: '状态', value: status,
+              onChange: applyFilter(setStatus),
+              options: [{ value: '', label: '全部状态' }, ...Object.entries(ENTRY_STATUS_META).map(([v, m]) => ({ value: v, label: m.label }))],
+            },
+          ]}
         />
-        <div className="border-t border-border px-5 py-3">
-          <Pagination
-            page={page}
-            pageSize={PAGE_SIZE}
-            total={total}
-            onPageChange={setPage}
+
+        {/* 状态指标条：状态分布（点击快速筛选，再点取消）+ 汇总指标 */}
+        {!loading && total > 0 && (
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            {STATUS_CHIPS.map((chip) => {
+              const active = status === chip.key
+              const count = statusCounts[chip.key] ?? 0
+              return (
+                <button
+                  key={chip.key} type="button"
+                  onClick={() => applyFilter(setStatus)(active ? '' : chip.key)}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all duration-200 ${
+                    active
+                      ? `border-transparent ring-1 ${chip.active}`
+                      : 'border-border bg-secondary text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                  }`}
+                  title={active ? '点击取消该状态筛选' : `点击筛选「${chip.label}」的条目`}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${chip.dot} ${
+                      chip.key === 'active' && count > 0 ? 'animate-pulse' : ''
+                    }`}
+                  />
+                  {chip.label}
+                  <span className={`tabular-nums ${count > 0 ? '' : 'text-muted-foreground'}`}>{fmtCount(count)}</span>
+                </button>
+              )
+            })}
+            <div className="ml-auto flex items-center gap-4 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5" title="当前已配置的接收器数量">
+                <Radio className="h-3.5 w-3.5 text-primary/80" />
+                接收器
+                <span
+                  className={`font-semibold tabular-nums ${
+                    receivers.length > 0 ? 'text-foreground' : 'text-muted-foreground'
+                  }`}
+                >
+                  {receivers.length > 0 ? fmtCount(receivers.length) : '--'}
+                </span>
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* 条目列表 */}
+        <div className="overflow-hidden rounded-lg border border-border">
+          <DataTable
+            className="table-stagger"
+            columns={columns}
+            data={items}
+            loading={loading}
+            rowKey="id"
+            onRowClick={(r) => navigate(`/source-entries/${r.id}`)}
+            rowClickHint="点击查看条目详情"
+            emptyIcon={ListTree}
+            emptyText={hasFilter ? '未找到匹配的数据源条目' : '暂无数据源条目'}
+            emptyDescription={hasFilter
+              ? '调整关键词或清除筛选条件后再试'
+              : '请先在「接收器」页配置监听端点，设备日志到达后按来源 IP 自动生成条目'}
+            emptyAction={hasFilter ? (
+              <button type="button" onClick={clearFilters} className="btn-secondary btn-sm">清除筛选</button>
+            ) : (
+              <button type="button" onClick={() => navigate('/receivers')} className="btn-primary btn-sm">
+                <Radio className="mr-1 h-3.5 w-3.5" /> 前往接收器配置
+              </button>
+            )}
           />
         </div>
+        <Pagination
+          page={page}
+          pageSize={PAGE_SIZE}
+          total={total}
+          onPageChange={setPage}
+        />
       </div>
 
       {/* 失败样本下钻抽屉（今日接收/解析成功列点击）：原因四分类 + 按原因筛选 */}
@@ -334,7 +367,7 @@ export default function SourceEntryList() {
                     onClick={() => applyDrillReason(k)}
                   >
                     {drillData.reason_labels?.[k] || k}
-                    <span className={`ml-1.5 tabular-nums ${n > 0 ? (k === 'no_template' || k === 'other' ? 'text-destructive' : 'text-warning') : 'text-muted-foreground/50'}`}>
+                    <span className={`ml-1.5 tabular-nums ${n > 0 ? (k === 'no_template' || k === 'other' ? 'text-destructive' : 'text-warning') : 'text-muted-foreground'}`}>
                       {n.toLocaleString()}
                     </span>
                   </button>
@@ -349,7 +382,7 @@ export default function SourceEntryList() {
               <div className="overflow-hidden rounded-lg border border-border">
                 <table className="w-full border-collapse text-xs">
                   <thead>
-                    <tr className="border-b border-border bg-muted/50 text-left text-muted-foreground">
+                    <tr className="border-b border-border bg-muted text-left text-muted-foreground">
                       <th className="px-2 py-2 font-semibold">失败原因</th>
                       <th className="px-2 py-2 font-semibold">解析状态</th>
                       <th className="px-2 py-2 font-semibold">错误信息</th>
@@ -359,7 +392,7 @@ export default function SourceEntryList() {
                   </thead>
                   <tbody>
                     {drillData.items.map((it) => (
-                      <tr key={it.id} className="border-b border-border/40 transition last:border-0 hover:bg-accent/30">
+                      <tr key={it.id} className="border-b border-border transition last:border-0 hover:bg-accent">
                         <td className="px-2 py-2"><Badge variant="danger">{it.reason_label}</Badge></td>
                         <td className="px-2 py-2 font-mono text-muted-foreground">{it.parse_status || '-'}</td>
                         <td className="max-w-[240px] truncate px-2 py-2 text-muted-foreground" title={it.error_msg}>{it.error_msg || '-'}</td>
@@ -396,11 +429,11 @@ export default function SourceEntryList() {
             <Badge variant="danger">{sampleView?.reason_label}</Badge>
             <span className="min-w-0 flex-1 break-all">{sampleView?.error_msg}</span>
           </div>
-          <pre className="max-h-[420px] overflow-auto rounded-md border border-border bg-muted/40 p-3 font-mono text-xs leading-relaxed break-all whitespace-pre-wrap">
+          <pre className="max-h-[420px] overflow-auto rounded-md border border-border bg-muted p-3 font-mono text-xs leading-relaxed break-all whitespace-pre-wrap">
             {sampleView?.raw_data || '（无原始数据）'}
           </pre>
         </div>
       </Modal>
-    </PageContainer>
+    </div>
   )
 }

@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
-  CheckCircle2, FileSpreadsheet, Loader2, RefreshCw, Search, Server, Network, Globe, Cpu,
+  Boxes, CheckCircle2, FileSpreadsheet, Loader2, RefreshCw, Search, Server, Network, Globe, Cpu,
   Upload, X, ShieldOff, Shield, Monitor,
 } from 'lucide-react'
 import { govCloudApi } from '../api/govcloud'
@@ -93,7 +93,7 @@ function ImportDialog({ open, tableName, sourceName, importing, importPhase, onC
           disabled={importing}
           onClick={() => setMode('full')}
           className={`rounded-lg border p-3 text-left ${
-            mode === 'full' ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted/50'
+            mode === 'full' ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted'
           }`}
         >
           <div className="text-sm font-medium text-foreground">全量导入</div>
@@ -106,7 +106,7 @@ function ImportDialog({ open, tableName, sourceName, importing, importPhase, onC
           disabled={importing}
           onClick={() => setMode('incremental')}
           className={`rounded-lg border p-3 text-left ${
-            mode === 'incremental' ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted/50'
+            mode === 'incremental' ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted'
           }`}
         >
           <div className="text-sm font-medium text-foreground">增量导入</div>
@@ -151,6 +151,10 @@ export default function GovCloudAssets() {
   const [detail, setDetail] = useState(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const [listColumns, setListColumns] = useState([])
+  // 来源元数据加载标记（仅用于骨架屏展示）
+  const [metaLoading, setMetaLoading] = useState(true)
+  // 对齐状态筛选（指标条 chip 点击，仅前端过滤数据表卡片）
+  const [consFilter, setConsFilter] = useState('')
 
   const currentGroup = useMemo(() => {
     const fromUrl = searchParams.get('source')
@@ -162,6 +166,19 @@ export default function GovCloudAssets() {
   const active = searchParams.get('table') || tables[0]?.code || ''
   const currentTable = tables.find((t) => t.code === active) || tables[0]
   const sourceEnabled = Boolean(currentGroup?.enabled && tables.length)
+
+  // 对齐状态统计 + 资产总量（从当前来源数据表派生，供指标条与头部计数展示）
+  const consStats = useMemo(() => {
+    const ok = tables.filter((t) => t.consistent).length
+    return { ok, bad: tables.length - ok, total: tables.reduce((n, t) => n + (t.total || 0), 0) }
+  }, [tables])
+
+  // 指标条筛选后的可见数据表卡片
+  const visibleTables = useMemo(() => {
+    if (consFilter === 'ok') return tables.filter((t) => t.consistent)
+    if (consFilter === 'bad') return tables.filter((t) => !t.consistent)
+    return tables
+  }, [tables, consFilter])
 
   const displayColumns = useMemo(() => {
     const ordered = []
@@ -190,6 +207,7 @@ export default function GovCloudAssets() {
         setGroups(s.groups?.length ? s.groups : (m.groups || []))
       })
       .catch((e) => toast.error(e.message || '加载元数据失败'))
+      .finally(() => setMetaLoading(false))
   }, [canView])
 
   const load = useCallback(async () => {
@@ -231,6 +249,7 @@ export default function GovCloudAssets() {
     setSearchParams(params)
     setPage(1)
     setKeyword('')
+    setConsFilter('')
   }
 
   function selectTable(code) {
@@ -300,38 +319,53 @@ export default function GovCloudAssets() {
   }
 
   return (
-    <PageContainer className="flex min-h-0 flex-col">
-      <PageHeader
-        title="资产发现"
-        description="发现来源同级展示。当前已接入综合运管平台；1.1～1.4 后续接入。"
-        actions={
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" size="sm" onClick={load} disabled={loading || importing || !sourceEnabled}>
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-              刷新
+    <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
+      <header className="flex items-center justify-between gap-4 border-b border-border bg-card px-6 py-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">资产发现</h1>
+          {sourceEnabled && (
+            <span className="text-xs text-muted-foreground">
+              共 <span className="font-medium tabular-nums text-foreground">{consStats.total.toLocaleString()}</span> 条资产
+            </span>
+          )}
+          <span className="hidden text-xs text-muted-foreground xl:inline">发现来源同级展示，当前已接入综合运管平台</span>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button variant="secondary" size="sm" onClick={load} disabled={loading || importing || !sourceEnabled}>
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            刷新
+          </Button>
+          {canEdit && sourceEnabled && (
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={importing || !currentTable}
+              onClick={() => setImportOpen(true)}
+            >
+              {importing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+              {importing ? importPhase || '导入中' : `导入${currentTable?.excel_name || ' Excel'}`}
             </Button>
-            {canEdit && sourceEnabled && (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  disabled={importing || !currentTable}
-                  onClick={() => setImportOpen(true)}
-                >
-                  {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                  {importing ? importPhase || '导入中' : `导入${currentTable?.excel_name || ' Excel'}`}
-                </Button>
-            )}
-          </div>
-        }
-      />
+          )}
+        </div>
+      </header>
 
-      <div className="flex min-h-0 flex-1 gap-4">
+      <div className="flex min-h-0 flex-1 gap-4 p-6">
         <aside className="w-[240px] shrink-0">
           <div className="mb-2 px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
             发现来源
           </div>
           <div className="space-y-1">
-            {groups.map((g) => {
+            {metaLoading && groups.length === 0
+              ? Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-2 px-3 py-2.5">
+                    <div className="h-4 w-4 shrink-0 rounded skeleton-shimmer" />
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <div className="h-3 w-3/4 rounded skeleton-shimmer" />
+                      <div className="h-2 w-1/2 rounded skeleton-shimmer" />
+                    </div>
+                  </div>
+                ))
+              : groups.map((g) => {
                   const Icon = SOURCE_ICONS[g.code] || Globe
               const on = g.code === currentGroup?.code
               const count = (g.tables || []).reduce((n, t) => n + (t.total || 0), 0)
@@ -343,7 +377,7 @@ export default function GovCloudAssets() {
                   className={`flex w-full items-start gap-2 rounded-lg border px-3 py-2.5 text-left transition-colors ${
                     on
                       ? 'border-primary bg-primary/10'
-                      : 'border-transparent hover:bg-muted/60'
+                      : 'border-transparent hover:bg-muted'
                   }`}
                 >
                   <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${on ? 'text-primary' : 'text-muted-foreground'}`} />
@@ -351,8 +385,8 @@ export default function GovCloudAssets() {
                     <span className={`block text-sm font-medium leading-snug ${on ? 'text-primary' : 'text-foreground'}`}>
                       {sourceTitle(g)}
                     </span>
-                    <span className="mt-0.5 block text-[11px] text-muted-foreground">
-                      {g.enabled ? `${count} 条` : '即将接入'}
+                    <span className="mt-0.5 block text-[11px] tabular-nums text-muted-foreground">
+                      {g.enabled ? `${count.toLocaleString()} 条` : '即将接入'}
                     </span>
                   </span>
                   {!g.enabled && (
@@ -373,16 +407,35 @@ export default function GovCloudAssets() {
           </div>
 
           {!sourceEnabled ? (
-            <EmptyState
-              icon={SOURCE_ICONS[currentGroup?.code] || Globe}
-              title={`${sourceTitle(currentGroup) || '该来源'}尚未接入`}
-              description="与综合运管平台资产发现同级，数据接入后将在此展示清单与导入。"
-              bordered
-            />
+            metaLoading ? (
+              <div className="space-y-3">
+                <div className="h-5 w-44 rounded skeleton-shimmer" />
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="rounded-lg border border-border bg-card p-3">
+                      <div className="h-4 w-2/3 rounded skeleton-shimmer" />
+                      <div className="mt-3 h-6 w-16 rounded skeleton-shimmer" />
+                    </div>
+                  ))}
+                </div>
+                <div className="h-24 w-full rounded-lg skeleton-shimmer" />
+              </div>
+            ) : (
+              <EmptyState
+                icon={SOURCE_ICONS[currentGroup?.code] || Globe}
+                title={`${sourceTitle(currentGroup) || '该来源'}尚未接入`}
+                description="与综合运管平台资产发现同级，数据接入后将在此展示清单与导入。"
+                bordered
+              />
+            )
           ) : (
             <>
-              <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                {tables.map((t) => {
+              <div className="card-stagger mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {visibleTables.length === 0 ? (
+                  <div className="col-span-full rounded-lg border border-dashed border-border py-8 text-center text-xs text-muted-foreground">
+                    当前筛选下无数据表，点击指标条可取消筛选
+                  </div>
+                ) : visibleTables.map((t) => {
                   const Icon = TYPE_ICONS[t.code] || FileSpreadsheet
                   const on = t.code === currentTable?.code
                   return (
@@ -390,8 +443,8 @@ export default function GovCloudAssets() {
                       key={t.code}
                       type="button"
                       onClick={() => selectTable(t.code)}
-                      className={`rounded-lg border p-3 text-left transition-colors ${
-                        on ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted/60'
+                      className={`card-hover rounded-lg border p-3 text-left transition-colors ${
+                        on ? 'border-primary bg-primary/10' : 'border-border bg-card hover:border-primary/40'
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
@@ -404,7 +457,9 @@ export default function GovCloudAssets() {
                         <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                       </div>
                       <div className="mt-2 flex items-center justify-between gap-2">
-                        <span className="text-lg font-semibold tabular-nums">{t.total ?? 0}</span>
+                        <span className={`text-lg font-semibold tabular-nums ${t.total > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+                          {t.total == null ? '--' : t.total.toLocaleString()}
+                        </span>
                         <Badge variant={t.consistent ? 'success' : 'danger'}>
                           {t.consistent ? '已对齐' : '未对齐'}
                         </Badge>
@@ -429,9 +484,9 @@ export default function GovCloudAssets() {
                       {currentTable?.excel_name || currentTable?.label}：{cons.message}
                     </div>
                     {cons.last_batch && (
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        最近导入 {cons.last_batch.filename} · Excel {cons.excel_rows} 行 ·
-                        唯一 ID {cons.unique_source_ids} · 库内 {cons.live_count} ·
+                      <div className="mt-1 text-xs tabular-nums text-muted-foreground">
+                        最近导入 {cons.last_batch.filename} · Excel {(cons.excel_rows ?? 0).toLocaleString()} 行 ·
+                        唯一 ID {(cons.unique_source_ids ?? 0).toLocaleString()} · 库内 {(cons.live_count ?? 0).toLocaleString()} ·
                         {fmtTime(cons.last_batch.created_at)}
                         {cons.last_batch.note ? ` · ${cons.last_batch.note}` : ''}
                       </div>
@@ -452,17 +507,88 @@ export default function GovCloudAssets() {
                 </div>
               </div>
 
+              {/* 状态指标条：对齐状态分布（点击筛选数据表卡片）+ 汇总 */}
+              {!loading && tables.length > 0 && (
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  {[
+                    { key: 'ok', label: '已对齐', dot: 'bg-success', active: 'bg-success/15 text-success ring-success/40' },
+                    { key: 'bad', label: '未对齐', dot: 'bg-destructive', active: 'bg-destructive/15 text-destructive ring-destructive/40' },
+                  ].map((chip) => {
+                    const active = consFilter === chip.key
+                    const count = chip.key === 'ok' ? consStats.ok : consStats.bad
+                    return (
+                      <button
+                        key={chip.key}
+                        type="button"
+                        onClick={() => setConsFilter(active ? '' : chip.key)}
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all duration-200 ${
+                          active
+                            ? `border-transparent ring-1 ${chip.active}`
+                            : 'border-border bg-secondary text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                        }`}
+                        title={active ? '点击取消该筛选' : `点击筛选「${chip.label}」的数据表`}
+                      >
+                        <span className={`h-1.5 w-1.5 rounded-full ${chip.dot}`} />
+                        {chip.label}
+                        <span className={`tabular-nums ${count > 0 ? '' : 'text-muted-foreground'}`}>{count}</span>
+                      </button>
+                    )
+                  })}
+                  {importing && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-transparent bg-info/15 px-3 py-1 text-xs font-medium text-info ring-1 ring-info/40">
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-info" />
+                      导入中
+                    </span>
+                  )}
+                  <div className="ml-auto flex items-center gap-4 text-xs text-muted-foreground">
+                    <span className="inline-flex items-center gap-1.5" title="当前来源各数据表资产总量">
+                      <Boxes className="h-3.5 w-3.5 text-primary/80" />
+                      资产总量
+                      <span className={`font-semibold tabular-nums ${consStats.total > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+                        {consStats.total > 0 ? consStats.total.toLocaleString() : '--'}
+                      </span>
+                    </span>
+                    <span className="inline-flex items-center gap-1.5" title="当前来源数据表数量">
+                      <FileSpreadsheet className="h-3.5 w-3.5 text-primary/80" />
+                      数据表
+                      <span className={`font-semibold tabular-nums ${tables.length > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+                        {tables.length > 0 ? tables.length : '--'}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              )}
+
               {loading ? (
-                <LoadingState />
+                <div className="overflow-hidden rounded-lg border border-border">
+                  <LoadingState rows={6} cols={Math.max(4, Math.min(displayColumns.length || 5, 8))} />
+                </div>
               ) : items.length === 0 ? (
                 <EmptyState
                   icon={FileSpreadsheet}
-                  title={`${currentTable?.excel_name || '当前表'}暂无数据`}
-                  description={canEdit ? '请导入对应全量爬取 Excel（Sheet「原始数据」）' : '等待管理员导入全量爬取结果'}
+                  title={keyword ? '未找到匹配的资产' : `${currentTable?.excel_name || '当前表'}暂无数据`}
+                  description={
+                    keyword
+                      ? '调整关键词或清除筛选条件后再试'
+                      : canEdit
+                        ? '请导入对应全量爬取 Excel（Sheet「原始数据」）'
+                        : '等待管理员导入全量爬取结果'
+                  }
                   bordered
+                  action={
+                    keyword ? (
+                      <button type="button" onClick={() => { setKeyword(''); setPage(1) }} className="btn-secondary btn-sm">
+                        清除筛选
+                      </button>
+                    ) : canEdit ? (
+                      <button type="button" onClick={() => setImportOpen(true)} className="btn-primary btn-sm">
+                        <Upload className="mr-1 h-3.5 w-3.5" /> 导入 Excel
+                      </button>
+                    ) : undefined
+                  }
                 />
               ) : (
-                <div className="max-h-[62vh] overflow-auto rounded-lg border border-border">
+                <div className="table-stagger max-h-[62vh] overflow-auto rounded-lg border border-border">
                   <table className="w-max min-w-full text-left text-sm">
                     <thead className="sticky top-0 z-10 bg-muted text-xs text-muted-foreground">
                       <tr>
@@ -477,7 +603,7 @@ export default function GovCloudAssets() {
                       {items.map((row) => (
                         <tr
                           key={row.id}
-                          className="cursor-pointer border-t border-border hover:bg-muted/40"
+                          className="cursor-pointer border-t border-border hover:bg-muted"
                           onClick={() => openDetail(row.id)}
                         >
                           {displayColumns.map((col) => (
@@ -534,6 +660,6 @@ export default function GovCloudAssets() {
           </dl>
         )}
       </Modal>
-    </PageContainer>
+    </div>
   )
 }

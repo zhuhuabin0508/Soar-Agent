@@ -5,6 +5,8 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { Workflow, RefreshCw, Edit, ExternalLink } from 'lucide-react'
 import { workflows as workflowsApi } from '../api/client'
 import { getStatsOverview, getExecutions } from '../api/executions'
+import { guardNavPermission } from '../utils/permissions'
+import { CompactSelect } from '../components/ui'
 
 // 格式化时间
 function fmtTime(t) {
@@ -49,10 +51,10 @@ function triggerLabel(t) {
 // 统计卡片
 function StatCard({ label, value, sub, color = 'text-foreground' }) {
   return (
-    <div className="rounded-lg border border-border bg-card/40 p-4">
-      <div className="text-xs text-muted-foreground/70">{label}</div>
+    <div className="rounded-lg border border-border bg-card p-4">
+      <div className="text-xs text-muted-foreground">{label}</div>
       <div className={`mt-1 text-2xl font-semibold tabular-nums ${color}`}>{value}</div>
-      {sub && <div className="mt-0.5 text-[11px] text-muted-foreground/60">{sub}</div>}
+      {sub && <div className="mt-0.5 text-[11px] text-muted-foreground">{sub}</div>}
     </div>
   )
 }
@@ -61,11 +63,11 @@ function StatCard({ label, value, sub, color = 'text-foreground' }) {
 function TrendChart({ data }) {
   if (!data || data.length === 0) {
     return (
-      <div className="rounded-lg border border-border bg-card/40 p-4">
+      <div className="rounded-lg border border-border bg-card p-4">
         <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           最近执行趋势
         </div>
-        <div className="flex h-24 items-center justify-center text-xs text-muted-foreground/60">
+        <div className="flex h-24 items-center justify-center text-xs text-muted-foreground">
           暂无趋势数据
         </div>
       </div>
@@ -73,7 +75,7 @@ function TrendChart({ data }) {
   }
   const maxCount = Math.max(...data.map((d) => d.total), 1)
   return (
-    <div className="rounded-lg border border-border bg-card/40 p-4">
+    <div className="rounded-lg border border-border bg-card p-4">
       <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         最近执行趋势（{data.length} 天）
       </div>
@@ -93,12 +95,12 @@ function TrendChart({ data }) {
                 title={`${d.date} 失败: ${d.failed}`}
               />
             </div>
-            <div className="text-[10px] text-muted-foreground/70">{d.total}</div>
-            <div className="text-[10px] text-muted-foreground/70">{d.date.slice(5)}</div>
+            <div className="text-[10px] text-muted-foreground">{d.total}</div>
+            <div className="text-[10px] text-muted-foreground">{d.date.slice(5)}</div>
           </div>
         ))}
       </div>
-      <div className="mt-2 flex items-center justify-center gap-4 text-[10px] text-muted-foreground/70">
+      <div className="mt-2 flex items-center justify-center gap-4 text-[10px] text-muted-foreground">
         <span className="flex items-center gap-1"><span className="h-2 w-2 rounded bg-success/70" />成功</span>
         <span className="flex items-center gap-1"><span className="h-2 w-2 rounded bg-destructive/70" />失败</span>
       </div>
@@ -111,11 +113,11 @@ function TriggerDist({ data }) {
   const entries = Object.entries(data || {})
   if (entries.length === 0) {
     return (
-      <div className="rounded-lg border border-border bg-card/40 p-4">
+      <div className="rounded-lg border border-border bg-card p-4">
         <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           触发类型分布
         </div>
-        <div className="flex h-20 items-center justify-center text-xs text-muted-foreground/60">
+        <div className="flex h-20 items-center justify-center text-xs text-muted-foreground">
           暂无数据
         </div>
       </div>
@@ -124,7 +126,7 @@ function TriggerDist({ data }) {
   const total = entries.reduce((s, [, n]) => s + n, 0)
   const colors = ['bg-primary', 'bg-success', 'bg-warning', 'bg-info', 'bg-destructive']
   return (
-    <div className="rounded-lg border border-border bg-card/40 p-4">
+    <div className="rounded-lg border border-border bg-card p-4">
       <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         触发类型分布
       </div>
@@ -141,7 +143,7 @@ function TriggerDist({ data }) {
                 />
               </div>
               <span className="w-16 text-right text-xs tabular-nums text-foreground">{count} 次</span>
-              <span className="w-10 text-right text-[10px] text-muted-foreground/70">{pct}%</span>
+              <span className="w-10 text-right text-[10px] text-muted-foreground">{pct}%</span>
             </div>
           )
         })}
@@ -155,11 +157,11 @@ function NodeBottleneck({ data }) {
   const arr = Array.isArray(data) ? data : []
   if (arr.length === 0) {
     return (
-      <div className="rounded-lg border border-border bg-card/40 p-4">
+      <div className="rounded-lg border border-border bg-card p-4">
         <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           节点性能瓶颈
         </div>
-        <div className="flex h-20 items-center justify-center text-xs text-muted-foreground/60">
+        <div className="flex h-20 items-center justify-center text-xs text-muted-foreground">
           暂无节点执行数据
         </div>
       </div>
@@ -168,7 +170,7 @@ function NodeBottleneck({ data }) {
   const sorted = [...arr].sort((a, b) => (b.avg_duration_seconds || 0) - (a.avg_duration_seconds || 0))
   const maxDur = Math.max(...sorted.map((n) => n.avg_duration_seconds || 0), 1)
   return (
-    <div className="rounded-lg border border-border bg-card/40 p-4">
+    <div className="rounded-lg border border-border bg-card p-4">
       <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         节点性能瓶颈（按平均耗时降序）
       </div>
@@ -187,7 +189,7 @@ function NodeBottleneck({ data }) {
                 />
               </div>
               <span className="w-16 text-right text-xs tabular-nums text-muted-foreground">{fmtDuration(dur)}</span>
-              <span className="w-20 text-right text-[10px] text-muted-foreground/70">
+              <span className="w-20 text-right text-[10px] text-muted-foreground">
                 {n.count} 次{failRate > 0 ? ` · 失败${failRate}%` : ''}
               </span>
             </div>
@@ -245,7 +247,7 @@ function WorkflowMonitor() {
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
       {/* 顶部标题栏 */}
-      <header className="flex items-center justify-between border-b border-border bg-card/60 px-6 py-4">
+      <header className="flex items-center justify-between border-b border-border bg-card px-6 py-4">
         <div className="flex items-center gap-4">
           <button
             type="button"
@@ -264,17 +266,17 @@ function WorkflowMonitor() {
           </h1>
         </div>
         <div className="flex items-center gap-2">
-          <select
+          <CompactSelect
             value={days}
             onChange={(e) => setDays(Number(e.target.value))}
-            className="rounded-md border border-border bg-secondary px-2 py-1 text-xs text-foreground outline-none focus:border-primary"
+            size="lg"
           >
             <option value={1}>近1天</option>
             <option value={7}>近7天</option>
             <option value={14}>近14天</option>
             <option value={30}>近30天</option>
             <option value={90}>近90天</option>
-          </select>
+          </CompactSelect>
           <button
             type="button"
             onClick={() => navigate(`/editor?id=${id}`)}
@@ -295,25 +297,25 @@ function WorkflowMonitor() {
       )}
 
       {loading ? (
-        <div className="flex h-40 items-center justify-center text-sm text-muted-foreground/70">
+        <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
           加载中...
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto p-6">
           {/* 工作流信息 */}
           {workflow && (
-            <div className="mb-4 rounded-lg border border-border bg-card/40 p-4">
+            <div className="mb-4 rounded-lg border border-border bg-card p-4">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/15 text-primary">
                   <Workflow className="h-5 w-5" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-semibold text-foreground">{workflow.name}</div>
-                  <div className="truncate text-xs text-muted-foreground/70">
+                  <div className="truncate text-xs text-muted-foreground">
                     {workflow.description || '无描述'}
                   </div>
                 </div>
-                <div className="flex gap-3 text-[11px] text-muted-foreground/70">
+                <div className="flex gap-3 text-[11px] text-muted-foreground">
                   <span>触发: {triggerLabel(workflow.trigger_type)}</span>
                   <span>·</span>
                   <span>状态: {workflow.status || '-'}</span>
@@ -356,18 +358,18 @@ function WorkflowMonitor() {
               <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 执行历史（{executions.length} 条）
               </h2>
-              <select
+              <CompactSelect
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="rounded-md border border-border bg-secondary px-2 py-1 text-xs text-foreground outline-none focus:border-primary"
+                size="lg"
               >
                 {STATUS_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
-              </select>
+              </CompactSelect>
             </div>
             {executions.length === 0 ? (
-              <div className="flex h-32 items-center justify-center text-sm text-muted-foreground/60">
+              <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
                 暂无执行记录
               </div>
             ) : (
@@ -388,19 +390,19 @@ function WorkflowMonitor() {
                       <tr
                         key={e.id}
                         className={`cursor-pointer border-t border-border transition-colors hover:bg-primary/5 ${
-                          idx % 2 === 0 ? 'bg-card/40' : 'bg-card/20'
+                          idx % 2 === 0 ? 'bg-card' : 'bg-card'
                         }`}
-                        onClick={() => navigate(`/executions/${e.id}`)}
+                        onClick={() => { if (!guardNavPermission('execution', 'view', '日志中心')) return; navigate(`/executions/${e.id}`) }}
                       >
                         <td className="px-4 py-3 font-mono text-primary">#{e.id}</td>
                         <td className="px-4 py-3"><StatusBadge status={e.status} /></td>
                         <td className="px-4 py-3 text-muted-foreground">{triggerLabel(e.trigger_type)}</td>
-                        <td className="px-4 py-3 text-muted-foreground/70">{fmtTime(e.created_at)}</td>
-                        <td className="px-4 py-3 text-muted-foreground/70">{fmtTime(e.finished_at)}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{fmtTime(e.created_at)}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{fmtTime(e.finished_at)}</td>
                         <td className="px-4 py-3">
                           <button
                             type="button"
-                            onClick={(ev) => { ev.stopPropagation(); navigate(`/executions/${e.id}`) }}
+                            onClick={(ev) => { ev.stopPropagation(); if (!guardNavPermission('execution', 'view', '日志中心')) return; navigate(`/executions/${e.id}`) }}
                             className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary/80"
                           >
                             <ExternalLink className="h-3 w-3" />详情

@@ -242,7 +242,7 @@ function WorkflowQuickCreate() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
-      <header className="flex shrink-0 items-center justify-between border-b border-border bg-card/60 px-6 py-4">
+      <header className="flex shrink-0 items-center justify-between border-b border-border bg-card px-6 py-4">
         <div className="flex items-center gap-3">
           <button type="button" onClick={() => navigate('/studio?tab=workflow')} className="btn-secondary btn-sm">
             <ArrowLeft className="h-4 w-4" />
@@ -259,7 +259,7 @@ function WorkflowQuickCreate() {
                 {i < step ? <Check className="h-3 w-3" /> : i + 1}
               </span>
               {label}
-              {i < STEPS.length - 1 && <ChevronRight className="h-3 w-3 text-muted-foreground/50" />}
+              {i < STEPS.length - 1 && <ChevronRight className="h-3 w-3 text-muted-foreground" />}
             </div>
           ))}
         </div>
@@ -333,7 +333,7 @@ function WorkflowQuickCreate() {
               )}
 
               {mode === 'describe' && (
-                <div className="rounded-xl border border-border bg-card/40 p-4">
+                <div className="rounded-xl border border-border bg-card p-4">
                   <label className="mb-2 block text-sm font-medium">描述你的工作流</label>
                   <TextArea
                     value={description}
@@ -375,7 +375,7 @@ function WorkflowQuickCreate() {
               </div>
               <TextArea label="描述" value={wfDescription} onChange={setWfDescription} rows={2} />
 
-              <div className="rounded-xl border border-border bg-card/30 p-4">
+              <div className="rounded-xl border border-border bg-card p-4">
                 <div className="mb-4 flex items-center justify-between">
                   <div className="flex items-center gap-2 text-sm font-medium">
                     <GitBranch className="h-4 w-4 text-primary" />
@@ -404,7 +404,7 @@ function WorkflowQuickCreate() {
                             <div className="my-1 w-px flex-1 min-h-[24px] bg-border" />
                           )}
                         </div>
-                        <div className="mb-4 flex-1 rounded-lg border border-border bg-background/80 px-3 py-2.5">
+                        <div className="mb-4 flex-1 rounded-lg border border-border bg-background px-3 py-2.5">
                           <div className="text-sm font-medium">{title}</div>
                           <div className="mt-0.5 text-xs text-muted-foreground">{typeLabel}</div>
                         </div>

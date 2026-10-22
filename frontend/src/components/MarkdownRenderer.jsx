@@ -32,7 +32,7 @@ function renderInline(text, keyPrefix = '') {
     placeholders.push(
       <code
         key={`${keyPrefix}-code-${idx}`}
-        className="rounded bg-muted/80 px-1.5 py-0.5 text-[13px] font-mono text-primary"
+        className="rounded bg-muted px-1.5 py-0.5 text-[13px] font-mono text-primary"
       >
         {code}
       </code>
@@ -130,7 +130,7 @@ function parseMarkdown(content) {
       blocks.push(
         <pre
           key={`code-${blocks.length}`}
-          className="my-2 overflow-x-auto rounded-lg border border-border bg-card/80 p-3 text-[13px] leading-relaxed"
+          className="my-2 overflow-x-auto rounded-lg border border-border bg-card p-3 text-[13px] leading-relaxed"
         >
           <code className="font-mono text-muted-foreground">{codeLines.join('\n')}</code>
         </pre>

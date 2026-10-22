@@ -90,7 +90,7 @@ export default function AgentDslPanel({ agentId, form, onApplyDsl, canEdit = tru
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card/40 p-4">
+    <div className="rounded-lg border border-border bg-card p-4">
       <div className="mb-2 flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm font-semibold">
           <FileCode2 className="h-4 w-4 text-primary" />

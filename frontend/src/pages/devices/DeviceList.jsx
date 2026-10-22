@@ -1,9 +1,10 @@
-// 设备卡片、动作表格、设备列表行
+// 设备卡片、动作表格、设备列表行、骨架屏、数值单元格
 import { ChevronDown, ChevronRight, History, Plus, RefreshCw, TestTube, Wifi } from 'lucide-react'
 import {
   DEVICE_TYPE_LABELS,
   fmtRelative,
   fmtTime,
+  numCell,
   parseTags,
   successRate,
   truncate,
@@ -16,6 +17,72 @@ import {
   StatusBadge,
   Switch,
 } from './Badges'
+
+// ============ 数值单元格（表格数值列统一规范） ============
+// 等宽 + tabular-nums + 千位分隔符；null → '--'（带 tooltip），0 → 灰色
+export function NumCell({ value, title, className = '' }) {
+  const c = numCell(value)
+  return (
+    <span
+      className={`font-mono tabular-nums ${c.muted ? 'text-muted-foreground' : 'text-foreground'} ${className}`}
+      title={c.text === '--' ? title || '未统计' : undefined}
+    >
+      {c.text}
+    </span>
+  )
+}
+
+// ============ 骨架屏：卡片 ============
+export function DeviceCardSkeleton() {
+  return (
+    <div className="w-full overflow-hidden rounded-lg border border-border bg-card px-6 py-5">
+      <div className="flex items-center gap-4">
+        <div className="h-11 w-11 shrink-0 rounded-lg skeleton-shimmer" />
+        <div className="flex-1 space-y-2.5">
+          <div className="h-4 w-1/4 rounded skeleton-shimmer" />
+          <div className="h-3 w-2/5 rounded skeleton-shimmer" />
+        </div>
+        <div className="hidden shrink-0 items-center gap-1.5 sm:flex">
+          <div className="h-7 w-16 rounded-md skeleton-shimmer" />
+          <div className="h-7 w-16 rounded-md skeleton-shimmer" />
+          <div className="h-7 w-7 rounded-md skeleton-shimmer" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ============ 骨架屏：表格 ============
+export function DeviceTableSkeleton() {
+  return (
+    <div className="overflow-hidden rounded-lg border border-border">
+      <table className="w-full min-w-[1000px] table-fixed border-collapse text-sm">
+        <thead className="bg-card text-muted-foreground">
+          <tr>
+            {['ID', '设备名称', '类型', '厂商', 'API 地址', '状态', '动作数', '今日调用', '最后心跳', '操作'].map(
+              (h, i) => (
+                // eslint-disable-next-line react/no-array-index-key
+                <th key={i} className="px-4 py-3 text-left font-medium">
+                  {h}
+                </th>
+              )
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          {[0, 1, 2, 3, 4].map((i) => (
+            // eslint-disable-next-line react/no-array-index-key
+            <tr key={i} className="border-t border-border">
+              <td colSpan={10} className="px-4 py-3">
+                <div className="h-4 w-full rounded skeleton-shimmer" style={{ opacity: 1 - i * 0.15 }} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
 
 // ============ 设备卡片组件 ============
 export function DeviceCard({
@@ -43,41 +110,41 @@ export function DeviceCard({
 
   return (
     <div
-      className={`w-full overflow-hidden rounded-lg border transition ${
+      className={`card-hover w-full overflow-hidden rounded-lg border backdrop-blur-sm transition-colors ${
         expanded
-          ? 'border-primary bg-primary/5'
-          : 'border-border bg-card/40 hover:border-primary/50'
+          ? 'border-primary/60 bg-primary/5 shadow-[0_0_0_1px_color-mix(in_oklch,var(--ring)_15%,transparent),0_8px_24px_-12px_rgba(0,0,0,0.4)]'
+          : 'border-border bg-card hover:border-primary/40'
       }`}
     >
       {/* 设备行 */}
       <div
-        className="flex cursor-pointer items-center gap-3 p-4"
+        className="flex cursor-pointer items-center gap-4 px-6 py-5"
         onClick={() => onToggleExpand(device)}
       >
         {typeof checked === 'boolean' && (
           <input
             type="checkbox"
-            className="h-4 w-4 shrink-0 accent-primary"
+            className="h-4 w-4 shrink-0 cursor-pointer accent-primary"
             checked={checked}
             onClick={(e) => e.stopPropagation()}
             onChange={() => onToggleCheck?.(device)}
             title="勾选以导出"
           />
         )}
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/15 text-primary">
           <DeviceTypeIcon type={device.type} className="h-5 w-5" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="truncate text-sm font-semibold text-foreground">{device.name}</span>
-            <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            <span className="whitespace-nowrap rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
               #{device.id}
             </span>
-            <span className="whitespace-nowrap rounded bg-primary/15 px-1.5 py-0.5 text-[10px] text-primary">
+            <span className="whitespace-nowrap rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
               {DEVICE_TYPE_LABELS[device.type] || device.type}
             </span>
             {device.vendor && (
-              <span className="whitespace-nowrap text-[11px] text-muted-foreground/70">
+              <span className="whitespace-nowrap text-[11px] text-muted-foreground">
                 {device.vendor}
               </span>
             )}
@@ -91,17 +158,17 @@ export function DeviceCard({
               </span>
             ))}
           </div>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground/70">
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
             {device.ip_address && (
               <>
-                <span className="truncate" title={`IP: ${device.ip_address}`}>
+                <span className="truncate font-mono" title={`IP: ${device.ip_address}`}>
                   {device.ip_address}
                 </span>
-                <span>·</span>
+                <span className="text-muted-foreground">·</span>
               </>
             )}
             <span
-              className="truncate"
+              className="truncate font-mono"
               title={api_url || '未配置 API 地址'}
               style={{ maxWidth: 360 }}
             >
@@ -111,13 +178,17 @@ export function DeviceCard({
                 <span className="text-destructive">未配置</span>
               )}
             </span>
-            <span>·</span>
-            <span>动作 {device.action_count ?? '-'}</span>
-            <span>·</span>
-            <span>今日 {device.today_call_count ?? 0} 次</span>
+            <span className="text-muted-foreground">·</span>
+            <span title="动作总数">
+              动作 <NumCell value={device.action_count} className="!text-[11px]" title="未统计动作数" />
+            </span>
+            <span className="text-muted-foreground">·</span>
+            <span title="今日 API 调用次数">
+              今日 <NumCell value={device.today_call_count} className="!text-[11px]" title="今日暂无调用" /> 次
+            </span>
             {device.last_heartbeat && (
               <>
-                <span>·</span>
+                <span className="text-muted-foreground">·</span>
                 <span title={fmtTime(device.last_heartbeat)}>
                   心跳 {fmtRelative(device.last_heartbeat)}
                 </span>
@@ -133,7 +204,12 @@ export function DeviceCard({
             className="btn-secondary btn-sm"
             title="测试连接"
           >
-            {testing ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Wifi className="h-3 w-3" />}
+            {testing ? (
+              <RefreshCw className="h-3 w-3 animate-spin" />
+            ) : (
+              <Wifi className="h-3 w-3" />
+            )}
+            测试
           </button>
           <button type="button" onClick={() => onEdit(device)} className="btn-secondary btn-sm">
             编辑
@@ -154,7 +230,7 @@ export function DeviceCard({
 
       {/* 动作列表（展开时显示） */}
       {expanded && (
-        <div className="border-t border-border bg-background/40 p-4">
+        <div className="expand-in border-t border-border bg-background px-6 py-5">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               设备动作（{loadingActions ? '...' : actions.length} 个）
@@ -191,29 +267,41 @@ export function ActionTable({
   togglingActionId,
 }) {
   if (loading) {
-    return <div className="py-6 text-center text-xs text-muted-foreground/70">加载中...</div>
+    return (
+      <div className="space-y-2 rounded-lg border border-border p-3">
+        {[0, 1, 2].map((i) => (
+          // eslint-disable-next-line react/no-array-index-key
+          <div key={i} className="h-8 w-full rounded skeleton-shimmer" style={{ opacity: 1 - i * 0.2 }} />
+        ))}
+      </div>
+    )
   }
   if (actions.length === 0) {
-    return <div className="py-6 text-center text-xs text-muted-foreground/60">暂无动作，请新建</div>
+    return (
+      <div className="rounded-lg border border-dashed border-border bg-card py-8 text-center">
+        <div className="text-xs text-muted-foreground">该设备暂无动作</div>
+        <div className="mt-1 text-[11px] text-muted-foreground">点击右上角「新建动作」添加自动化操作</div>
+      </div>
+    )
   }
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
-      <table className="w-full min-w-[1100px] table-fixed border-collapse text-sm">
+      <table className="table-stagger w-full min-w-[1100px] table-fixed border-collapse text-sm">
         <thead className="bg-card text-muted-foreground">
           <tr>
-            <th className="w-16 px-3 py-2 text-left font-medium">ID</th>
-            <th className="w-40 px-3 py-2 text-left font-medium">动作名称</th>
-            <th className="w-20 px-3 py-2 text-left font-medium">分类</th>
-            <th className="w-16 px-3 py-2 text-left font-medium">方法</th>
-            <th className="px-3 py-2 text-left font-medium">API 路径</th>
-            <th className="w-16 px-3 py-2 text-left font-medium">版本</th>
-            <th className="w-28 px-3 py-2 text-left font-medium">最后调用</th>
-            <th className="w-16 px-3 py-2 text-right font-medium">24h调用</th>
-            <th className="w-16 px-3 py-2 text-right font-medium">成功率</th>
-            <th className="w-16 px-3 py-2 text-right font-medium">平均响应</th>
-            <th className="w-16 px-3 py-2 text-center font-medium">风险</th>
-            <th className="w-16 px-3 py-2 text-center font-medium">启用</th>
-            <th className="w-56 px-3 py-2 text-left font-medium">操作</th>
+            <th className="w-16 px-3 py-2.5 text-left font-medium">ID</th>
+            <th className="w-40 px-3 py-2.5 text-left font-medium">动作名称</th>
+            <th className="w-20 px-3 py-2.5 text-left font-medium">分类</th>
+            <th className="w-16 px-3 py-2.5 text-left font-medium">方法</th>
+            <th className="px-3 py-2.5 text-left font-medium">API 路径</th>
+            <th className="w-16 px-3 py-2.5 text-left font-medium">版本</th>
+            <th className="w-28 px-3 py-2.5 text-left font-medium">最后调用</th>
+            <th className="w-16 px-3 py-2.5 text-right font-medium">24h调用</th>
+            <th className="w-16 px-3 py-2.5 text-right font-medium">成功率</th>
+            <th className="w-16 px-3 py-2.5 text-right font-medium">平均响应</th>
+            <th className="w-16 px-3 py-2.5 text-center font-medium">风险</th>
+            <th className="w-16 px-3 py-2.5 text-center font-medium">启用</th>
+            <th className="w-56 px-3 py-2.5 text-left font-medium">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -222,36 +310,38 @@ export function ActionTable({
             return (
               <tr
                 key={a.id}
-                className={`border-t border-border hover:bg-primary/5 ${idx % 2 === 0 ? 'bg-card/30' : ''}`}
+                className={`table-row-hover border-t border-border hover:bg-accent ${idx % 2 === 0 ? 'bg-card' : ''}`}
               >
-                <td className="px-3 py-2 font-mono text-primary">#{a.id}</td>
-                <td className="truncate px-3 py-2 text-foreground" title={a.name}>
+                <td className="px-3 py-2.5 font-mono text-primary">#{a.id}</td>
+                <td className="truncate px-3 py-2.5 text-foreground" title={a.name}>
                   {a.name}
                 </td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-2.5">
                   <CategoryBadge category={a.category} />
                 </td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-2.5">
                   <MethodBadge method={a.http_method} />
                 </td>
-                <td className="truncate px-3 py-2 font-mono text-muted-foreground" title={a.api_path}>
+                <td className="truncate px-3 py-2.5 font-mono text-muted-foreground" title={a.api_path}>
                   {a.api_path || '-'}
                 </td>
-                <td className="px-3 py-2 font-mono text-[11px] text-muted-foreground">
+                <td className="px-3 py-2.5 font-mono text-[11px] tabular-nums text-muted-foreground">
                   v{a.version || 1}
                 </td>
-                <td className="px-3 py-2 text-[11px] text-muted-foreground" title={fmtTime(a.last_call_at)}>
+                <td className="px-3 py-2.5 text-[11px] text-muted-foreground" title={fmtTime(a.last_call_at)}>
                   {fmtRelative(a.last_call_at)}
                 </td>
-                <td className="px-3 py-2 text-right font-mono text-[11px] text-foreground">
-                  {a.call_count_24h ?? 0}
+                <td className="px-3 py-2.5 text-right">
+                  <NumCell value={a.call_count_24h} className="!text-[11px]" title="24h 内暂无调用" />
                 </td>
-                <td className="px-3 py-2 text-right">
+                <td className="px-3 py-2.5 text-right">
                   {rate == null ? (
-                    <span className="text-[11px] text-muted-foreground/60">-</span>
+                    <span className="text-[11px] text-muted-foreground" title="24h 内暂无调用，未统计成功率">
+                      --
+                    </span>
                   ) : (
                     <span
-                      className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                      className={`inline-block rounded px-1.5 py-0.5 font-mono text-[10px] font-medium tabular-nums ${
                         rate >= 0.9
                           ? 'bg-success/20 text-success'
                           : rate >= 0.5
@@ -263,13 +353,21 @@ export function ActionTable({
                     </span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-right font-mono text-[11px] text-muted-foreground">
-                  {a.avg_latency_ms != null ? `${a.avg_latency_ms}ms` : '-'}
+                <td className="px-3 py-2.5 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
+                  {a.avg_latency_ms != null ? (
+                    <span className={a.avg_latency_ms === 0 ? 'text-muted-foreground' : ''}>
+                      {a.avg_latency_ms}ms
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground" title="未统计">
+                      --
+                    </span>
+                  )}
                 </td>
-                <td className="px-3 py-2 text-center">
+                <td className="px-3 py-2.5 text-center">
                   <RiskBadge level={a.risk_level} />
                 </td>
-                <td className="px-3 py-2 text-center">
+                <td className="px-3 py-2.5 text-center">
                   <Switch
                     checked={!!a.enabled}
                     onChange={() => onToggle(a)}
@@ -277,7 +375,7 @@ export function ActionTable({
                     size="sm"
                   />
                 </td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-2.5">
                   <div className="flex items-center gap-1 whitespace-nowrap">
                     <button
                       type="button"
@@ -320,7 +418,7 @@ export function ActionTable({
   )
 }
 
-// ============ 设备列表行（用于分栏视图和列表视图） ============
+// ============ 设备列表行（用于分栏视图） ============
 export function DeviceRow({
   device,
   selected,
@@ -333,29 +431,33 @@ export function DeviceRow({
   return (
     <div
       onClick={onClick}
-      className={`flex cursor-pointer items-center gap-3 border-b border-border px-2 py-2.5 transition ${
-        selected ? 'bg-primary/10' : 'hover:bg-accent'
+      className={`flex cursor-pointer items-center gap-3 border-b border-border px-3 py-3 transition-colors ${
+        selected
+          ? 'border-l-2 border-l-primary bg-primary/10'
+          : 'border-l-2 border-l-transparent hover:bg-accent'
       }`}
     >
       {typeof checked === 'boolean' && (
         <input
           type="checkbox"
-          className="h-3.5 w-3.5 shrink-0 accent-primary"
+          className="h-3.5 w-3.5 shrink-0 cursor-pointer accent-primary"
           checked={checked}
           onClick={(e) => e.stopPropagation()}
           onChange={() => onToggleCheck?.(device)}
           title="勾选以导出"
         />
       )}
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-primary/15 text-primary">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
         <DeviceTypeIcon type={device.type} className="h-4 w-4" />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium text-foreground">{device.name}</span>
+          <span className={`truncate text-sm ${selected ? 'font-semibold text-foreground' : 'font-medium text-foreground'}`}>
+            {device.name}
+          </span>
           <StatusBadge status={device.status || (device.enabled ? 'unconfigured' : 'disabled')} />
         </div>
-        <div className="truncate text-[11px] text-muted-foreground/70">
+        <div className="truncate font-mono text-[11px] text-muted-foreground">
           {device.api_url ? truncate(device.api_url, 30) : '未配置'}
         </div>
       </div>
@@ -366,7 +468,7 @@ export function DeviceRow({
           onTest(device)
         }}
         disabled={testing}
-        className="text-muted-foreground hover:text-primary disabled:opacity-40"
+        className="text-muted-foreground transition-colors hover:text-primary disabled:opacity-40"
         title="测试连接"
       >
         {testing ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}

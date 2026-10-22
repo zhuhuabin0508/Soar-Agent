@@ -20,10 +20,11 @@ from app.schemas.execution_trace import ExecutionTraceOut
 
 logger = logging.getLogger(__name__)
 
+# 路由级基线：强制登录；查询接口均为只读，按接口单独声明 execution:view
 router = APIRouter(
     prefix="/executions",
     tags=["executions"],
-    dependencies=[Depends(require_permission("execution", "view"))],
+    dependencies=[Depends(get_current_user)],
 )
 
 
@@ -38,6 +39,7 @@ def list_executions(
     since: Optional[str] = Query(None, description="按创建时间过滤，ISO 日期字符串（如 2026-08-01 或 2026-08-01T00:00:00）"),
     until: Optional[str] = Query(None, description="按创建时间上限过滤，ISO 日期字符串"),
     db: Session = Depends(get_db),
+    current_user=Depends(require_permission("execution", "view")),
 ) -> list[Execution]:
     """查询执行记录列表（分页，支持按工作流/状态/触发类型/智能体/时间范围过滤）。
 
@@ -90,7 +92,9 @@ def list_executions(
 
 @router.get("/{execution_id}")
 def get_execution(
-    execution_id: int, db: Session = Depends(get_db)
+    execution_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("execution", "view")),
 ) -> dict[str, Any]:
     """查询单个执行详情，含节点轨迹列表。
 
@@ -144,6 +148,7 @@ def get_stats_overview(
     days: int = Query(7, ge=1, le=90, description="统计最近 N 天的数据"),
     workflow_id: Optional[int] = Query(None, description="按工作流 ID 过滤；不传则统计全部"),
     db: Session = Depends(get_db),
+    current_user=Depends(require_permission("execution", "view")),
 ) -> dict[str, Any]:
     """监测统计概览：成功率 / 平均耗时 / 按天趋势 / 触发类型分布 / 节点瓶颈。
 

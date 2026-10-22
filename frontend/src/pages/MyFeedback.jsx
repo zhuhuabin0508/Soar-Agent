@@ -6,7 +6,7 @@ import { Inbox, Eye, RotateCcw, MessageSquareWarning, Paperclip, Download, X } f
 import { feedbackApi } from '../api/client'
 import { toast } from '../store/toastStore'
 import FeedbackDrawer from '../components/FeedbackDrawer'
-import { PageContainer, PageHeader, DataTable, Pagination, Button } from '../components/ui'
+import { PageContainer, PageHeader, DataTable, Pagination, Button, CompactSelect } from '../components/ui'
 import useLockBackgroundScroll from '../hooks/useLockBackgroundScroll'
 import {
   FEEDBACK_TYPES,
@@ -28,7 +28,7 @@ function Field({ label, children }) {
     <div className="flex flex-col gap-1 py-2 sm:flex-row sm:gap-4">
       <div className="w-28 shrink-0 text-xs text-muted-foreground">{label}</div>
       <div className="min-w-0 flex-1 whitespace-pre-wrap break-words text-sm text-foreground">
-        {children || <span className="text-muted-foreground/70">—</span>}
+        {children || <span className="text-muted-foreground">—</span>}
       </div>
     </div>
   )
@@ -66,7 +66,7 @@ function HistoryTimeline({ histories }) {
               </span>
             )}
             {h.operator_name && (
-              <span className="text-xs text-muted-foreground/80">操作人：{h.operator_name}</span>
+              <span className="text-xs text-muted-foreground">操作人：{h.operator_name}</span>
             )}
           </div>
           {h.content && (
@@ -74,7 +74,7 @@ function HistoryTimeline({ histories }) {
               {h.content}
             </p>
           )}
-          <div className="mt-1 text-xs tabular-nums text-muted-foreground/60">
+          <div className="mt-1 text-xs tabular-nums text-muted-foreground">
             {fmtTime(h.created_at)}
           </div>
         </li>
@@ -179,7 +179,7 @@ function DetailDrawer({ open, onClose, feedbackId, onReopened }) {
         {/* 内容区 */}
         <div data-allow-scroll className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-5">
           {loading || !detail ? (
-            <div className="flex h-40 items-center justify-center text-sm text-muted-foreground/70">
+            <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
               加载中...
             </div>
           ) : (
@@ -197,7 +197,7 @@ function DetailDrawer({ open, onClose, feedbackId, onReopened }) {
               </div>
 
               {/* 完整字段 */}
-              <div className="divide-y divide-border/60 rounded-lg border border-border bg-muted/30 px-4 py-1">
+              <div className="divide-y divide-border rounded-lg border border-border bg-muted px-4 py-1">
                 <Field label="所属模块">{detail.module}</Field>
                 {detail.type === 'bug' && (
                   <>
@@ -256,7 +256,7 @@ function DetailDrawer({ open, onClose, feedbackId, onReopened }) {
                             src={url}
                             alt={a.name}
                             loading="lazy"
-                            className="max-h-40 w-full object-contain bg-muted/50"
+                            className="max-h-40 w-full object-contain bg-muted"
                           />
                           <div className="flex items-center justify-between gap-2 px-3 py-1.5 text-xs text-muted-foreground">
                             <span className="truncate">{a.name}</span>
@@ -269,7 +269,7 @@ function DetailDrawer({ open, onClose, feedbackId, onReopened }) {
                           href={url}
                           target="_blank"
                           rel="noreferrer"
-                          className="flex items-center gap-2 rounded-md border border-border bg-muted/50 px-3 py-2 text-sm transition-colors hover:border-primary"
+                          className="flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2 text-sm transition-colors hover:border-primary"
                         >
                           <Download className="h-4 w-4 shrink-0 text-muted-foreground" />
                           <span className="min-w-0 flex-1 truncate text-foreground" title={a.name}>
@@ -458,10 +458,10 @@ function MyFeedback() {
 
       {/* 筛选栏 */}
       <div className="mb-3 flex flex-wrap items-center gap-3">
-        <select
+        <CompactSelect
           value={filters.type}
           onChange={(e) => applyFilters({ ...filters, type: e.target.value })}
-          className="rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground outline-none transition focus:border-primary"
+          size="lg"
         >
           <option value="">全部类型</option>
           {FEEDBACK_TYPES.map((t) => (
@@ -469,11 +469,11 @@ function MyFeedback() {
               {t.label}
             </option>
           ))}
-        </select>
-        <select
+        </CompactSelect>
+        <CompactSelect
           value={filters.status}
           onChange={(e) => applyFilters({ ...filters, status: e.target.value })}
-          className="rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground outline-none transition focus:border-primary"
+          size="lg"
         >
           <option value="">全部状态</option>
           {FEEDBACK_STATUSES.map((s) => (
@@ -481,7 +481,7 @@ function MyFeedback() {
               {s.label}
             </option>
           ))}
-        </select>
+        </CompactSelect>
       </div>
 
       {/* 错误提示 */}

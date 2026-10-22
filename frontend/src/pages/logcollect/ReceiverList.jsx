@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Activity, AlertTriangle, Inbox, ListTree, Plus, RefreshCw,
+  Inbox, Plus, RefreshCw,
   Radio, SlidersHorizontal, Trash2, X, Zap,
 } from 'lucide-react'
 import { confirm } from '../../components/ConfirmDialog'
@@ -14,7 +14,7 @@ import { inputCls } from '../../components/property/FormControls'
 import { devices as devicesApi } from '../../api/client'
 import { strategyApi } from '../../api/strategy'
 import { Section, Switch } from '../devices/Badges'
-import { Button, PageContainer, PageHeader, DataTable } from '../../components/ui'
+import { DataTable, CompactSelect } from '../../components/ui'
 import {
   LISTEN_PROTOCOLS, SOURCE_TYPE_META, PROTOCOL_TAG_CLS, RECEIVER_STATUS_META,
   parseAdapterConfig, getCfg, setCfgValue, receiverAccessInfo, receiverEndpoint, receiverToBody,
@@ -39,10 +39,10 @@ function AdapterConfigSection({ meta, cfg, onChange }) {
                   <span className="text-xs text-muted-foreground">{f.hint || (raw ? '已启用' : '未启用')}</span>
                 </div>
               ) : f.type === 'select' ? (
-                <select className={inputCls} value={String(raw ?? '')} onChange={(e) => setCfg(f.key, e.target.value)}>
+                <CompactSelect value={String(raw ?? '')} onChange={(e) => setCfg(f.key, e.target.value)} size="lg" block>
                   <option value="">{f.placeholder || '默认'}</option>
                   {(f.options || []).map((o) => (<option key={o.value} value={o.value}>{o.label}</option>))}
-                </select>
+                </CompactSelect>
               ) : f.type === 'textarea' ? (
                 <textarea className={inputCls} rows={2} value={display} placeholder={f.placeholder} onChange={(e) => setCfg(f.key, e.target.value)} />
               ) : f.type === 'json' ? (
@@ -61,7 +61,7 @@ function AdapterConfigSection({ meta, cfg, onChange }) {
                   onChange={(e) => setCfg(f.key, f.type === 'number' ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value)}
                 />
               )}
-              {f.hint && f.type !== 'bool' && <div className="mt-1 text-[10px] leading-tight text-muted-foreground/70">{f.hint}</div>}
+              {f.hint && f.type !== 'bool' && <div className="mt-1 text-[10px] leading-tight text-muted-foreground">{f.hint}</div>}
             </label>
           )
         })}
@@ -248,9 +248,9 @@ function ReceiverConfigDrawer({ open, initial, receivers, devices, strategies, o
                 </label>
                 <label>
                   <div className="mb-1 text-xs font-medium text-muted-foreground">接收方式 *</div>
-                  <select className={inputCls} value={form.protocol} onChange={(e) => set('protocol', e.target.value)} disabled={!isCreate}>
+                  <CompactSelect value={form.protocol} onChange={(e) => set('protocol', e.target.value)} disabled={!isCreate} size="lg" block>
                     {Object.entries(SOURCE_TYPE_META).map(([v, m]) => (<option key={v} value={v}>{m.label}</option>))}
-                  </select>
+                  </CompactSelect>
                 </label>
               </div>
               <label className="mt-3 block">
@@ -272,15 +272,15 @@ function ReceiverConfigDrawer({ open, initial, receivers, devices, strategies, o
                     </label>
                     <label>
                       <div className="mb-1 text-xs font-medium text-muted-foreground">传输协议</div>
-                      <select className={inputCls} value={form.syslog_proto} onChange={(e) => set('syslog_proto', e.target.value)}>
+                      <CompactSelect value={form.syslog_proto} onChange={(e) => set('syslog_proto', e.target.value)} size="lg" block>
                         <option value="udp">UDP</option>
                         <option value="tcp">TCP</option>
-                      </select>
+                      </CompactSelect>
                     </label>
                     <label>
                       <div className="mb-1 text-xs font-medium text-muted-foreground">监听地址</div>
                       <input className={inputCls} value={form.syslog_bind} onChange={(e) => set('syslog_bind', e.target.value)} placeholder="0.0.0.0" />
-                      <div className="mt-1 text-[10px] leading-tight text-muted-foreground/70">0.0.0.0 监听所有接口；填本机不存在的地址会启动失败</div>
+                      <div className="mt-1 text-[10px] leading-tight text-muted-foreground">0.0.0.0 监听所有接口；填本机不存在的地址会启动失败</div>
                     </label>
                   </div>
                   {/* 条目自动发现（监听型专属，存 adapter_config） */}
@@ -292,7 +292,7 @@ function ReceiverConfigDrawer({ open, initial, receivers, devices, strategies, o
                       />
                       <div className="text-xs text-muted-foreground">
                         条目自动发现
-                        <div className="text-[10px] text-muted-foreground/70">按来源 IP 自动生成数据源条目，未配置的条目跟随接收器默认模板</div>
+                        <div className="text-[10px] text-muted-foreground">按来源 IP 自动生成数据源条目，未配置的条目跟随接收器默认模板</div>
                       </div>
                     </div>
                     <label>
@@ -303,7 +303,7 @@ function ReceiverConfigDrawer({ open, initial, receivers, devices, strategies, o
                         placeholder="1000"
                         onChange={(e) => set('adapter_config', setCfgValue(form.adapter_config, 'entry_max_count', e.target.value === '' ? '' : Number(e.target.value)))}
                       />
-                      <div className="mt-1 text-[10px] text-muted-foreground/70">超过上限后新来源不再建条目，走接收器默认配置</div>
+                      <div className="mt-1 text-[10px] text-muted-foreground">超过上限后新来源不再建条目，走接收器默认配置</div>
                     </label>
                   </div>
                 </div>
@@ -337,30 +337,30 @@ function ReceiverConfigDrawer({ open, initial, receivers, devices, strategies, o
               <div className="grid grid-cols-2 gap-3">
                 <label>
                   <div className="mb-1 text-xs font-medium text-muted-foreground">默认归属设备{isListen ? '' : ' *'}</div>
-                  <select className={inputCls} value={form.device_id} onChange={(e) => set('device_id', e.target.value)}>
+                  <CompactSelect value={form.device_id} onChange={(e) => set('device_id', e.target.value)} size="lg" block>
                     <option value="">{isListen ? '按数据源条目自动归属（推荐）' : '请选择设备'}</option>
                     {(devices || []).map((d) => (<option key={d.id} value={d.id}>{d.name}</option>))}
-                  </select>
-                  <div className="mt-1 text-[10px] text-muted-foreground/70">
+                  </CompactSelect>
+                  <div className="mt-1 text-[10px] text-muted-foreground">
                     {isListen ? '仅当数据源条目未绑定设备时使用此默认归属' : '拉取型必须绑定设备，接收日志与告警均计入该设备'}
                   </div>
                 </label>
                 <label>
                   <div className="mb-1 text-xs font-medium text-muted-foreground">内容格式</div>
-                  <select className={inputCls} value={form.format} onChange={(e) => set('format', e.target.value)}>
+                  <CompactSelect value={form.format} onChange={(e) => set('format', e.target.value)} size="lg" block>
                     <option value="json">JSON</option>
                     <option value="raw">原始文本</option>
-                  </select>
+                  </CompactSelect>
                 </label>
               </div>
               <label className="mt-3 block">
                 <div className="mb-1 text-xs font-medium text-muted-foreground">解析模板</div>
-                <select className={inputCls} value={form.strategy_id} onChange={(e) => set('strategy_id', e.target.value)}>
+                <CompactSelect value={form.strategy_id} onChange={(e) => set('strategy_id', e.target.value)} size="lg" block>
                   <option value="">自动匹配（推荐）</option>
                   {(strategies || []).map((s) => (
                     <option key={s.id} value={s.id}>{s.strategy_name}{s.device_type ? `（${s.device_type}）` : ''}</option>
                   ))}
-                </select>
+                </CompactSelect>
                 <div className="mt-1 text-xs text-muted-foreground">
                   {form.strategy_id
                     ? '固定使用该模板解析，失败即记为失败，不会自动切换其他模板。'
@@ -380,7 +380,7 @@ function ReceiverConfigDrawer({ open, initial, receivers, devices, strategies, o
             </Section>
 
             {isCreate && (
-              <div className="rounded-md bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
+              <div className="rounded-md bg-secondary px-3 py-2 text-xs text-muted-foreground">
                 保存后设备日志到达即按来源 IP 自动生成数据源条目；条目归属设备与解析模板可在「数据源条目」页逐条配置。
               </div>
             )}
@@ -400,6 +400,15 @@ function ReceiverConfigDrawer({ open, initial, receivers, devices, strategies, o
 }
 
 // ============ 接收器管理页 ============
+// 状态指标 chips：圆点色 + 激活态配色（运行中=绿 / 异常=红 / 已停用=灰 / 今日有接收=主题色 / 今日有失败=橙）
+const STATUS_CHIPS = [
+  { key: 'running', label: '运行中', dot: 'bg-success', active: 'bg-success/15 text-success ring-success/40' },
+  { key: 'abnormal', label: '异常', dot: 'bg-destructive', active: 'bg-destructive/15 text-destructive ring-destructive/40' },
+  { key: 'stopped', label: '已停用', dot: 'bg-zinc-500', active: 'bg-zinc-500/15 text-zinc-400 ring-zinc-500/40' },
+  { key: 'today_active', label: '今日有接收', dot: 'bg-primary', active: 'bg-primary/15 text-primary ring-primary/40' },
+  { key: 'today_failed', label: '今日有失败', dot: 'bg-warning', active: 'bg-warning/15 text-warning ring-warning/40' },
+]
+
 export default function ReceiverList() {
   const navigate = useNavigate()
   const [receivers, setReceivers] = useState([])
@@ -472,26 +481,26 @@ export default function ReceiverList() {
 
   const s = summary || {}
 
-  // 统计卡片下钻筛选：''=全部 running=运行中 abnormal=异常 today_active=今日有接收 today_failed=今日有失败
+  // 快捷筛选 chips：''=全部 running=运行中 abnormal=异常 stopped=已停用 today_active=今日有接收 today_failed=今日有失败
   const [cardFilter, setCardFilter] = useState('')
-  const CARD_FILTER_LABELS = { running: '运行中', abnormal: '异常', today_active: '今日有接收', today_failed: '今日有失败' }
   const isRunning = (r) => !!r.enabled && ['listening', 'running'].includes(r.status)
   const isAbnormal = (r) => !!r.enabled && ['start_failed', 'failed', 'stopped'].includes(r.status)
+  // 指标统计：从现有 receivers 派生（不新增 API 请求）
+  const listStats = useMemo(() => ({
+    running: receivers.filter(isRunning).length,
+    abnormal: receivers.filter(isAbnormal).length,
+    stopped: receivers.filter((r) => !r.enabled).length,
+    todayActive: receivers.filter((r) => (r.today_total ?? 0) > 0).length,
+    todayFailed: receivers.filter((r) => (r.today_fail ?? 0) > 0).length,
+  }), [receivers]) // eslint-disable-line react-hooks/exhaustive-deps
   const filteredReceivers = useMemo(() => {
     if (cardFilter === 'running') return receivers.filter(isRunning)
     if (cardFilter === 'abnormal') return receivers.filter(isAbnormal)
+    if (cardFilter === 'stopped') return receivers.filter((r) => !r.enabled)
     if (cardFilter === 'today_active') return receivers.filter((r) => (r.today_total ?? 0) > 0)
     if (cardFilter === 'today_failed') return receivers.filter((r) => (r.today_fail ?? 0) > 0)
     return receivers
   }, [receivers, cardFilter]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const statCards = [
-    { label: '接收器', value: s.receiver_count ?? 0, icon: Radio, cls: '', filter: '', tip: '查看全部接收器' },
-    { label: '运行中', value: s.running_count ?? 0, icon: Activity, cls: 'text-success', filter: 'running', tip: '筛选运行中的接收器' },
-    { label: '异常', value: s.abnormal_count ?? 0, icon: AlertTriangle, cls: s.abnormal_count ? 'text-destructive' : 'text-muted-foreground', filter: 'abnormal', tip: '筛选异常的接收器' },
-    { label: '今日接收', value: s.today_total ?? 0, icon: Inbox, cls: '', filter: 'today_active', tip: '筛选今日有日志到达的接收器' },
-    { label: '今日失败', value: s.today_fail ?? 0, icon: Zap, cls: s.today_fail ? 'text-destructive' : 'text-muted-foreground', filter: 'today_failed', tip: '筛选今日有解析失败的接收器' },
-  ]
 
   const fmtCount = (n) => (n ?? 0).toLocaleString()
 
@@ -506,7 +515,7 @@ export default function ReceiverList() {
               固定模板：{strategyName(r.strategy_id)}
             </div>
           ) : (
-            <div className="text-[11px] text-muted-foreground/60">模板自动匹配</div>
+            <div className="text-[11px] text-muted-foreground">模板自动匹配</div>
           )}
         </div>
       ),
@@ -546,9 +555,9 @@ export default function ReceiverList() {
       key: 'today', header: '今日接收 / 失败', width: '130px', numeric: true,
       render: (r) => (
         <span>
-          <span className={`tabular-nums ${(r.today_total ?? 0) > 0 ? '' : 'text-muted-foreground/50'}`}>{fmtCount(r.today_total)}</span>
-          <span className="mx-1 text-muted-foreground/40">/</span>
-          <span className={`tabular-nums ${r.today_fail ? 'text-destructive' : 'text-muted-foreground/50'}`} title="今日接收失败数">
+          <span className={`tabular-nums ${(r.today_total ?? 0) > 0 ? '' : 'text-muted-foreground'}`}>{fmtCount(r.today_total)}</span>
+          <span className="mx-1 text-muted-foreground">/</span>
+          <span className={`tabular-nums ${r.today_fail ? 'text-destructive' : 'text-muted-foreground'}`} title="今日接收失败数">
             {fmtCount(r.today_fail)}
           </span>
         </span>
@@ -558,7 +567,7 @@ export default function ReceiverList() {
       key: 'entries', header: '发现条目', width: '110px', numeric: true,
       render: (r) => {
         if (!LISTEN_PROTOCOLS.has(r.protocol)) {
-          return <span className="text-muted-foreground/40" title="拉取型无来源条目">--</span>
+          return <span className="text-muted-foreground" title="拉取型无来源条目">--</span>
         }
         const n = r.entries_count ?? 0
         return (
@@ -568,7 +577,7 @@ export default function ReceiverList() {
             onClick={(e) => { e.stopPropagation(); navigate(`/source-entries?receiver=${r.id}`) }}
             title={`查看 ${r.name} 的数据源条目`}
           >
-            <span className={n ? 'bg-primary/15 px-1.5 py-0.5 text-primary' : 'px-1.5 py-0.5 text-muted-foreground/50'}>{fmtCount(n)}</span>
+            <span className={n ? 'bg-primary/15 px-1.5 py-0.5 text-primary' : 'px-1.5 py-0.5 text-muted-foreground'}>{fmtCount(n)}</span>
           </button>
         )
       },
@@ -582,22 +591,22 @@ export default function ReceiverList() {
       ),
     },
     {
-      key: 'actions', header: '操作', width: '110px',
+      key: 'actions', header: '操作', width: '125px',
       render: (r) => (
         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
           <button
             type="button" onClick={() => handleReload(r)}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-primary"
+            className="btn-secondary btn-sm"
             title="应用配置 / 重启"
           >
-            <RefreshCw className="h-4 w-4" />
+            <RefreshCw className="h-3.5 w-3.5" />
           </button>
           <button
             type="button" onClick={() => handleDelete(r)}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
+            className="btn-danger btn-sm"
             title="删除"
           >
-            <Trash2 className="h-4 w-4" />
+            <Trash2 className="h-3.5 w-3.5" />
           </button>
         </div>
       ),
@@ -605,84 +614,114 @@ export default function ReceiverList() {
   ]
 
   return (
-    <PageContainer>
-      <PageHeader
-        title="接收器"
-        description="管理日志监听端点：接收器只负责监听，日志到达后按来源 IP 自动生成数据源条目，由条目绑定设备与解析模板"
-        actions={(
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" onClick={load} disabled={loading}>
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> 刷新
-            </Button>
-            <Button variant="primary" onClick={() => { setEditing(null); setDrawerOpen(true) }}>
-              <Plus className="h-4 w-4" /> 添加接收器
-            </Button>
+    <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
+      <header className="flex items-center justify-between gap-4 border-b border-border bg-card px-6 py-4">
+        <div className="flex min-w-0 items-baseline gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">接收器</h1>
+          {!loading && (
+            <span className="text-xs text-muted-foreground">
+              共 <span className="font-medium tabular-nums text-foreground">{fmtCount(filteredReceivers.length)}</span> 个接收器
+            </span>
+          )}
+          <span className="hidden text-xs text-muted-foreground xl:inline">8 类日志源接入 · 到达后按来源 IP 自动生成数据源条目</span>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <button type="button" onClick={load} className="btn-secondary btn-sm" title="刷新接收器列表">
+            <RefreshCw className={`mr-1 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> 刷新
+          </button>
+          <button
+            type="button"
+            onClick={() => { setEditing(null); setDrawerOpen(true) }}
+            className="btn-primary btn-sm"
+          >
+            <Plus className="mr-1 h-3.5 w-3.5" /> 新建接收器
+          </button>
+        </div>
+      </header>
+
+      <div className="flex-1 overflow-y-auto p-6">
+        {/* 状态指标条：运行分布（点击快速筛选，再点取消）+ 汇总指标 */}
+        {!loading && receivers.length > 0 && (
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            {STATUS_CHIPS.map((chip) => {
+              const active = cardFilter === chip.key
+              const count = listStats[chip.key] || 0
+              return (
+                <button
+                  key={chip.key} type="button"
+                  onClick={() => setCardFilter(active ? '' : chip.key)}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all duration-200 ${
+                    active
+                      ? `border-transparent ring-1 ${chip.active}`
+                      : 'border-border bg-secondary text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                  }`}
+                  title={active ? '点击取消该筛选' : `点击筛选「${chip.label}」的接收器`}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${chip.dot} ${
+                      chip.key === 'running' && count > 0 ? 'animate-pulse' : ''
+                    }`}
+                  />
+                  {chip.label}
+                  <span className={`tabular-nums ${count > 0 ? '' : 'text-muted-foreground'}`}>{fmtCount(count)}</span>
+                </button>
+              )
+            })}
+            <div className="ml-auto flex items-center gap-4 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5" title="全部接收器今日接收的日志总量">
+                <Inbox className="h-3.5 w-3.5 text-primary/80" />
+                今日接收
+                <span
+                  className={`font-semibold tabular-nums ${
+                    (s.today_total ?? 0) > 0 ? 'text-foreground' : 'text-muted-foreground'
+                  }`}
+                >
+                  {(s.today_total ?? 0) > 0 ? fmtCount(s.today_total) : '--'}
+                </span>
+              </span>
+              <span className="inline-flex items-center gap-1.5" title="全部接收器今日解析失败总数">
+                <Zap className="h-3.5 w-3.5 text-primary/80" />
+                今日失败
+                <span
+                  className={`font-semibold tabular-nums ${
+                    (s.today_fail ?? 0) > 0 ? 'text-destructive' : 'text-muted-foreground'
+                  }`}
+                >
+                  {(s.today_fail ?? 0) > 0 ? fmtCount(s.today_fail) : '--'}
+                </span>
+              </span>
+            </div>
           </div>
         )}
-      />
 
-      {/* 概览统计卡片（点击下钻筛选列表） */}
-      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
-        {statCards.map((c) => {
-          const active = !!c.filter && cardFilter === c.filter
-          return (
-            <div
-              key={c.label}
-              role="button"
-              tabIndex={0}
-              title={`${c.tip}（点击查看）`}
-              onClick={() => setCardFilter((v) => (v === c.filter ? '' : c.filter))}
-              className={`card cursor-pointer px-5 py-4 transition hover:border-primary/40 hover:shadow-md ${active ? 'border-primary/40 ring-1 ring-primary/20' : ''}`}
-            >
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <c.icon className="h-3.5 w-3.5" />
-                {c.label}
-              </div>
-              <div className={`mt-1 text-2xl font-semibold tabular-nums ${c.cls}`}>{fmtCount(c.value)}</div>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* 接收器列表 */}
-      <div className="card">
-        <div className="flex items-center justify-between border-b border-border px-5 py-3">
-          <div className="flex items-center gap-2">
-            <ListTree className="h-4 w-4 text-primary" />
-            <span className="text-sm font-medium">接收器列表</span>
-            <span className="text-xs text-muted-foreground">
-              8 类日志源接入：推送（Syslog / SNMP Trap / NetFlow）、拉取（REST API / 数据库）、本机（文件跟踪 / 镜像抓包）与 Kafka 消费
-            </span>
-          </div>
-          {cardFilter ? (
-            <button
-              type="button"
-              onClick={() => setCardFilter('')}
-              title="清除筛选，显示全部接收器"
-              className="flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs text-primary transition hover:bg-primary/20"
-            >
-              筛选：{CARD_FILTER_LABELS[cardFilter]} · {filteredReceivers.length}/{receivers.length}
-              <X className="h-3 w-3" />
-            </button>
-          ) : (
-            <span className="text-xs text-muted-foreground">点击行打开配置抽屉</span>
-          )}
+        {/* 接收器列表 */}
+        <div className="overflow-hidden rounded-lg border border-border">
+          <DataTable
+            className="table-stagger"
+            columns={columns}
+            data={filteredReceivers}
+            loading={loading}
+            rowKey="id"
+            onRowClick={(r) => { setEditing(r); setDrawerOpen(true) }}
+            rowClickHint="点击编辑"
+            emptyIcon={Radio}
+            emptyText={receivers.length === 0 ? '暂无接收器' : '未找到匹配的接收器'}
+            emptyDescription={
+              receivers.length === 0
+                ? '新建接收器配置监听端点，设备日志到达后按来源 IP 自动生成数据源条目'
+                : '点击上方指标重新筛选，或清除筛选查看全部接收器'
+            }
+            emptyAction={receivers.length === 0 ? (
+              <button type="button" onClick={() => { setEditing(null); setDrawerOpen(true) }} className="btn-primary btn-sm">
+                <Plus className="mr-1 h-3.5 w-3.5" /> 新建接收器
+              </button>
+            ) : (
+              <button type="button" onClick={() => setCardFilter('')} className="btn-secondary btn-sm">
+                清除筛选
+              </button>
+            )}
+          />
         </div>
-        <DataTable
-          columns={columns}
-          data={filteredReceivers}
-          loading={loading}
-          rowKey="id"
-          onRowClick={(r) => { setEditing(r); setDrawerOpen(true) }}
-          emptyIcon={Radio}
-          emptyText="暂无接收器"
-          emptyDescription="点击「添加接收器」配置监听端点，设备日志到达后自动生成数据源条目"
-          emptyAction={(
-            <Button variant="primary" onClick={() => { setEditing(null); setDrawerOpen(true) }}>
-              <Plus className="h-4 w-4" /> 添加接收器
-            </Button>
-          )}
-        />
       </div>
 
       {/* 接收器配置抽屉 */}
@@ -695,6 +734,6 @@ export default function ReceiverList() {
         onClose={() => { setDrawerOpen(false); setEditing(null) }}
         onSaved={load}
       />
-    </PageContainer>
+    </div>
   )
 }

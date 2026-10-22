@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react'
 import ReactECharts from 'echarts-for-react'
 import { getStatsOverview } from '../api/executions'
 import { workflows as workflowsApi } from '../api/client'
+import { CompactSelect } from '../components/ui'
 
 // 统计卡片：图标 + 数值 + 标签
 function StatCard({ icon, label, value, suffix, accent }) {
@@ -236,10 +237,10 @@ function MonitorDashboard() {
           {/* 工作流筛选 */}
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-gray-400">工作流</span>
-            <select
+            <CompactSelect
+              size="lg"
               value={workflowId}
               onChange={(e) => setWorkflowId(e.target.value)}
-              className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-sm text-white outline-none focus:border-brand-500"
             >
               <option value="">全部</option>
               {workflows.map((w) => (
@@ -247,7 +248,7 @@ function MonitorDashboard() {
                   {w.name}
                 </option>
               ))}
-            </select>
+            </CompactSelect>
           </div>
           {/* 天数选择器 */}
           <div className="flex items-center gap-1 rounded-lg border border-gray-800 bg-gray-900/60 p-1">

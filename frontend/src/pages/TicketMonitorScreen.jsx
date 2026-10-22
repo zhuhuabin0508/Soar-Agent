@@ -56,8 +56,11 @@ function axisStyle(extra = {}) {
 // ============ 通用面板卡片（深蓝黑半透明底 + 微发光描边 + 橙色竖条标题 + 英文副标题） ============
 function Panel({ title, subtitle, icon: Icon, right, children, className = '', bodyClassName = '', ...rest }) {
   return (
-    <div className={`relative flex flex-col rounded-md border backdrop-blur-sm ${className}`}
+    <div className={`relative flex flex-col rounded-md border backdrop-blur-md ${className}`}
       style={{ background: C.panelBg, borderColor: C.panelBorder, boxShadow: `0 0 14px rgba(80, 130, 190, 0.14), inset 0 0 24px rgba(8, 16, 26, 0.4)` }} {...rest}>
+      {/* 玻璃顶缘高光：层叠质感 */}
+      <div className="pointer-events-none absolute inset-x-3 top-0 z-10 h-px"
+        style={{ background: 'linear-gradient(90deg, transparent, rgba(168,200,236,0.4), transparent)' }} />
       <div className="flex items-center gap-2 border-b px-4 py-2.5"
         style={{ borderColor: 'rgba(96,138,188,0.22)' }}>
         <span className="h-3.5 w-[3px] rounded" style={{ background: C.accent, boxShadow: `0 0 6px ${C.accent}80` }} />
@@ -115,16 +118,45 @@ function HeaderBar() {
   )
 }
 
-// ============ ① KPI 指标卡（数字 + 昨日对比箭头） ============
+// ============ ① KPI 指标卡（数字滚动动画 + 昨日对比箭头） ============
+// 数字缓动滚动（科技感）；系统开启"减少动态效果"时直接显示终值
+function useCountUp(value, duration = 800) {
+  const [display, setDisplay] = useState(value ?? 0)
+  const fromRef = useRef(value ?? 0)
+  useEffect(() => {
+    const target = value ?? 0
+    const from = fromRef.current
+    if (from === target) return undefined
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      fromRef.current = target
+      setDisplay(target)
+      return undefined
+    }
+    const start = performance.now()
+    let raf
+    const tick = (t) => {
+      const p = Math.min(1, (t - start) / duration)
+      const eased = 1 - Math.pow(1 - p, 3)
+      setDisplay(Math.round(from + (target - from) * eased))
+      if (p < 1) raf = requestAnimationFrame(tick)
+      else fromRef.current = target
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [value, duration])
+  return value === null || value === undefined ? value : display
+}
+
 function KpiCard({ label, value, unit = '件', tone = 'blue', delta, deltaLabel = '较昨日' }) {
   const toneColor = tone === 'red' ? C.red : tone === 'green' ? C.green : tone === 'orange' ? C.orange : C.lightBlue
+  const animated = useCountUp(value)
   return (
-    <div className="relative flex flex-col justify-center rounded-md border px-4"
+    <div className="relative flex flex-col justify-center rounded-md border px-4 transition-all duration-300 hover:brightness-110"
       style={{ background: 'linear-gradient(160deg, rgba(78,138,212,0.14), rgba(14,26,38,0.72))', borderColor: 'rgba(96,138,188,0.35)', boxShadow: '0 0 10px rgba(80,130,190,0.10)' }}>
       <div className="text-[13px]" style={{ color: C.subText }}>{label}</div>
       <div className="flex items-baseline gap-2">
         <span className="font-mono text-[30px] font-bold leading-[1.15] tabular-nums" style={{ color: toneColor, textShadow: `0 0 10px ${toneColor}40` }}>
-          {value ?? '--'}
+          {animated ?? '--'}
         </span>
         <span className="text-[11px]" style={{ color: C.subText }}>{unit}</span>
         {delta !== undefined && delta !== null && (
@@ -306,42 +338,87 @@ function DistPanel({ dist, severityStatus }) {
   )
 }
 
-// ============ ④ 中央-上：处置状态流转图（节点 + 流光连线） ============
-function FlowPanel({ flowNodes }) {
+// ============ ④ 中央-上：处置状态流转图（节点 + 流光连线 + 流程切换） ============
+// flows：可选流程模板列表；activeFlow：后端当前生效流程（auto=自动选取）；
+// selected/onSelect：切换器受控状态（'' = 自动）。节点序列来自模板当前定义，改模板后轮询自动更新。
+function FlowPanel({ flowNodes, flows, activeFlow, selected, onSelect }) {
   const nodes = flowNodes || []
+  const flowsList = flows || []
+  // 已保存的流程被删除时回退显示"自动"（与后端自动回退选取一致）
+  const selectValue = flowsList.some((f) => String(f.id) === selected) ? selected : ''
   return (
-    <Panel title="处置状态流转" subtitle="STATUS FLOW" icon={TimerReset} className="h-[280px]" bodyClassName="flex items-center px-5">
-      {nodes.length === 0 && (
-        <div className="w-full text-center text-[13px]" style={{ color: C.subText }}>暂无流程数据</div>
+    <Panel
+      title="处置状态流转" subtitle="STATUS FLOW" icon={TimerReset} className="h-[280px]"
+      bodyClassName="flex flex-col px-5 py-2.5"
+      right={(
+        <label className="flex cursor-pointer items-center gap-1.5" title="切换展示的流程模板；模板修改重新发布后大屏自动更新">
+          <span className="text-[10px] uppercase tracking-[2px]" style={{ color: C.subText }}>FLOW</span>
+          <select
+            value={selectValue}
+            onChange={(e) => onSelect(e.target.value)}
+            className="max-w-[240px] cursor-pointer truncate rounded border px-2 py-1 text-[12px] outline-none transition focus:ring-1"
+            style={{ borderColor: 'rgba(96,138,188,0.45)', color: C.text, background: 'rgba(16,34,52,0.9)' }}
+          >
+            <option value="">自动（工单最多的流程）</option>
+            {flowsList.map((f) => (
+              <option key={f.id} value={String(f.id)}>
+                {f.name}{f.is_draft ? '（草稿）' : !f.enabled ? '（停用）' : ''}
+              </option>
+            ))}
+          </select>
+        </label>
       )}
-      {nodes.map((n, i) => {
-        const active = n.current > 0
-        const finished = n.key === '_finished'
-        const color = finished ? (n.current > 0 ? C.green : C.grayBlue) : active ? C.cyan : C.grayBlue
-        return (
-          <div key={n.key} className="flex min-w-0 flex-1 items-center">
-            <div className="flex w-[128px] shrink-0 flex-col items-center rounded-md border px-3 py-2.5"
-              style={{
-                borderColor: active ? `${C.cyan}99` : 'rgba(96,138,188,0.28)',
-                background: active ? 'linear-gradient(160deg, rgba(69,184,205,0.22), rgba(14,26,38,0.65))' : 'rgba(14,26,38,0.55)',
-                boxShadow: active ? `0 0 14px ${C.cyan}44` : 'none',
-              }}>
-              <div className="w-full truncate text-center text-[13px] font-medium" style={{ color: C.text }}>{n.name}</div>
-              {n.group && <div className="w-full truncate text-center text-[10px]" style={{ color: C.subText }}>{n.group}</div>}
-              <div className="font-mono text-[26px] font-bold leading-[1.2] tabular-nums" style={{ color, textShadow: active ? `0 0 10px ${C.cyan}55` : 'none' }}>
-                {n.current}
+    >
+      {/* 当前生效流程名（自动模式下展示后端实际选取的流程） */}
+      <div className="mb-2 flex shrink-0 items-center gap-1.5 text-[11px]" style={{ color: C.subText }}>
+        <span className="h-1.5 w-1.5 rounded-full"
+          style={{ background: activeFlow?.auto ? C.cyan : C.accent, boxShadow: `0 0 6px ${activeFlow?.auto ? C.cyan : C.accent}` }} />
+        当前展示：{activeFlow?.name ? `${activeFlow.name}${activeFlow.auto ? '（自动选取）' : ''}` : '暂无流程模板，请先在工单配置中创建'}
+      </div>
+      {nodes.length <= 1 ? (
+        <div className="flex flex-1 items-center justify-center text-[13px]" style={{ color: C.subText }}>
+          {flowsList.length === 0 ? '暂无流程模板' : '该流程暂未定义处理节点'}
+        </div>
+      ) : (
+        <div className="flex min-w-0 flex-1 items-center">
+          {nodes.map((n, i) => {
+            const active = n.current > 0
+            const finished = n.key === '_finished'
+            const color = finished ? (n.current > 0 ? C.green : C.grayBlue) : active ? C.cyan : C.grayBlue
+            return (
+              <div key={n.key} className="flex min-w-0 flex-1 items-center">
+                <div
+                  title={`${n.name}${n.group ? ` · ${n.group}` : ''}`}
+                  className={`flex min-w-0 flex-1 flex-col items-center rounded-md border px-2 py-2 transition-all duration-300 ${active ? 'node-glow' : ''}`}
+                  style={{
+                    maxWidth: 168,
+                    borderColor: active ? `${C.cyan}99` : 'rgba(96,138,188,0.28)',
+                    background: active
+                      ? 'linear-gradient(160deg, rgba(69,184,205,0.22), rgba(14,26,38,0.65))'
+                      : finished && n.current > 0
+                        ? 'linear-gradient(160deg, rgba(65,208,140,0.14), rgba(14,26,38,0.6))'
+                        : 'rgba(14,26,38,0.55)',
+                  }}
+                >
+                  <div className="w-full truncate text-center text-[13px] font-medium" style={{ color: C.text }}>{n.name}</div>
+                  {n.group && <div className="w-full truncate text-center text-[10px]" style={{ color: C.subText }}>{n.group}</div>}
+                  <div className="font-mono text-[26px] font-bold leading-[1.2] tabular-nums" style={{ color, textShadow: active ? `0 0 10px ${C.cyan}55` : 'none' }}>
+                    {n.current}
+                  </div>
+                  <div className="text-[10px]" style={{ color: C.subText }}>{finished ? '已关闭' : '当前停留'}</div>
+                </div>
+                {i < nodes.length - 1 && (
+                  /* 节点连线：青蓝渐变轨道 + 流光 */
+                  <div className="relative mx-1 h-[2px] min-w-[10px] flex-1 rounded" style={{ background: `linear-gradient(90deg, ${C.techBlue}55, ${C.cyan}55)` }}>
+                    <div className="flow-beam absolute top-0 h-[2px] w-[36px] rounded"
+                      style={{ background: `linear-gradient(90deg, transparent, ${C.paleBlue}, transparent)`, boxShadow: `0 0 6px ${C.cyan}88` }} />
+                  </div>
+                )}
               </div>
-            </div>
-            {i < nodes.length - 1 && (
-              /* 节点连线：青蓝渐变轨道 + 流光 */
-              <div className="relative mx-1 h-[2px] min-w-[24px] flex-1 rounded" style={{ background: `linear-gradient(90deg, ${C.techBlue}55, ${C.cyan}55)` }}>
-                <div className="flow-beam absolute top-0 h-[2px] w-[36px] rounded"
-                  style={{ background: `linear-gradient(90deg, transparent, ${C.paleBlue}, transparent)`, boxShadow: `0 0 6px ${C.cyan}88` }} />
-              </div>
-            )}
-          </div>
-        )
-      })}
+            )
+          })}
+        </div>
+      )}
     </Panel>
   )
 }
@@ -601,6 +678,15 @@ export default function TicketMonitorScreen() {
   const [stats, setStats] = useState(null)
   const [scale, setScale] = useState(1)
   const [error, setError] = useState(null)
+  // 处置状态流转的流程选择：'' = 自动（进行中工单最多的流程），选择本地持久化
+  const [flowId, setFlowId] = useState(() => {
+    try { return window.localStorage.getItem('ticket_monitor_flow') || '' } catch { return '' }
+  })
+
+  const selectFlow = (v) => {
+    setFlowId(v)
+    try { window.localStorage.setItem('ticket_monitor_flow', v) } catch { /* 忽略存储异常 */ }
+  }
 
   // 整屏自适应缩放：取宽/高缩放比最小值，居中留黑边
   useEffect(() => {
@@ -613,12 +699,13 @@ export default function TicketMonitorScreen() {
     return () => window.removeEventListener('resize', fit)
   }, [])
 
-  // 数据轮询：15s 全量刷新（聚合接口负载极小，保证大屏实时性）
+  // 数据轮询：15s 全量刷新（聚合接口负载极小，保证大屏实时性）；
+  // 切换流程时依赖变化触发立即重载，流程模板修改重新发布后也会在轮询中自动更新
   useEffect(() => {
     let alive = true
     const load = async () => {
       try {
-        const data = await ticketApi.getMonitorStats()
+        const data = await ticketApi.getMonitorStats(flowId || undefined)
         if (alive) { setStats(data); setError(null) }
       } catch (e) {
         if (alive) setError(String(e?.message || e))
@@ -627,7 +714,7 @@ export default function TicketMonitorScreen() {
     load()
     const t = setInterval(load, 15000)
     return () => { alive = false; clearInterval(t) }
-  }, [])
+  }, [flowId])
 
   // KPI：今日新增对比昨日（趋势 days30 末两个点）
   const yesterdayNew = stats?.trend?.days30?.length >= 2 ? stats.trend.days30[stats.trend.days30.length - 2]?.new : undefined
@@ -648,12 +735,18 @@ export default function TicketMonitorScreen() {
       <style>{`
         @keyframes flowBeam { 0% { left: -36px; opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { left: 100%; opacity: 0; } }
         .flow-beam { animation: flowBeam 2.2s linear infinite; }
+        @keyframes nodeGlow { 0%, 100% { box-shadow: 0 0 10px rgba(69,184,205,0.30); } 50% { box-shadow: 0 0 20px rgba(69,184,205,0.60); } }
+        .node-glow { animation: nodeGlow 2.4s ease-in-out infinite; }
         @keyframes rowEnter { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
         .row-enter { animation: rowEnter 0.5s ease-out; }
         @keyframes marqueeEnter { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: translateX(0); } }
         .marquee-enter { animation: marqueeEnter 0.8s ease-out; }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         .screen-fade { animation: fadeIn 0.6s ease-out; }
+        /* 系统开启"减少动态效果"时关闭装饰动画 */
+        @media (prefers-reduced-motion: reduce) {
+          .flow-beam, .node-glow, .row-enter, .marquee-enter, .screen-fade { animation: none !important; }
+        }
       `}</style>
 
       <div className="screen-fade absolute" style={{ width: 1920, height: 1080, transform: `scale(${scale})`, transformOrigin: 'center' }}>
@@ -682,8 +775,14 @@ export default function TicketMonitorScreen() {
 
           {/* 中央栏（视觉焦点） */}
           <div className="flex min-w-0 flex-1 flex-col gap-3">
-            {/* ④ 处置状态流转图 */}
-            <FlowPanel flowNodes={stats?.flow_nodes} />
+            {/* ④ 处置状态流转图（支持流程切换，模板修改后自动更新） */}
+            <FlowPanel
+              flowNodes={stats?.flow_nodes}
+              flows={stats?.flows}
+              activeFlow={stats?.flow}
+              selected={flowId}
+              onSelect={selectFlow}
+            />
             {/* ④ 最新工单实时列表 */}
             <LiveList latest={stats?.latest} />
           </div>

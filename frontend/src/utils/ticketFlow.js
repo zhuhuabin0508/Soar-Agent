@@ -2,14 +2,14 @@
 
 export const FIELD_TYPE_LABELS = {
   text: '单行文本',
-  textarea: '多行文本',
+  textarea: '富文本',
   number: '数字',
   datetime: '日期时间',
   select: '下拉选择',
   switch: '是否开关',
   ip: 'IP 地址',
   url: 'URL',
-  file: '附件/截图',
+  file: '附件',
 }
 
 // 字段定义（key → label）映射，用于详情只读展示

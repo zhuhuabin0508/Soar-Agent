@@ -3,14 +3,14 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  BellRing, Flame, AlertOctagon, MonitorSmartphone, Download, RotateCw, ChevronDown, CalendarRange,
-  Check, Search, Inbox, ShieldCheck, X, SlidersHorizontal, Columns3, Bookmark, Trash2, ClipboardCheck,
+  BellRing, Flame, AlertOctagon, MonitorSmartphone, Download, RefreshCw, ChevronDown, CalendarRange,
+  Check, Search, ShieldCheck, X, SlidersHorizontal, Columns3, Bookmark, Trash2, ClipboardCheck, ScrollText,
 } from 'lucide-react'
 import { toast } from '../store/toastStore'
 import { Modal } from '../components/Dialog'
-import { Button, PageContainer, PageHeader, Card, DataTable, Badge, Pagination, EmptyState, Sparkline } from '../components/ui'
+import { Button, Card, DataTable, Badge, Pagination, Sparkline, CompactSelect, DatePicker } from '../components/ui'
 import { inputBaseCls } from '../components/property/FormControls'
-import { hasPermission } from '../utils/permissions'
+import { hasPermission, guardNavPermission } from '../utils/permissions'
 import { alertApi } from '../api/alert'
 import strategyApi from '../api/strategy'
 import usersApi from '../api/users'
@@ -46,6 +46,21 @@ const STAGES = [
 ]
 const DIRECTIONS = [{ v: 0, label: '无' }, { v: 1, label: '内到外' }, { v: 2, label: '外到内' }, { v: 3, label: '内对内' }]
 const PARSE_STATUSES = [{ v: 'success', label: '成功' }, { v: 'partial', label: '部分解析' }, { v: 'fail', label: '失败' }]
+
+// 状态指标条 chips：风险等级 + 常用处置状态（点击联动对应多选筛选，再点取消）
+const RISK_CHIPS = [
+  { v: 0, label: '严重', dot: 'bg-red-500', active: 'bg-red-500/15 text-red-500 ring-red-500/40', pulse: true },
+  { v: 1, label: '高危', dot: 'bg-orange-500', active: 'bg-orange-500/15 text-orange-500 ring-orange-500/40' },
+  { v: 2, label: '中危', dot: 'bg-amber-500', active: 'bg-amber-500/15 text-amber-500 ring-amber-500/40' },
+  { v: 3, label: '低危', dot: 'bg-blue-500', active: 'bg-blue-500/15 text-blue-500 ring-blue-500/40' },
+  { v: 4, label: '信息', dot: 'bg-sky-500', active: 'bg-sky-500/15 text-sky-500 ring-sky-500/40' },
+]
+const DEAL_CHIPS = [
+  { v: 0, label: '未处置', dot: 'bg-amber-500', active: 'bg-amber-500/15 text-amber-500 ring-amber-500/40' },
+  { v: 70, label: '处置中', dot: 'bg-blue-500', active: 'bg-blue-500/15 text-blue-500 ring-blue-500/40' },
+  { v: 10, label: '生成事件', dot: 'bg-violet-500', active: 'bg-violet-500/15 text-violet-500 ring-violet-500/40' },
+  { v: 20, label: '已完成', dot: 'bg-success', active: 'bg-success/15 text-success ring-success/40' },
+]
 
 // 风险等级徽章颜色：严重红/高危橙/中危黄/低危蓝/信息灰/未知灰
 function RiskBadge({ level, name }) {
@@ -101,7 +116,7 @@ function MultiSelect({ placeholder, options, values, onChange }) {
 }
 
 // 统计卡片（含涨跌对比；clickable 点击下钻应用筛选；spark 24h 迷你趋势线）
-function StatCard({ icon: Icon, label, value, delta, onClick, clickable, valueClass, title, active, spark }) {
+function StatCard({ icon: Icon, label, value, delta, onClick, clickable, valueClass, title, active, spark, loading }) {
   return (
     <div
       className={`card flex items-center gap-3 px-5 py-4 ${clickable ? `cursor-pointer transition hover:border-primary/40 hover:shadow-md ${active ? 'border-primary/40 ring-1 ring-primary/20' : ''}` : ''}`}
@@ -114,16 +129,20 @@ function StatCard({ icon: Icon, label, value, delta, onClick, clickable, valueCl
       </div>
       <div className="min-w-0">
         <div className="truncate text-xs text-muted-foreground">{label}</div>
-        <div className="mt-0.5 flex items-baseline gap-1.5">
-          <span className={`text-xl font-semibold tabular-nums ${valueClass || 'text-foreground'}`}>{value}</span>
-          {delta != null && delta !== 0 && (
-            <span className={`text-[11px] tabular-nums ${delta > 0 ? 'text-destructive' : 'text-success'}`}>
-              {delta > 0 ? '↑' : '↓'} {Math.abs(delta)}
-            </span>
-          )}
-        </div>
+        {loading ? (
+          <div className="mt-2 h-5 w-16 rounded skeleton-shimmer" />
+        ) : (
+          <div className="mt-0.5 flex items-baseline gap-1.5">
+            <span className={`text-xl font-semibold tabular-nums ${valueClass || 'text-foreground'}`}>{value}</span>
+            {delta != null && delta !== 0 && (
+              <span className={`text-[11px] tabular-nums ${delta > 0 ? 'text-destructive' : 'text-success'}`}>
+                {delta > 0 ? '↑' : '↓'} {Math.abs(delta)}
+              </span>
+            )}
+          </div>
+        )}
       </div>
-      {spark && <Sparkline data={spark} className="ml-auto text-primary/60" />}
+      {!loading && spark && <Sparkline data={spark} className="ml-auto text-primary/60" />}
     </div>
   )
 }
@@ -157,8 +176,10 @@ function TextCell({ v, mono, muted }) {
   )
 }
 function NumCell({ v }) {
-  if (v == null || v === '' || v === -1) return <span className="text-muted-foreground">--</span>
-  return <span className="tabular-nums">{v}</span>
+  if (v == null || v === '' || v === -1) return <span className="text-muted-foreground" title="未统计">--</span>
+  const n = Number(v)
+  if (n === 0) return <span className="tabular-nums text-muted-foreground">0</span>
+  return <span className="tabular-nums">{n.toLocaleString('zh-CN')}</span>
 }
 function TimeCell({ v }) {
   if (!v) return <span className="text-muted-foreground">--</span>
@@ -182,7 +203,7 @@ function AssetLinkCell({ id, name, ip }) {
     <button
       className="block max-w-full truncate text-left text-[13px] font-medium text-primary underline-offset-2 hover:underline"
       title={ip ? `${name || `资产 #${id}`}（${ip}）` : name || `资产 #${id}`}
-      onClick={() => navigate(`/assets/list?keyword=${encodeURIComponent(ip || name || '')}`)}
+      onClick={(e) => { e.stopPropagation(); if (!guardNavPermission('asset_list', 'view', '资产清单')) return; navigate(`/assets/list?keyword=${encodeURIComponent(ip || name || '')}`) }}
     >
       {name || `资产 #${id}`}
     </button>
@@ -213,7 +234,7 @@ const COL_DEFS = [
     render: (r) => (
       <span className="flex items-center gap-1.5">
         <IpCell raw={r.src_ip} />
-        <span className="text-muted-foreground/60">→</span>
+        <span className="text-muted-foreground">→</span>
         <IpCell raw={r.dst_ip} />
       </span>
     ),
@@ -341,6 +362,7 @@ export default function AlertList() {
 
   // 一键发起工单：携带告警上下文跳转工单中心，按流程字段映射自动预填
   const startTicket = (r) => {
+    if (!guardNavPermission('ticket', 'view', '工单中心')) return
     const pickIp = (v) => {
       if (!v) return ''
       if (typeof v === 'string' && v.trim().startsWith('[')) {
@@ -611,7 +633,7 @@ export default function AlertList() {
         <button
           className="max-w-[168px] truncate text-left font-medium text-foreground transition hover:text-primary"
           title={r.alert_name || r.log_type || ''}
-          onClick={() => setDrawerId(r.id)}
+          onClick={(e) => { e.stopPropagation(); setDrawerId(r.id) }}
         >
           {r.alert_name || r.log_type || '--'}
         </button>
@@ -620,39 +642,27 @@ export default function AlertList() {
             className="inline-flex shrink-0 items-center rounded border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-[10.5px] font-medium text-primary"
             title={`同类告警聚合：${r.aggregation_count} 条合并展示`}
           >
-            ×{r.aggregation_count}
+            ×{r.aggregation_count.toLocaleString('zh-CN')}
           </span>
         )}
       </span>
     ),
   }
   const actionsCol = {
-    key: 'actions', header: '操作', width: canStartTicket ? '132px' : '100px',
+    key: 'actions', header: '操作', width: canStartTicket && canExport ? '165px' : (canStartTicket || canExport ? '125px' : '90px'),
     render: (r) => (
       <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-        <button
-          className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-primary"
-          title="详情"
-          onClick={() => setDrawerId(r.id)}
-        >
-          <Search className="h-4 w-4" />
+        <button type="button" className="btn-secondary btn-sm" title="详情" onClick={() => setDrawerId(r.id)}>
+          <Search className="h-3.5 w-3.5" />
         </button>
         {canStartTicket && (
-          <button
-            className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-primary"
-            title="发起工单（按流程字段映射自动预填）"
-            onClick={() => startTicket(r)}
-          >
-            <ClipboardCheck className="h-4 w-4" />
+          <button type="button" className="btn-secondary btn-sm" title="发起工单（按流程字段映射自动预填）" onClick={() => startTicket(r)}>
+            <ClipboardCheck className="h-3.5 w-3.5" />
           </button>
         )}
         {canExport && (
-          <button
-            className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-primary"
-            title="导出当前筛选"
-            onClick={handleExport}
-          >
-            <Download className="h-4 w-4" />
+          <button type="button" className="btn-secondary btn-sm" title="导出当前筛选" onClick={handleExport}>
+            <Download className="h-3.5 w-3.5" />
           </button>
         )}
       </div>
@@ -706,21 +716,61 @@ export default function AlertList() {
     return chips
   }, [filters, quickRange])
 
+  // 状态指标条统计：从当前页数据派生（列表为服务端分页，计数仅代表当前页分布）
+  const pageStats = useMemo(() => {
+    const risk = {}
+    const deal = {}
+    for (const r of list.items) {
+      risk[r.risk_level] = (risk[r.risk_level] || 0) + 1
+      // -1/null 与 0 同为「未处置」
+      const ds = r.deal_status == null || r.deal_status === -1 ? 0 : r.deal_status
+      deal[ds] = (deal[ds] || 0) + 1
+    }
+    return { risk, deal }
+  }, [list.items])
+
+  // chip 点击：在对应多选筛选中切换该值（再点取消）
+  const toggleChipFilter = (key, v) => {
+    const cur = filters[key] || []
+    setF({ [key]: cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v] })
+  }
+
   return (
-    <PageContainer>
-      <PageHeader
-        title="告警列表"
-        description="基于标准告警模型的统一告警视图：多设备混合展示、筛选排序分页全部服务端执行"
-        actions={canExport && (
-          <Button variant="primary" loading={exporting} onClick={handleExport}>
-            <Download className="h-4 w-4" /> 导出 CSV
-          </Button>
-        )}
-      />
+    <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
+      <header className="flex items-center justify-between gap-4 border-b border-border bg-card px-6 py-4">
+        <div className="flex min-w-0 items-baseline gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">告警列表</h1>
+          {!loading && (
+            <span className="text-xs text-muted-foreground">
+              共 <span className="font-medium tabular-nums text-foreground">{fmtNum(list.total)}</span> 条告警
+            </span>
+          )}
+          <span className="hidden text-xs text-muted-foreground xl:inline">标准告警模型 · 多设备混合展示 · 筛选排序分页服务端执行</span>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <button type="button" onClick={load} className="btn-secondary btn-sm" title="刷新告警列表">
+            <RefreshCw className={`mr-1 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> 刷新
+          </button>
+          {canExport && (
+            <button
+              type="button"
+              onClick={handleExport}
+              disabled={exporting}
+              className="btn-primary btn-sm"
+              title="按当前筛选条件导出 CSV"
+            >
+              <Download className={`mr-1 h-3.5 w-3.5 ${exporting ? 'animate-spin' : ''}`} /> 导出 CSV
+            </button>
+          )}
+        </div>
+      </header>
+
+      <div className="flex-1 overflow-y-auto p-6">
 
       {/* 统计卡片（可点击下钻：切换时间范围 / 应用风险等级筛选 / 跳转错误队列） */}
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
+          loading={loading && !stats}
           icon={BellRing}
           label="今日告警总数"
           value={fmtNum(stats?.today_total)}
@@ -732,6 +782,7 @@ export default function AlertList() {
           onClick={() => { setQuick('today'); setF({ risk_levels: [] }) }}
         />
         <StatCard
+          loading={loading && !stats}
           icon={Flame}
           label="今日高危及以上"
           value={fmtNum(stats?.today_high)}
@@ -742,6 +793,7 @@ export default function AlertList() {
           onClick={() => { setQuick('today'); setF({ risk_levels: [0, 1] }) }}
         />
         <StatCard
+          loading={loading && !stats}
           icon={AlertOctagon}
           label="解析失败数"
           value={fmtNum(stats?.today_fail)}
@@ -750,14 +802,14 @@ export default function AlertList() {
           title="查看解析错误队列（点击查看）"
           onClick={() => navigate('/ingest-monitor?tab=errors')}
         />
-        <StatCard icon={MonitorSmartphone} label="接入设备类型数" value={fmtNum(stats?.device_type_count)} />
+        <StatCard loading={loading && !stats} icon={MonitorSmartphone} label="接入设备类型数" value={fmtNum(stats?.device_type_count)} />
       </div>
 
       {/* 筛选区：第一行常用筛选（时间 + 关键词 + 方案），高级筛选收纳展开，激活条件以标签展示 */}
       <Card className="mb-4" bodyClassName="p-4">
         <div className="flex flex-wrap items-center gap-2.5">
           {/* 时间范围快捷 */}
-          <div className="flex items-center gap-1 rounded-lg border border-border bg-muted/40 p-1">
+          <div className="flex items-center gap-1 rounded-lg border border-border bg-muted p-1">
             {[['1h', '1小时'], ['24h', '24小时'], ['today', '今天'], ['7d', '7天']].map(([key, label]) => (
               <button
                 key={key}
@@ -768,17 +820,17 @@ export default function AlertList() {
               </button>
             ))}
           </div>
-          <input
-            type="datetime-local"
-            className={`${inputBaseCls} h-[34px] w-[185px] font-mono text-xs`}
+          <DatePicker
+            type="datetime"
+            className="w-[185px]"
             value={filters.start_time}
             onChange={(e) => { setQuickRange(''); setF({ start_time: e.target.value }) }}
             title="开始时间（基于发生时间）"
           />
           <span className="text-xs text-muted-foreground">至</span>
-          <input
-            type="datetime-local"
-            className={`${inputBaseCls} h-[34px] w-[185px] font-mono text-xs`}
+          <DatePicker
+            type="datetime"
+            className="w-[185px]"
             value={filters.end_time}
             onChange={(e) => { setQuickRange(''); setF({ end_time: e.target.value }) }}
             title="结束时间"
@@ -808,15 +860,16 @@ export default function AlertList() {
 
           {/* 筛选方案：下拉应用 / 保存当前 / 删除 */}
           <div className="flex items-center gap-1.5">
-            <select
-              className={`${inputBaseCls} h-[34px] w-[128px]`}
+            <CompactSelect
+              size="lg"
+              className="w-[128px]"
               value={activeScheme}
               onChange={(e) => applyScheme(e.target.value)}
               title="应用已保存的筛选方案"
             >
               <option value="">已存方案…</option>
               {savedSchemes.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
-            </select>
+            </CompactSelect>
             <Button size="sm" variant="secondary" onClick={() => setSchemeSaveOpen(true)} title="把当前筛选保存为方案，下次一键应用">
               <Bookmark className="h-3.5 w-3.5" /> 保存
             </Button>
@@ -831,9 +884,6 @@ export default function AlertList() {
             )}
           </div>
 
-          <Button size="sm" variant="ghost" onClick={() => load()}>
-            <RotateCw className="h-3.5 w-3.5" /> 刷新
-          </Button>
           {hasActiveFilters ? (
             <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={resetFilters}>清除筛选</Button>
           ) : null}
@@ -847,14 +897,14 @@ export default function AlertList() {
             <MultiSelect placeholder="处置状态" options={DEAL_STATUSES} values={filters.deal_statuses} onChange={(v) => setF({ deal_statuses: v })} />
             <MultiSelect placeholder="告警阶段" options={STAGES} values={filters.stages} onChange={(v) => setF({ stages: v })} />
             <MultiSelect placeholder="访问方向" options={DIRECTIONS} values={filters.directions} onChange={(v) => setF({ directions: v })} />
-            <select className={`${inputBaseCls} h-[34px] w-[118px]`} value={filters.parse_status} onChange={(e) => setF({ parse_status: e.target.value })}>
+            <CompactSelect size="lg" className="w-[118px]" value={filters.parse_status} onChange={(e) => setF({ parse_status: e.target.value })}>
               <option value="">解析状态</option>
               {PARSE_STATUSES.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
-            </select>
-            <select className={`${inputBaseCls} h-[34px] w-[150px]`} value={filters.device_type} onChange={(e) => setF({ device_type: e.target.value })}>
+            </CompactSelect>
+            <CompactSelect size="lg" className="w-[150px]" value={filters.device_type} onChange={(e) => setF({ device_type: e.target.value })}>
               <option value="">全部设备类型</option>
               {deviceTypes.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
+            </CompactSelect>
           </div>
         )}
 
@@ -881,6 +931,70 @@ export default function AlertList() {
           </div>
         )}
       </Card>
+
+      {/* 状态指标条：风险等级 / 处置状态 点击快速筛选（计数为当前页分布）+ 今日汇总 */}
+      {!loading && list.items.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">本页分布：</span>
+          {RISK_CHIPS.map((chip) => {
+            const active = filters.risk_levels.includes(chip.v)
+            const count = pageStats.risk[chip.v] || 0
+            return (
+              <button
+                key={`risk-${chip.v}`} type="button"
+                onClick={() => toggleChipFilter('risk_levels', chip.v)}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all duration-200 ${
+                  active
+                    ? `border-transparent ring-1 ${chip.active}`
+                    : 'border-border bg-secondary text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                }`}
+                title={active ? '点击取消该筛选' : `点击筛选「${chip.label}」级告警`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${chip.dot} ${chip.pulse && count > 0 ? 'animate-pulse' : ''}`} />
+                {chip.label}
+                <span className={`tabular-nums ${count > 0 ? '' : 'text-muted-foreground'}`}>{count}</span>
+              </button>
+            )
+          })}
+          <span className="mx-1 h-4 w-px bg-border" />
+          {DEAL_CHIPS.map((chip) => {
+            const active = filters.deal_statuses.includes(chip.v)
+            const count = pageStats.deal[chip.v] || 0
+            return (
+              <button
+                key={`deal-${chip.v}`} type="button"
+                onClick={() => toggleChipFilter('deal_statuses', chip.v)}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all duration-200 ${
+                  active
+                    ? `border-transparent ring-1 ${chip.active}`
+                    : 'border-border bg-secondary text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                }`}
+                title={active ? '点击取消该筛选' : `点击筛选「${chip.label}」的告警`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${chip.dot}`} />
+                {chip.label}
+                <span className={`tabular-nums ${count > 0 ? '' : 'text-muted-foreground'}`}>{count}</span>
+              </button>
+            )
+          })}
+          <div className="ml-auto flex items-center gap-4 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5" title="今日 0 点至现在的告警总数">
+              <BellRing className="h-3.5 w-3.5 text-primary/80" />
+              今日告警
+              <span className={`font-semibold tabular-nums ${stats?.today_total > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+                {stats?.today_total > 0 ? stats.today_total.toLocaleString('zh-CN') : '--'}
+              </span>
+            </span>
+            <span className="inline-flex items-center gap-1.5" title="今日「严重 / 高危」级告警数">
+              <Flame className="h-3.5 w-3.5 text-primary/80" />
+              今日高危及以上
+              <span className={`font-semibold tabular-nums ${stats?.today_high > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+                {stats?.today_high > 0 ? stats.today_high.toLocaleString('zh-CN') : '--'}
+              </span>
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* 告警表格（后端分页；表头工具行含列自定义） */}
       <Card className="p-0" bodyClassName="p-0">
@@ -945,6 +1059,7 @@ export default function AlertList() {
           </div>
         </div>
         <DataTable
+          className="table-stagger"
           columns={visibleColumns}
           data={list.items}
           loading={loading}
@@ -952,21 +1067,33 @@ export default function AlertList() {
           selectable={canHandle}
           selectedKeys={selected}
           onSelectChange={setSelected}
-          emptyText="暂无告警"
-          emptyDescription="当前时间范围内没有匹配的告警记录；设备未接入、解析失败或时间范围过窄都可能导致为空"
-          emptyIcon={Inbox}
+          onRowClick={(r) => setDrawerId(r.id)}
+          emptyText={hasActiveFilters ? '未找到匹配的告警' : '暂无告警'}
+          emptyDescription={
+            hasActiveFilters
+              ? '当前筛选条件下没有匹配的告警，调整时间范围或清除筛选后再试'
+              : '当前时间范围内没有匹配的告警记录；设备未接入、解析失败或时间范围过窄都可能导致为空'
+          }
+          emptyIcon={ShieldCheck}
           emptyAction={(
-            <div className="flex flex-col items-center gap-2">
-              <div className="flex items-center gap-2">
-                <Button size="sm" variant="secondary" onClick={() => setQuick('7d')}>
-                  <CalendarRange className="h-4 w-4" /> 扩大时间范围（7 天）
-                </Button>
-                <Button size="sm" variant="secondary" onClick={() => navigate('/ingest-monitor?tab=errors')}>
-                  <AlertOctagon className="h-4 w-4" /> 查看解析失败
-                </Button>
+            hasActiveFilters ? (
+              <button type="button" onClick={resetFilters} className="btn-secondary btn-sm">清除筛选</button>
+            ) : (
+              <div className="flex flex-col items-center gap-2">
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <button type="button" onClick={() => navigate('/alert-rules')} className="btn-primary btn-sm">
+                    <ScrollText className="mr-1 h-3.5 w-3.5" /> 查看告警规则
+                  </button>
+                  <button type="button" onClick={() => setQuick('7d')} className="btn-secondary btn-sm">
+                    <CalendarRange className="mr-1 h-3.5 w-3.5" /> 扩大时间范围（7 天）
+                  </button>
+                  <button type="button" onClick={() => navigate('/ingest-monitor?tab=errors')} className="btn-secondary btn-sm">
+                    <AlertOctagon className="mr-1 h-3.5 w-3.5" /> 查看解析失败
+                  </button>
+                </div>
+                <span className="text-xs text-muted-foreground">排查建议：确认接收器已监听且设备日志已到达；解析失败的日志会进入错误队列</span>
               </div>
-              <span className="text-xs text-muted-foreground/70">排查建议：确认接收器已监听且设备日志已到达；解析失败的日志会进入错误队列</span>
-            </div>
+            )
           )}
         />
         <div className="px-4">
@@ -1040,24 +1167,26 @@ export default function AlertList() {
             <div className="space-y-4">
               <div>
                 <label className="mb-1 block text-xs text-muted-foreground">目标处置状态</label>
-                <select
-                  className={`${inputBaseCls} h-[34px] w-full`}
+                <CompactSelect
+                  size="lg"
+                  block
                   value={batchForm.to_status}
                   onChange={(e) => setBatchForm((f) => ({ ...f, to_status: Number(e.target.value) }))}
                 >
                   {DEAL_STATUS_OPTIONS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
-                </select>
+                </CompactSelect>
               </div>
               <div>
                 <label className="mb-1 block text-xs text-muted-foreground">指派处理人（可选）</label>
-                <select
-                  className={`${inputBaseCls} h-[34px] w-full`}
+                <CompactSelect
+                  size="lg"
+                  block
                   value={batchForm.assignee_id}
                   onChange={(e) => setBatchForm((f) => ({ ...f, assignee_id: e.target.value }))}
                 >
                   <option value="">不指派</option>
                   {users.map((u) => <option key={u.id} value={u.id}>{u.display_name || u.username}</option>)}
-                </select>
+                </CompactSelect>
               </div>
               <div>
                 <label className="mb-1 block text-xs text-muted-foreground">处置备注</label>
@@ -1078,6 +1207,7 @@ export default function AlertList() {
           </div>
         </div>
       )}
-    </PageContainer>
+      </div>
+    </div>
   )
 }

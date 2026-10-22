@@ -70,7 +70,7 @@ export function TutorialDrawer({ open, onClose, title, subtitle, sections = [] }
         <header className="flex items-center justify-between border-b border-border px-6 py-4">
           <div>
             <h2 className="text-lg font-semibold text-foreground">{title}</h2>
-            {subtitle && <p className="mt-0.5 text-xs text-muted-foreground/70">{subtitle}</p>}
+            {subtitle && <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>}
           </div>
           <button
             type="button"

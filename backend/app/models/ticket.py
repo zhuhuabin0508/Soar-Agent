@@ -1,11 +1,12 @@
 """工单功能模型。
 
-包含 5 张表：
+包含 6 张表：
 - ``TicketGroup``：工单处理分组（自定义人员分组，如"监测预警组/研判分析组/应急处置组"）
 - ``TicketGroupMember``：分组成员（分组-用户多对多关联）
 - ``TicketFlow``：工单流程模板（节点/字段/路由全部内嵌 nodes JSON，支持草稿/发布/版本）
 - ``Ticket``：工单实例（发起时对流程模板做快照，进行中工单不受模板修改影响）
 - ``TicketNodeRecord``：工单节点处理记录（每个节点的处理人/填写的字段值/流转去向，构成处理时间线）
+- ``TicketCc``：工单抄送对象（模板固定抄送 + 手动追加，支持人员与分组）
 
 处理模式：节点到达分组后组内全员可见，任一人提交即代表全组（先到先得）。
 """
@@ -175,6 +176,41 @@ class Ticket(Base):
 
     def __repr__(self) -> str:
         return f"<Ticket id={self.id} no={self.ticket_no!r} status={self.status!r}>"
+
+
+class TicketCc(Base):
+    """工单抄送对象。
+
+    - ``target_type``：user=个人 / group=工单分组（组内全员均在「抄送我的」可见并收到通知）
+    - ``source``：template=模板固定抄送（发起时快照自流程模板 cc_targets）/ manual=手动追加
+    - 通知时机：发起与被加入抄送时通知一次；工单完结（完成/取消）时通知最终结果
+    - 同一工单同一对象仅一条（唯一约束去重）；发起人/当前处理人/admin 可增减
+    """
+
+    __tablename__ = "ticket_ccs"
+    __table_args__ = (
+        UniqueConstraint("ticket_id", "target_type", "target_id", name="uq_ticket_cc"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ticket_id = Column(Integer, ForeignKey("tickets.id"), nullable=False, index=True)
+    target_type = Column(String(10), nullable=False)  # user / group
+    target_id = Column(Integer, nullable=False)
+    target_name = Column(String(100), nullable=False, default="")
+    source = Column(String(10), nullable=False, default="template")  # template / manual
+    created_by_id = Column(Integer, nullable=True)
+    created_by_name = Column(String(64), nullable=True, default="")
+    created_at = Column(DateTime, server_default=func.now())
+
+    def to_dict(self) -> dict:
+        result = {}
+        for column in self.__table__.columns:
+            value = getattr(self, column.name)
+            result[column.name] = to_beijing_iso(value) if hasattr(value, "isoformat") else value
+        return result
+
+    def __repr__(self) -> str:
+        return f"<TicketCc id={self.id} ticket={self.ticket_id} {self.target_type}:{self.target_id}>"
 
 
 class TicketNodeRecord(Base):

@@ -23,11 +23,23 @@ const VARIANT_BTN = {
   info: 'btn-primary',
 }
 
-// 不同变体对应的图标
+// 不同变体对应的图标（带语义色圆形底衬，与全局设计语言一致）
 const VARIANT_ICON = {
-  danger: <AlertTriangle className="h-5 w-5 text-destructive" />,
-  warning: <AlertTriangle className="h-5 w-5 text-warning" />,
-  info: <Info className="h-5 w-5 text-primary" />,
+  danger: (
+    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-destructive/15">
+      <AlertTriangle className="h-5 w-5 text-destructive" />
+    </span>
+  ),
+  warning: (
+    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-warning/15">
+      <AlertTriangle className="h-5 w-5 text-warning" />
+    </span>
+  ),
+  info: (
+    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/15">
+      <Info className="h-5 w-5 text-primary" />
+    </span>
+  ),
 }
 
 // 声明式组件（保留向后兼容）

@@ -722,29 +722,26 @@ def load_tool_function(tool, enabled_kbs=None, agent_id=None, user_id=None) -> C
         namespace["check_subnet"] = check_subnet
     except ImportError:  # pragma: no cover
         logger.debug("context_tools 未安装，工具命名空间不注入安全上下文函数")
-    # 安全工具集注入（Nmap/Nuclei/ZAP/MSF 等 subprocess 封装）：
-    # 沙箱禁止 import 与 subprocess，故将 app.tools.security_tools 中的
-    # 异步封装函数直接注入命名空间，工具代码可直接调用 nmap_scan(...) 等。
-    try:
-        import app.tools.security_tools as _sec_tools
-
-        _SECURITY_TOOL_FUNCS = (
-            "nmap_scan", "nuclei_scan", "subfinder_enum", "httpx_probe", "sqlmap_scan",
-            "zap_baseline_scan", "dnsx_resolve", "nikto_scan",
-            "msf_run_module", "msf_rpc_status", "searchsploit_search", "defectdojo_request",
-            "bloodhound_collect", "bloodhound_query", "hydra_attack", "crackmapexec_run",
-        )
-        for _fn in _SECURITY_TOOL_FUNCS:
-            _obj = getattr(_sec_tools, _fn, None)
-            if callable(_obj):
-                namespace[_fn] = _obj
-    except ImportError:  # pragma: no cover
-        logger.debug("security_tools 未安装，工具命名空间不注入渗透测试函数")
+    # 渗透测试安全工具集（nmap/nuclei/hydra 等）已整体退役，沙箱命名空间不再注入
+    # app.tools.security_tools 函数；底层封装模块保留，供未来按需重新封装为工具。
     try:
         from app.devices.firewall import block_ip_on_firewall
         namespace["block_ip_on_firewall"] = block_ip_on_firewall
     except ImportError:  # pragma: no cover
         logger.debug("firewall 模块未安装，工具命名空间不注入 block_ip_on_firewall")
+    # 设备动作执行注入：execute_device_action_by_id 按动作 ID 调用设备 API
+    # （智能体 execute_device_action 工具使用）。通过 partial 绑定 agent_id/user_id
+    # 审计作用域（DeviceCallLog source='agent'），工具代码无需显式传递。
+    try:
+        from functools import partial as _partial
+
+        from app.devices.action_executor import execute_device_action_by_id
+
+        namespace["execute_device_action_by_id"] = _partial(
+            execute_device_action_by_id, agent_id=agent_id, user_id=user_id
+        )
+    except ImportError:  # pragma: no cover
+        logger.debug("action_executor 未安装，工具命名空间不注入 execute_device_action_by_id")
     try:
         import openpyxl  # noqa: F401
         namespace["openpyxl"] = openpyxl
@@ -784,12 +781,14 @@ def load_tool_function(tool, enabled_kbs=None, agent_id=None, user_id=None) -> C
     # 数据库访问注入：允许工具查询/写入已封禁 IP 表（query_banned_ip / record_ban 等）
     # 同时注入 KnowledgeBase / KnowledgeSegment，供 get_asset_info 查询知识库名称和精确 IP 匹配
     # 注入 Asset 供资产管理智能体的 query_asset / add_asset / update_asset 等工具读写资产表
+    # 注入 Device / DeviceAction 供 query_device_actions 等设备对接工具查询设备与动作清单
     try:
         from app.database import SessionLocal
         from app.models.banned_ip import BannedIP
         from app.models.workflow_ban import BanRecord
         from app.models.knowledge_base import KnowledgeBase, KnowledgeSegment
         from app.models.asset import Asset
+        from app.models.device import Device, DeviceAction
         from app.core.timezone import beijing_now
         namespace["SessionLocal"] = SessionLocal
         namespace["BannedIP"] = BannedIP
@@ -797,6 +796,8 @@ def load_tool_function(tool, enabled_kbs=None, agent_id=None, user_id=None) -> C
         namespace["KnowledgeBase"] = KnowledgeBase
         namespace["KnowledgeSegment"] = KnowledgeSegment
         namespace["Asset"] = Asset
+        namespace["Device"] = Device
+        namespace["DeviceAction"] = DeviceAction
 
         # 供 record_ban 工具调用：把智能体聊天发起的封禁也同步写入封禁记录表（ban_source=chat），
         # 使「人工通过智能体聊天封禁」与工作流/手动封禁统一展示在工作台封禁记录中。

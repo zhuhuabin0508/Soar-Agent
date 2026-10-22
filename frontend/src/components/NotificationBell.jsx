@@ -4,16 +4,28 @@ import { Bell, Megaphone, AlertTriangle, XCircle, ExternalLink } from 'lucide-re
 import { notificationsApi } from '../api/notifications'
 import { toast } from '../store/toastStore'
 import { fmtAbs } from '../utils/absTime'
+import { guardNavPermission } from '../utils/permissions'
 
-// 类型图标映射
+// 类型图标映射（带语义色容器：公告 info / 系统告警 warning / 执行失败 destructive）
 const TYPE_ICON = {
-  announcement: <Megaphone className="h-4 w-4" />,
-  system_alert: <AlertTriangle className="h-4 w-4" />,
-  execution_failed: <XCircle className="h-4 w-4" />,
+  announcement: <Megaphone className="h-3.5 w-3.5" />,
+  system_alert: <AlertTriangle className="h-3.5 w-3.5" />,
+  execution_failed: <XCircle className="h-3.5 w-3.5" />,
+}
+
+// 类型 → 图标底色容器（浅色圆角底 + 语义色图标）
+const TYPE_ICON_CLS = {
+  announcement: 'bg-info/15 text-info',
+  system_alert: 'bg-warning/15 text-warning',
+  execution_failed: 'bg-destructive/15 text-destructive',
 }
 
 function getTypeIcon(type) {
-  return TYPE_ICON[type] || <Bell className="h-4 w-4" />
+  return TYPE_ICON[type] || <Bell className="h-3.5 w-3.5" />
+}
+
+function getTypeIconCls(type) {
+  return TYPE_ICON_CLS[type] || 'bg-primary/15 text-primary'
 }
 
 // 根据通知关联资源生成跳转链接
@@ -202,7 +214,8 @@ function NotificationBell() {
     if (link) {
       navigate(link)
     } else {
-      // 没有关联资源，跳转到通知中心查看完整内容
+      // 没有关联资源，跳转到通知中心查看完整内容（无权限时 toast 拦截）
+      if (!guardNavPermission('notification', 'view', '通知中心')) return
       navigate('/notifications')
     }
   }
@@ -224,16 +237,22 @@ function NotificationBell() {
 
   return (
     <div ref={containerRef} className="relative">
-      {/* 铃铛按钮 */}
+      {/* 铃铛按钮：悬停微抬 + 铃铛摆动反馈 */}
       <button
         type="button"
         onClick={handleToggle}
-        className="relative flex h-9 w-9 items-center justify-center rounded-full bg-secondary text-foreground transition-colors hover:bg-secondary"
+        className={`group relative flex h-9 w-9 items-center justify-center rounded-full bg-secondary text-foreground transition-all duration-200 hover:bg-accent hover:ring-1 hover:ring-primary/40 ${
+          open ? 'bg-accent ring-1 ring-primary/40' : ''
+        }`}
         aria-label="通知"
       >
-        <Bell className="h-5 w-5" />
+        <Bell
+          className={`h-5 w-5 transition-transform duration-300 ${
+            unread > 0 ? 'dot-pulse' : 'group-hover:rotate-12'
+          }`}
+        />
         {unread > 0 && (
-          <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white shadow ring-2 ring-background">
+          <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold tabular-nums text-destructive-foreground shadow ring-2 ring-background">
             {unread > 99 ? '99+' : unread}
           </span>
         )}
@@ -241,22 +260,30 @@ function NotificationBell() {
 
       {/* 下拉面板 */}
       {open && (
-        <div className="absolute right-0 z-dropdown mt-2 w-80 overflow-hidden rounded-lg border border-border bg-secondary shadow-xl">
+        <div className="drawer-enter absolute right-0 z-dropdown mt-2 w-80 overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-2xl">
           {/* 头部 */}
           <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
             <span className="text-sm font-semibold text-foreground">通知</span>
-            <span className="text-xs text-muted-foreground/70">{unread} 条未读</span>
+            <span className="text-xs tabular-nums text-muted-foreground">{unread} 条未读</span>
           </div>
 
           {/* 通知列表 */}
           <div className="max-h-[400px] min-h-0 overflow-y-auto">
             {loadingRecent ? (
-              <div className="flex h-24 items-center justify-center text-xs text-muted-foreground/70">
-                加载中...
+              <div className="flex flex-col gap-2.5 px-4 py-4">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="flex items-center gap-2.5">
+                    <div className="skeleton-shimmer h-7 w-7 shrink-0 rounded-full" />
+                    <div className="flex-1 space-y-1.5">
+                      <div className="skeleton-shimmer h-3.5 w-3/4 rounded" />
+                      <div className="skeleton-shimmer h-2.5 w-1/3 rounded" />
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : recent.length === 0 ? (
-              <div className="flex h-24 flex-col items-center justify-center gap-1 text-muted-foreground/70">
-                <Bell className="h-8 w-8" />
+              <div className="flex h-24 flex-col items-center justify-center gap-1.5 text-muted-foreground">
+                <Bell className="h-7 w-7 opacity-60" />
                 <div className="text-xs">暂无通知</div>
               </div>
             ) : (
@@ -267,27 +294,27 @@ function NotificationBell() {
                   type="button"
                   key={n.id}
                   onClick={() => handleClickNotification(n)}
-                  className={`flex w-full items-start gap-2 border-l-2 px-4 py-2.5 text-left transition-colors hover:bg-muted/40 ${
+                  className={`flex w-full items-start gap-2.5 border-l-2 px-4 py-2.5 text-left transition-colors hover:bg-accent ${
                     n.is_read
                       ? 'border-transparent'
                       : 'border-l-primary bg-primary/10'
                   }`}
                   title={link ? `点击查看关联资源` : '点击查看通知详情'}
                 >
-                  <span className="mt-0.5">
+                  <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${getTypeIconCls(n.type)}`}>
                     {getTypeIcon(n.type)}
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1 truncate text-sm text-foreground">
+                      <div className="flex items-center gap-1 truncate text-sm font-medium text-foreground">
                         {n.title || '(无标题)'}
                         {link && <ExternalLink className="h-3 w-3 shrink-0 text-primary/70" />}
                       </div>
                       {!n.is_read && (
-                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                        <span className="dot-pulse h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
                       )}
                     </div>
-                    <div className="mt-0.5 text-[11px] text-muted-foreground/70" title={fmtAbs(n.created_at)}>
+                    <div className="mt-0.5 whitespace-nowrap text-[11px] tabular-nums text-muted-foreground" title={fmtAbs(n.created_at)}>
                       {fmtRelative(n.created_at)}
                     </div>
                   </div>
@@ -302,10 +329,11 @@ function NotificationBell() {
             <button
               type="button"
               onClick={() => {
+                if (!guardNavPermission('notification', 'view', '通知中心')) return
                 setOpen(false)
                 navigate('/notifications')
               }}
-              className="text-xs text-primary hover:text-primary/80"
+              className="rounded px-1 text-xs font-medium text-primary transition-colors hover:text-primary/80"
             >
               查看全部
             </button>

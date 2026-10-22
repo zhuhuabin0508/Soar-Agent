@@ -76,6 +76,18 @@ export async function runAgentQuickTest(agentId, input, options = {}) {
               statusMsgs.push(data.message || '')
               notify({ statusMsgs: [...statusMsgs] })
               break
+            case 'clarify': {
+              // 澄清提问：记录问题与选项（用户在测试输入框中回答）
+              const choices = Array.isArray(data.choices) ? data.choices : []
+              logs.push({
+                level: 'info',
+                message: `[clarify] ${data.question || ''}${
+                  choices.length ? ` 选项: ${choices.join(' / ')}` : ''
+                }`,
+              })
+              notify({ logs: [...logs] })
+              break
+            }
             case 'tool_start':
               toolCalls.push({
                 name: data.tool_name || '',

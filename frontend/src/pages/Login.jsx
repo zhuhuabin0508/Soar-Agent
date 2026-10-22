@@ -1,7 +1,7 @@
 // 登录页：左右分栏 + 品牌展示 + 玻璃态卡片 + 动态科技背景
 //
 // 设计要点：
-// - 桌面端：左侧品牌大图 + 核心能力介绍；右侧登录表单
+// - 桌面端：左侧 AI 神经中枢主视觉图（边缘渐隐融入背景）+ Logo；右侧登录表单
 // - 移动端：居中卡片，保证响应式
 // - 表单：输入框带图标、密码显隐、记住用户名、忘记密码弹窗
 // - 交互：实时校验、字段级错误、加载状态、错误抖动、成功过渡、Enter 切换/提交
@@ -20,7 +20,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   RefreshCw, User, Lock, ShieldCheck, Eye, EyeOff, Loader2,
-  AlertCircle, CheckCircle2, ChevronRight, Zap, Workflow, ShieldAlert,
+  AlertCircle, CheckCircle2, ChevronRight,
   BookOpen, LifeBuoy, ShieldQuestion, FileText, X, Megaphone, ExternalLink,
   Building2, MessageCircle, Bird, KeyRound, Globe,
 } from 'lucide-react'
@@ -28,32 +28,12 @@ import { authApi } from '../api/auth'
 import { useAuthStore } from '../store/authStore'
 import { useThemeStore } from '../store/themeStore'
 import { toast } from '../store/toastStore'
+import { getFirstPermittedPath } from '../components/AppShell'
 import { Modal } from '../components/Dialog'
+import SliderCaptcha from '../components/SliderCaptcha'
 
 // 记住用户名持久化 key
 const REMEMBER_KEY = 'soar_remember_username'
-
-// 核心能力亮点（左侧品牌区）
-const FEATURES = [
-  {
-    icon: Workflow,
-    title: '智能编排',
-    desc: '可视化拖拽工作流，AI 智能体协同响应安全事件',
-    color: 'from-cyan-400/80 to-blue-500/80',
-  },
-  {
-    icon: Zap,
-    title: '自动化响应',
-    desc: 'Webhook / 定时 / 事件多触发方式，秒级处置告警',
-    color: 'from-amber-400/80 to-orange-500/80',
-  },
-  {
-    icon: ShieldAlert,
-    title: '安全运营',
-    desc: '符合等保 2.0 安全设计要求，全程审计可追溯',
-    color: 'from-emerald-400/80 to-teal-500/80',
-  },
-]
 
 // 系统公告（可配置，预留从 system_config 读取的能力）
 const ANNOUNCEMENT = {
@@ -67,21 +47,19 @@ const ANNOUNCEMENT = {
 function SharedBackground() {
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden">
-      {/* 1. 全屏连续渐变底色：左深蓝 → 品牌蓝 → 右极深蓝黑（参考用户建议的色谱） */}
+      {/* 1. 全屏连续渐变底色：全部由全局主题变量派生（真实底色 --background + 品牌青
+          --primary），从左侧深蓝平滑收敛到右侧「精确的」真实底色——右侧登录区底色
+          与全站一致，神经中枢图的右缘渐隐正好融进同一底色，不存在色差；无需雾化层 */}
       <div
         className="absolute inset-0"
         style={{
           background:
-            'linear-gradient(90deg, #0a1929 0%, #0d1f33 45%, rgba(13,31,51,0.6) 65%, rgba(6,11,20,0.95) 80%, #05080c 100%)',
-        }}
-      />
-
-      {/* 2. 竖向雾化过渡带：在左右交界处（55%-90%）叠加渐变，把硬边柔化成自然雾化 */}
-      <div
-        className="absolute inset-y-0 left-[55%] w-[35%]"
-        style={{
-          background:
-            'linear-gradient(90deg, rgba(10,25,41,0) 0%, rgba(10,25,41,0.4) 40%, rgba(5,8,12,0.8) 100%)',
+            'linear-gradient(90deg, '
+            + 'color-mix(in oklab, var(--background) 92%, oklch(var(--primary)) 8%) 0%, '
+            + 'color-mix(in oklab, var(--background) 86%, oklch(var(--primary)) 14%) 45%, '
+            + 'color-mix(in oklab, var(--background) 93%, oklch(var(--primary)) 7%) 65%, '
+            + 'color-mix(in oklab, var(--background) 97%, oklch(var(--primary)) 3%) 82%, '
+            + 'var(--background) 100%)',
         }}
       />
 
@@ -114,10 +92,11 @@ function SharedBackground() {
         }}
       />
 
-      {/* 5. 左侧主光晕（品牌区氛围） */}
-      <div className="absolute -left-32 -top-32 h-[28rem] w-[28rem] rounded-full bg-cyan-500/15 blur-3xl animate-pulse-slow" />
-      <div className="absolute -bottom-40 left-1/4 h-[32rem] w-[32rem] rounded-full bg-blue-600/12 blur-3xl animate-pulse-slow [animation-delay:1.5s]" />
-      <div className="absolute left-1/4 top-1/4 h-72 w-72 rounded-full bg-violet-500/8 blur-3xl animate-pulse-slow [animation-delay:3s]" />
+      {/* 5. 左侧主光晕（品牌区氛围；静态不脉动——screen 混合的神经中枢图
+          暗部近乎透明，若背景脉动会让图片区域出现细微明暗起伏） */}
+      <div className="absolute -left-32 -top-32 h-[28rem] w-[28rem] rounded-full bg-cyan-500/15 blur-3xl" />
+      <div className="absolute -bottom-40 left-1/4 h-[32rem] w-[32rem] rounded-full bg-blue-600/12 blur-3xl" />
+      <div className="absolute left-1/4 top-1/4 h-72 w-72 rounded-full bg-violet-500/8 blur-3xl" />
 
       {/* 6. 右侧点缀光晕（让右侧不空洞） */}
       <div className="absolute right-0 top-0 h-64 w-64 rounded-full bg-cyan-500/6 blur-3xl" />
@@ -146,17 +125,22 @@ function SharedBackground() {
   )
 }
 
-// 左侧品牌展示区（桌面端可见，背景透明，由共享层提供）
+// 左侧品牌区（桌面端可见）：AI 神经中枢主视觉已上提至 Login 根部铺满左区，
+// 此处仅保留氛围光晕与浮于视觉之上的 Logo
 function BrandPanel({ platformName }) {
   return (
-    <div className="relative flex h-full flex-col justify-between overflow-hidden p-12">
+    <div className="relative h-full overflow-hidden">
       {/* 左侧局部光晕点缀（增强品牌区氛围，不影响整体过渡） */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -left-20 -top-20 h-72 w-72 rounded-full bg-cyan-500/10 blur-3xl animate-pulse-slow" />
-        <div className="absolute -bottom-32 left-1/4 h-80 w-80 rounded-full bg-blue-600/8 blur-3xl animate-pulse-slow [animation-delay:1.5s]" />
+        <div className="absolute -left-20 -top-20 h-72 w-72 rounded-full bg-cyan-500/10 blur-3xl" />
+        <div className="absolute -bottom-32 left-1/4 h-80 w-80 rounded-full bg-blue-600/8 blur-3xl" />
       </div>
-      {/* Logo + 名称 */}
-      <div className="relative flex items-center gap-3 animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
+
+      {/* Logo + 名称：浮于神经中枢视觉之上（z-10 确保盖过底层的融合图） */}
+      <div
+        className="absolute left-12 top-12 z-10 flex items-center gap-3 animate-fade-in-up"
+        style={{ animationDelay: '0.2s' }}
+      >
         <img
           src="/favicon.svg"
           alt="Logo"
@@ -165,52 +149,6 @@ function BrandPanel({ platformName }) {
         <span className="text-lg font-semibold tracking-wide text-cyan-50">
           {platformName}
         </span>
-      </div>
-
-      {/* 主标语 + 能力亮点 */}
-      <div className="relative">
-        <h1 className="text-4xl font-bold leading-tight text-white animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
-          智能编排
-          <span className="mx-2 bg-gradient-to-r from-cyan-300 to-blue-400 bg-clip-text text-transparent">
-            ·
-          </span>
-          自动化响应
-          <span className="mx-2 bg-gradient-to-r from-cyan-300 to-blue-400 bg-clip-text text-transparent">
-            ·
-          </span>
-          安全运营
-        </h1>
-        <p className="mt-3 text-base text-cyan-100/70 animate-fade-in-up" style={{ animationDelay: '0.5s' }}>
-          一体化安全运营编排平台，让威胁响应更敏捷、更智能、更可控
-        </p>
-
-        <div className="mt-10 space-y-5">
-          {FEATURES.map((f, idx) => (
-            <div
-              key={f.title}
-              className="group flex items-start gap-4 rounded-xl p-2 transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/5 animate-fade-in-up"
-              style={{ animationDelay: `${0.6 + idx * 0.12}s` }}
-            >
-              <div
-                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${f.color} shadow-lg shadow-cyan-500/20 transition-transform duration-300 group-hover:scale-110 group-hover:shadow-cyan-400/40`}
-              >
-                <f.icon className="h-5 w-5 text-white" />
-              </div>
-              <div>
-                <div className="text-base font-semibold text-white transition-colors group-hover:text-cyan-200">
-                  {f.title}
-                </div>
-                <div className="text-sm text-cyan-100/60">{f.desc}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* 底部版本信息 */}
-      <div className="relative flex items-center gap-2 text-xs text-cyan-100/40 animate-fade-in-up" style={{ animationDelay: '1s' }}>
-        <ShieldCheck className="h-3.5 w-3.5" />
-        <span>符合等保 2.0 安全设计要求 · 端到端加密 · 全程审计可追溯</span>
       </div>
     </div>
   )
@@ -225,7 +163,7 @@ function Field({
   return (
     <div>
       <div
-        className={`group relative flex items-center rounded-lg border bg-muted/60 transition-all ${
+        className={`group relative flex items-center rounded-lg border bg-muted transition-all ${
           focused
             ? 'border-primary/80 ring-2 ring-primary/30 shadow-[0_0_0_4px_rgba(34,211,238,0.08)]'
             : error
@@ -234,7 +172,7 @@ function Field({
         } ${disabled ? 'opacity-60' : ''}`}
       >
         {Icon && (
-          <div className={`pointer-events-none absolute left-3 ${focused ? 'text-primary' : error ? 'text-destructive' : 'text-muted-foreground/70'}`}>
+          <div className={`pointer-events-none absolute left-3 ${focused ? 'text-primary' : error ? 'text-destructive' : 'text-muted-foreground'}`}>
             <Icon className="h-4 w-4" />
           </div>
         )}
@@ -254,7 +192,7 @@ function Field({
           disabled={disabled}
           inputMode={inputMode}
           maxLength={maxLength}
-          className={`w-full bg-transparent py-3 text-sm text-foreground placeholder-muted-foreground/60 outline-none ${
+          className={`w-full bg-transparent py-3 text-sm text-foreground placeholder-muted-foreground outline-none ${
             Icon ? 'pl-10' : 'pl-3.5'
           } pr-10`}
         />
@@ -314,22 +252,49 @@ function HelpModal({ open, onClose }) {
       }
     >
       <div className="space-y-3 text-sm text-muted-foreground">
-        <div className="rounded-md border border-border bg-secondary/50 p-3">
-          <div className="mb-1 font-medium text-foreground">默认管理员账号</div>
-          <div className="font-mono text-xs">用户名：admin　密码：admin123</div>
-          <div className="mt-1 text-xs text-warning/80">请登录后立即修改默认密码</div>
+        <div className="rounded-md border border-border bg-secondary p-3">
+          <div className="mb-1 font-medium text-foreground">登录流程</div>
+          <ul className="ml-4 list-disc text-xs space-y-1">
+            <li>输入账号密码后点击「登录」，将弹出滑块安全验证</li>
+            <li>按住滑块拖动，对准背景图缺口后松手，验证通过将自动登录</li>
+            <li>多次未对准时系统会自动更换验证图，可点击「刷新验证码」手动更换</li>
+          </ul>
         </div>
-        <div className="rounded-md border border-border bg-secondary/50 p-3">
+        <div className="rounded-md border border-border bg-secondary p-3">
           <div className="mb-1 font-medium text-foreground">浏览器兼容性</div>
           <div className="text-xs">推荐使用 Chrome 90+ / Edge 90+ / Firefox 88+ 浏览器，启用 JavaScript 与 Cookie</div>
         </div>
-        <div className="rounded-md border border-border bg-secondary/50 p-3">
+        <div className="rounded-md border border-border bg-secondary p-3">
           <div className="mb-1 font-medium text-foreground">登录问题排查</div>
           <ul className="ml-4 list-disc text-xs space-y-1">
-            <li>验证码区分大小写，可点击图片刷新</li>
-            <li>连续失败 5 次账户将锁定 15 分钟</li>
+            <li>连续失败 5 次账户将锁定 15 分钟，请稍后再试</li>
             <li>会话过期后请重新登录，系统会保留原访问路径</li>
+            <li>账号开通、密码重置或权限调整请联系系统管理员</li>
           </ul>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// 联系管理员弹窗
+function ContactAdminModal({ open, onClose }) {
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="联系管理员"
+      maxWidth="max-w-md"
+      footer={
+        <button type="button" onClick={onClose} className="btn-primary btn-sm">
+          我知道了
+        </button>
+      }
+    >
+      <div className="space-y-3 text-sm text-muted-foreground">
+        <p>如需账号开通、密码重置或权限调整，请联系系统管理员：</p>
+        <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-center text-sm font-medium text-foreground">
+          使用深政易搜索管理员姓名「朱华斌」
         </div>
       </div>
     </Modal>
@@ -364,7 +329,10 @@ const getSsoProviderIcon = (id) => SSO_PROVIDER_ICONS[String(id || '').toLowerCa
 //   onRequiresOtp                  密码正确但需 MFA 二次验证（进入 otpStep）
 
 // 账号密码登录表单（自原 Login 抽取，保留全部现有行为：
-// 记住用户名、错误横幅、字段校验、抖动动画、验证码刷新、Enter 焦点切换、Hover 光扫）
+// 记住用户名、错误横幅、字段校验、抖动动画、Enter 焦点切换、Hover 光扫）
+// 滑块验证改为弹窗式：表单只填账号密码，点击「登录」校验通过后弹出滑块验证，
+// 松手先调 POST /auth/captcha/check 预校验（不消费），对准才显示「验证通过」，
+// 通过后自动发起登录请求（captcha_code 传 x 坐标，登录时一次性消费）
 function PasswordLoginForm({
   username, onUsernameChange, remember, onRememberChange, persistRemember,
   loading, setLoading, success, errors, setErrors, validateField,
@@ -372,18 +340,21 @@ function PasswordLoginForm({
 }) {
   // 方式专属字段（切换登录方式时组件卸载自动清空）
   const [password, setPassword] = useState('')
-  const [captchaCode, setCaptchaCode] = useState('')
+  // 滑块验证弹窗：点击登录后打开，验证通过后自动提交登录
+  const [captchaModalOpen, setCaptchaModalOpen] = useState(false)
+  const [captchaVerified, setCaptchaVerified] = useState(false)
   const [captchaId, setCaptchaId] = useState('')
   const [captchaImage, setCaptchaImage] = useState('')
+  const [captchaSliderImage, setCaptchaSliderImage] = useState('')
+  const [captchaSliderY, setCaptchaSliderY] = useState(0)
   const [captchaLoading, setCaptchaLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
 
   // 输入框引用（用于 Enter 切换焦点）
   const usernameRef = useRef(null)
   const passwordRef = useRef(null)
-  const captchaRef = useRef(null)
 
-  // 加载图形验证码
+  // 加载滑块验证码（页面挂载即预载，弹窗打开秒出图）
   // keepError=true 时保留 serverError（登录失败自动刷新验证码后仍显示错误提示，
   // 避免 setServerError('') 在同一批处理中覆盖掉刚设置的登录错误消息）
   const refreshCaptcha = useCallback(async (keepError = false) => {
@@ -393,7 +364,9 @@ function PasswordLoginForm({
       const data = await authApi.getCaptcha()
       setCaptchaId(data.captcha_id)
       setCaptchaImage(data.image)
-      setCaptchaCode('')
+      setCaptchaSliderImage(data.slider_image)
+      setCaptchaSliderY(data.slider_y || 0)
+      setCaptchaVerified(false)
     } catch {
       onServerError('验证码加载失败，请刷新页面重试')
     } finally {
@@ -415,21 +388,15 @@ function PasswordLoginForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // 整表校验（username 走共享校验器，password/captcha 为本方式专属）
+  // 整表校验（username 走共享校验器，password 为本方式专属；滑块验证在弹窗内完成）
   const validateAll = useCallback(() => {
     const u = validateField('username', username)
     const p = validateField('password', password)
-    const c = validateField('captcha', captchaCode)
-    return u && p && c
-  }, [username, password, captchaCode, validateField])
+    return u && p
+  }, [username, password, validateField])
 
-  const handleSubmit = async (e) => {
-    if (e) e.preventDefault()
-    onServerError('')
-    if (!validateAll()) {
-      onShake()
-      return
-    }
+  // 实际发起登录（滑块验证通过后调用，x 为拖动坐标）
+  const doLogin = useCallback(async (x) => {
     setLoading(true)
     try {
       // 记住用户名（不存储密码）
@@ -439,26 +406,25 @@ function PasswordLoginForm({
         username.trim(),
         password,
         captchaId,
-        captchaCode.trim(),
+        String(x),
       )
 
       // OTP 两步验证：密码正确但需 OTP 二次验证
       if (res.requires_otp && res.otp_pending_token) {
+        setCaptchaModalOpen(false)
         onRequiresOtp(res.otp_pending_token)
         return
       }
 
+      setCaptchaModalOpen(false)
       onLoginSuccess(res)
     } catch (err) {
       const msg = err.message || '登录失败，请重试'
       onServerError(msg)
       onShake()
-      // 登录失败后刷新验证码（验证码已一次性消费）；保留错误提示
+      setCaptchaModalOpen(false)
+      // 登录接口已一次性消费验证码，失败后刷新供下次验证使用（保留错误提示）
       refreshCaptcha(true)
-      // 验证码错误时高亮验证码字段
-      if (/验证码/.test(msg)) {
-        setErrors((prev) => ({ ...prev, captcha: '验证码错误，请重新输入' }))
-      }
       // 提示账号锁定等特定错误
       if (/锁定/.test(msg)) {
         setErrors((prev) => ({ ...prev, password: '账户已被锁定，请稍后重试' }))
@@ -466,12 +432,42 @@ function PasswordLoginForm({
     } finally {
       setLoading(false)
     }
+  }, [username, password, captchaId, persistRemember, onServerError, onShake,
+      onRequiresOtp, onLoginSuccess, refreshCaptcha, setErrors, setLoading])
+
+  // 点击「登录」：表单校验通过后弹出滑块验证（验证在弹窗内完成）
+  const handleSubmit = (e) => {
+    if (e) e.preventDefault()
+    onServerError('')
+    if (!validateAll()) {
+      onShake()
+      return
+    }
+    setCaptchaVerified(false)
+    setCaptchaModalOpen(true)
   }
 
-  // Enter 键焦点切换
+  // 弹窗内滑块预校验：对准则显示「验证通过」并自动登录，未对准复位重拖
+  const handleCaptchaTry = useCallback(async (x) => {
+    const res = await authApi.checkCaptcha(captchaId, x)
+    return res
+  }, [captchaId])
+
+  // 滑块验证通过：短暂展示通过态后自动提交登录
+  const handleCaptchaComplete = useCallback((x) => {
+    setCaptchaVerified(true)
+    setTimeout(() => doLogin(x), 350)
+  }, [doLogin])
+
+  // 关闭验证弹窗（登录请求进行中禁止关闭，防误触中断）
+  const closeCaptchaModal = useCallback(() => {
+    if (loading) return
+    setCaptchaModalOpen(false)
+  }, [loading])
+
+  // Enter 键焦点切换：滑块验证在弹窗内，密码框回车打开验证弹窗
   const handleEnterUsername = () => passwordRef.current?.focus()
-  const handleEnterPassword = () => captchaRef.current?.focus()
-  const handleEnterCaptcha = () => handleSubmit()
+  const handleEnterPassword = () => handleSubmit()
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
@@ -521,71 +517,12 @@ function PasswordLoginForm({
               type="button"
               onClick={() => setShowPassword((v) => !v)}
               title={showPassword ? '隐藏密码' : '显示密码'}
-              className="absolute right-3 text-muted-foreground/70 transition hover:text-foreground"
+              className="absolute right-3 text-muted-foreground transition hover:text-foreground"
             >
               {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>
           }
         />
-      </div>
-
-      {/* 验证码 */}
-      <div>
-        <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-          验证码
-        </label>
-        <div className="flex gap-2">
-          <div className="min-w-0 flex-1">
-            <Field
-              icon={ShieldCheck}
-              type="text"
-              value={captchaCode}
-              onChange={(e) => {
-                setCaptchaCode(e.target.value)
-                if (errors.captcha) validateField('captcha', e.target.value)
-              }}
-              placeholder="请输入图中字符"
-              autoComplete="off"
-              error={errors.captcha}
-              inputRef={captchaRef}
-              onEnter={handleEnterCaptcha}
-              disabled={loading || success}
-            />
-          </div>
-          <button
-            type="button"
-            onClick={refreshCaptcha}
-            disabled={captchaLoading || loading || success}
-            title="点击刷新验证码"
-            className="group relative flex h-[46px] w-[140px] shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-muted/60 transition hover:border-primary/60 hover:bg-secondary disabled:opacity-60"
-          >
-            {captchaImage && !captchaLoading ? (
-              <>
-                {/* 验证码图片：CSS 反色适配深色主题 */}
-                <img
-                  src={captchaImage}
-                  alt="验证码"
-                  className="h-full w-full object-cover [filter:invert(1)_hue-rotate(180deg)_brightness(0.9)_contrast(1.1)]"
-                />
-                {/* Hover 显示刷新图标蒙层 */}
-                <div className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 transition-opacity group-hover:opacity-100">
-                  <RefreshCw className="h-4 w-4 text-cyan-300" />
-                </div>
-              </>
-            ) : (
-              <RefreshCw className={`h-4 w-4 text-muted-foreground ${captchaLoading ? 'animate-spin' : ''}`} />
-            )}
-          </button>
-        </div>
-        <button
-          type="button"
-          onClick={refreshCaptcha}
-          disabled={captchaLoading || loading || success}
-          className="mt-1.5 flex items-center gap-1 text-[11px] text-muted-foreground/60 transition hover:text-primary"
-        >
-          <RefreshCw className={`h-3 w-3 ${captchaLoading ? 'animate-spin' : ''}`} />
-          <span>看不清？点击刷新验证码</span>
-        </button>
       </div>
 
       {/* 记住用户名 + 忘记密码 */}
@@ -608,7 +545,7 @@ function PasswordLoginForm({
         </button>
       </div>
 
-      {/* 登录按钮（Hover 光扫 + 点击下沉） */}
+      {/* 登录按钮（Hover 光扫 + 点击下沉；点击后弹出滑块验证） */}
       <button
         type="submit"
         disabled={loading || success}
@@ -639,6 +576,46 @@ function PasswordLoginForm({
           </>
         )}
       </button>
+
+      {/* 滑块安全验证弹窗：点击登录后弹出，验证通过自动登录 */}
+      <Modal
+        open={captchaModalOpen}
+        onClose={closeCaptchaModal}
+        title="安全验证"
+        maxWidth="max-w-sm"
+        footer={
+          <button
+            type="button"
+            onClick={closeCaptchaModal}
+            disabled={loading || captchaVerified}
+            className="btn-secondary btn-sm"
+          >
+            取消
+          </button>
+        }
+      >
+        <div className="flex flex-col items-center gap-3">
+          <p className="text-xs text-muted-foreground">
+            请拖动滑块对准缺口完成验证，验证通过后将自动登录
+          </p>
+          {captchaLoading || !captchaImage ? (
+            <div className="flex h-[200px] w-[300px] items-center justify-center rounded-lg border border-border bg-muted">
+              <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <SliderCaptcha
+              image={captchaImage}
+              sliderImage={captchaSliderImage}
+              sliderY={captchaSliderY}
+              verified={captchaVerified}
+              onTry={handleCaptchaTry}
+              onComplete={handleCaptchaComplete}
+              onRefresh={() => refreshCaptcha()}
+              disabled={loading || success}
+            />
+          )}
+        </div>
+      </Modal>
     </form>
   )
 }
@@ -812,7 +789,7 @@ function OtpLoginForm({
             )}
           </button>
         </div>
-        <div className="mt-1.5 text-[11px] text-muted-foreground/60">
+        <div className="mt-1.5 text-[11px] text-muted-foreground">
           验证码将发送至该账号绑定的邮箱
         </div>
       </div>
@@ -908,15 +885,16 @@ function Login() {
   const [success, setSuccess] = useState(false)
   const [forgotOpen, setForgotOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
+  const [contactOpen, setContactOpen] = useState(false)
   const [announcement, setAnnouncement] = useState(ANNOUNCEMENT)
 
-  // 字段级错误（username 共享；password/captcha/otp 由对应方式表单写入）
-  const [errors, setErrors] = useState({ username: '', password: '', captcha: '', otp: '' })
+  // 字段级错误（username 共享；password/otp 由对应方式表单写入）
+  const [errors, setErrors] = useState({ username: '', password: '', otp: '' })
 
   // 已登录会话有效则直接跳转首页（避免重复登录）
   useEffect(() => {
     if (isAuthenticated()) {
-      navigate('/dashboard', { replace: true })
+      navigate(getFirstPermittedPath(), { replace: true })
     }
   }, [isAuthenticated, navigate])
 
@@ -990,7 +968,7 @@ function Login() {
         .then((user) => {
           setAuth(ssoToken, user)
           setSuccess(true)
-          setTimeout(() => navigate('/dashboard', { replace: true }), 400)
+          setTimeout(() => navigate(getFirstPermittedPath(), { replace: true }), 400)
         })
         .catch(() => {
           setServerError('SSO 登录失败，请重试')
@@ -1012,15 +990,13 @@ function Login() {
     }
   }, [])
 
-  // 实时校验（username 共享；password/captcha 由密码表单复用）
+  // 实时校验（username 共享；password 由密码表单复用；滑块验证在弹窗内由后端预校验）
   const validateField = useCallback((field, value) => {
     let msg = ''
     if (field === 'username') {
       if (!value.trim()) msg = '请输入用户名'
     } else if (field === 'password') {
       if (!value) msg = '请输入密码'
-    } else if (field === 'captcha') {
-      if (!value.trim()) msg = '请输入验证码'
     }
     setErrors((prev) => ({ ...prev, [field]: msg }))
     return !msg
@@ -1042,7 +1018,7 @@ function Login() {
     }
   }, [remember, username])
 
-  // 统一登录成功处理：setAuth + 重置过期标志 + 成功动画 + 跳转 dashboard
+  // 统一登录成功处理：setAuth + 重置过期标志 + 成功动画 + 跳转到有权限的首页
   const handleLoginSuccess = useCallback((res) => {
     setAuth(res.access_token, res.user)
     // 登录成功：重置认证过期标志（之前可能因 token 过期被设置）
@@ -1050,7 +1026,7 @@ function Login() {
     if (window.__SOAR_REFRESHING__) window.__SOAR_REFRESHING__ = false
     // 成功过渡动画后跳转
     setSuccess(true)
-    setTimeout(() => navigate('/dashboard', { replace: true }), 400)
+    setTimeout(() => navigate(getFirstPermittedPath(), { replace: true }), 400)
   }, [setAuth, navigate])
 
   // 密码正确但需 OTP 两步验证（MFA）：进入第二步弹层
@@ -1100,7 +1076,7 @@ function Login() {
     if (key === loginTab) return
     setLoginTab(key)
     setServerError('')
-    setErrors({ username: '', password: '', captcha: '', otp: '' })
+    setErrors({ username: '', password: '', otp: '' })
   }
 
   // OTP 第二步验证提交（密码登录后的 MFA）
@@ -1173,8 +1149,35 @@ function Login() {
       {/* 全屏共享背景层：连续渐变 + 全屏网格 + 跨边界粒子 + 交界径向光晕 */}
       <SharedBackground />
 
-      {/* 左侧品牌区（桌面端，lg 及以上显示，从左侧滑入） */}
-      <div className="relative hidden lg:block lg:w-1/2 xl:w-3/5 animate-slide-in-left">
+      {/* 左侧 AI 神经中枢主视觉（桌面端）：铺满左区——左缘贴页面边缘、右缘精确
+          贴合登录卡片（卡片 = 右栏内居中的 max-w-md：lg 时 75%−224px，xl 时 80%−224px）。
+          - 下移 10%：神经中枢「大脑」正好落在页面垂直中线（内容核心在原图偏上 40% 处）
+          - screen 混合：深蓝底与页面背景提亮合成，暗部近乎透明，无色差断层
+          - 双向线性遮罩（intersect）：右缘朝登录框一侧 18% 宽域渐隐（背景层已收敛到
+            var(--background)，图片沿真实底色融入，与右侧登录区无缝衔接），
+            其余三边 5%-8% 渐隐，边缘不透明度归零，无矩形边界
+          - 除图片自身位移外不加任何动画/transform（祖先 transform 会切断混合上下文） */}
+      <div className="absolute inset-y-0 left-0 hidden lg:block lg:w-[calc(75%_-_224px)] xl:w-[calc(80%_-_224px)]">
+        <img
+          src="/login-neural.jpg"
+          alt="AI 神经中枢"
+          draggable={false}
+          className="h-full w-full select-none object-cover translate-y-[10%]"
+          style={{
+            mixBlendMode: 'screen',
+            maskImage:
+              'linear-gradient(90deg, transparent 0%, black 5%, black 82%, transparent 100%), linear-gradient(180deg, transparent 0%, black 6%, black 92%, transparent 100%)',
+            maskComposite: 'intersect',
+            WebkitMaskImage:
+              'linear-gradient(90deg, transparent 0%, black 5%, black 82%, transparent 100%), linear-gradient(180deg, transparent 0%, black 6%, black 92%, transparent 100%)',
+            WebkitMaskComposite: 'source-in',
+          }}
+        />
+      </div>
+
+      {/* 左侧品牌区（桌面端，lg 及以上显示；不加入场动画——transform 会留下
+          持久 stacking context，切断神经中枢图 mix-blend-mode 与共享背景的混合） */}
+      <div className="relative hidden lg:block lg:w-1/2 xl:w-3/5">
         <BrandPanel platformName={platformName} />
       </div>
 
@@ -1266,7 +1269,7 @@ function Login() {
 
           {/* 登录方式 Tab（注册表 + 后端 login-methods 驱动，多于一种方式时显示） */}
           {!otpStep && availableMethods.length > 1 && (
-            <div className="mb-4 flex gap-1 rounded-lg bg-secondary/40 p-1">
+            <div className="mb-4 flex gap-1 rounded-lg bg-secondary p-1">
               {availableMethods.map((key) => {
                 const method = LOGIN_METHOD_REGISTRY[key]
                 return (
@@ -1318,7 +1321,7 @@ function Login() {
                   placeholder="000000"
                   autoComplete="one-time-code"
                   autoFocus
-                  className={`w-full rounded-lg border bg-muted/60 py-3 text-center text-2xl font-bold tracking-[0.5em] text-foreground outline-none transition ${
+                  className={`w-full rounded-lg border bg-muted py-3 text-center text-2xl font-bold tracking-[0.5em] text-foreground outline-none transition ${
                     errors.otp ? 'border-destructive/70' : 'border-border focus:border-primary/80 focus:ring-2 focus:ring-primary/30'
                   }`}
                 />
@@ -1368,7 +1371,7 @@ function Login() {
           ) : noMethods ? (
             /* 空状态：系统未开放任何登录方式（login-methods 为空/失败且无 SSO 提供商） */
             <div className="flex flex-col items-center gap-3 py-10">
-              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted/60">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
                 <Lock className="h-7 w-7 text-muted-foreground" />
               </div>
               <div className="text-sm text-muted-foreground">当前系统未开放登录，请联系管理员</div>
@@ -1409,9 +1412,9 @@ function Login() {
               {/* 分隔标题：横线 + 灰字 + 横线（存在表单登录方式时才显示「或」） */}
               {availableMethods.length > 0 && (
                 <div className="flex items-center gap-3">
-                  <div className="h-px flex-1 bg-border/70" />
-                  <span className="text-xs text-muted-foreground/70">或通过以下方式登录</span>
-                  <div className="h-px flex-1 bg-border/70" />
+                  <div className="h-px flex-1 bg-border" />
+                  <span className="text-xs text-muted-foreground">或通过以下方式登录</span>
+                  <div className="h-px flex-1 bg-border" />
                 </div>
               )}
               {/* 提供商按钮：圆角卡片，hover 边框青色 + 微上移；点击跳转授权地址 */}
@@ -1426,7 +1429,7 @@ function Login() {
                       onClick={() => handleSsoProvider(provider)}
                       disabled={!!ssoRedirecting}
                       title={`使用 ${provider.name} 登录`}
-                      className="flex items-center gap-2 rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm text-foreground transition-all hover:-translate-y-0.5 hover:border-primary hover:shadow-[0_4px_16px_-6px_rgba(34,211,238,0.35)] disabled:cursor-not-allowed disabled:opacity-60"
+                      className="flex items-center gap-2 rounded-xl border border-border bg-muted px-4 py-3 text-sm text-foreground transition-all hover:-translate-y-0.5 hover:border-primary hover:shadow-[0_4px_16px_-6px_rgba(34,211,238,0.35)] disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {redirecting ? (
                         <Loader2 className="h-4 w-4 animate-spin text-primary" />
@@ -1440,17 +1443,11 @@ function Login() {
               </div>
             </div>
           )}
-
-          {/* 安全提示（缩小字号、降低对比度） */}
-          <div className="mt-4 flex items-center justify-center gap-1.5 text-[10px] text-muted-foreground/40">
-            <ShieldCheck className="h-3 w-3 shrink-0" />
-            <span>本系统受安全策略保护，登录行为均被审计记录</span>
-          </div>
         </div>
 
         {/* 页脚 */}
         <div className="relative mt-6 w-full max-w-md px-2">
-          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-muted-foreground/70">
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
             <button
               type="button"
               onClick={() => setHelpOpen(true)}
@@ -1459,13 +1456,14 @@ function Login() {
               <LifeBuoy className="h-3 w-3" />
               使用帮助
             </button>
-            <span
-              className="flex items-center gap-1"
-              title="如需账号开通或权限调整，请联系系统管理员"
+            <button
+              type="button"
+              onClick={() => setContactOpen(true)}
+              className="flex items-center gap-1 transition hover:text-foreground"
             >
               <BookOpen className="h-3 w-3" />
               联系管理员
-            </span>
+            </button>
             <a
               href="https://docs.example.com/privacy"
               target="_blank"
@@ -1487,7 +1485,7 @@ function Login() {
               <ExternalLink className="h-2.5 w-2.5 opacity-60" />
             </a>
           </div>
-          <div className="mt-3 text-center text-[11px] text-muted-foreground/50">
+          <div className="mt-3 text-center text-[11px] text-muted-foreground">
             © {year} {platformName}
             {version && <span className="ml-1">· v{version} · 安全增强版</span>}
           </div>
@@ -1497,6 +1495,7 @@ function Login() {
       {/* 弹窗 */}
       <ForgotPasswordModal open={forgotOpen} onClose={() => setForgotOpen(false)} />
       <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <ContactAdminModal open={contactOpen} onClose={() => setContactOpen(false)} />
 
       {/* 动画样式（局部注入，避免污染全局） */}
       <style>{`

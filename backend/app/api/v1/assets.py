@@ -21,7 +21,7 @@ from app.core.audit import get_client_ip
 from app.core.log_receiver_manager.pipeline.enricher_stage import invalidate_asset_index
 from app.core.timezone import beijing_now
 from app.database import get_db
-from app.dependencies import get_current_user, require_role
+from app.dependencies import get_current_user, require_role, require_permission, require_any_permission
 from app.models.agent import Agent
 from app.models.asset import Asset, AssetChange, AssetCustomField, AssetTag, AssetTypeTemplate
 from app.models.user import User
@@ -392,64 +392,103 @@ def _ip_matches_stored(search_ip, search_net, stored: str) -> bool:
     """判断搜索 IP/CIDR 是否命中资产 ip 字段中的存储值。
 
     支持逗号分隔多值、CIDR、IP 范围、单 IP 等格式。
+    内部基于缓存的数值区间做包含/重叠判断（10 万级资产全量扫描也可控）。
     """
-    stored = (stored or "").strip()
-    if not stored:
+    intervals = _cached_intervals(stored)
+    if not intervals:
         return False
-    # 逗号分隔多值：逐个判断
-    for part in stored.split(","):
+    if search_ip is not None:
+        ip_int = int(search_ip)
+        for start, end in intervals:
+            if start <= ip_int <= end:
+                return True
+        return False
+    if search_net is not None:
+        net_start = int(search_net.network_address)
+        net_end = int(search_net.broadcast_address)
+        for start, end in intervals:
+            if start <= net_end and net_start <= end:
+                return True
+    return False
+
+
+# ============ IP 数值化解析（性能关键路径，带模块级缓存） ============
+
+def _ip2int(s: str):
+    """快速把点分 IPv4 字符串转 int；非法返回 None（避免 ipaddress 异常开销）。"""
+    parts = s.strip().split(".")
+    if len(parts) != 4:
+        return None
+    value = 0
+    for p in parts:
+        if not p.isdigit():
+            return None
+        n = int(p)
+        if n > 255:
+            return None
+        value = (value << 8) | n
+    return value
+
+
+def _int_to_ip(value: int) -> str:
+    return ".".join(str((value >> s) & 255) for s in (24, 16, 8, 0))
+
+
+def _parse_stored_intervals(stored) -> list:
+    """把资产 ip 字段存储值解析为数值区间列表 [(start, end), ...]。
+
+    支持逗号分隔多值、CIDR、IP 范围（含末段简写 192-254）、单 IP；
+    与 _ip_matches_stored 语义一致，但用整数比较替代 ipaddress 对象解析。
+    """
+    out = []
+    for part in (stored or "").split(","):
         part = part.strip()
         if not part:
             continue
-        # CIDR 格式
         if "/" in part:
-            try:
-                net = ipaddress.IPv4Network(part, strict=False)
-                if search_ip and search_ip in net:
-                    return True
-                if search_net and search_net.overlaps(net):
-                    return True
-            except (ipaddress.NetmaskValueError, ipaddress.AddressValueError, ValueError):
-                pass
-        # IP 范围格式 (start-end)
+            addr, _, mask_s = part.partition("/")
+            base = _ip2int(addr)
+            if base is None or not mask_s.strip().isdigit():
+                continue
+            mask = int(mask_s)
+            if mask > 32:
+                continue
+            network_mask = (0xFFFFFFFF << (32 - mask)) & 0xFFFFFFFF if mask else 0
+            start = base & network_mask
+            end = start | (((1 << (32 - mask)) - 1) if mask < 32 else 0)
+            out.append((start, end))
         elif "-" in part:
-            parts = part.split("-", 1)
-            if len(parts) == 2:
-                start_str = parts[0].strip()
-                end_str = parts[1].strip()
-                try:
-                    start_ip = ipaddress.IPv4Address(start_str)
-                    # 末段简写：end_str 为纯数字时替换 start 最后一段
-                    if "." not in end_str and end_str.isdigit():
-                        octets = str(start_ip).split(".")
-                        last = int(end_str)
-                        if 0 <= last <= 255:
-                            octets[3] = str(last)
-                            end_ip = ipaddress.IPv4Address(".".join(octets))
-                        else:
-                            end_ip = ipaddress.IPv4Address(end_str)
-                    else:
-                        end_ip = ipaddress.IPv4Address(end_str)
-                    if search_ip and start_ip <= search_ip <= end_ip:
-                        return True
-                    if search_net:
-                        net_start = search_net.network_address
-                        net_end = search_net.broadcast_address
-                        if net_start <= end_ip and start_ip <= net_end:
-                            return True
-                except (ipaddress.AddressValueError, ValueError):
-                    pass
-        # 单 IP
+            a, _, b = part.partition("-")
+            start_ip = _ip2int(a)
+            end_ip = _ip2int(b)
+            # 末段简写：end 为纯数字时替换 start 的最后一段（192.168.1.192-254）
+            if end_ip is None and b.strip().isdigit():
+                last = int(b.strip())
+                if start_ip is not None and last <= 255:
+                    end_ip = (start_ip & 0xFFFFFF00) | last
+            if start_ip is not None and end_ip is not None and start_ip <= end_ip:
+                out.append((start_ip, end_ip))
         else:
-            try:
-                single = ipaddress.IPv4Address(part)
-                if search_ip and search_ip == single:
-                    return True
-                if search_net and single in search_net:
-                    return True
-            except (ipaddress.AddressValueError, ValueError):
-                pass
-    return False
+            v = _ip2int(part)
+            if v is not None:
+                out.append((v, v))
+    return out
+
+
+# 模块级解析缓存：资产 ip 存储值 → 区间列表（重复搜索直接命中缓存）
+_INTERVAL_CACHE: dict[str, list] = {}
+_INTERVAL_CACHE_MAX = 300000
+
+
+def _cached_intervals(stored) -> list:
+    key = stored or ""
+    cached = _INTERVAL_CACHE.get(key)
+    if cached is None:
+        cached = _parse_stored_intervals(key)
+        if len(_INTERVAL_CACHE) >= _INTERVAL_CACHE_MAX:
+            _INTERVAL_CACHE.clear()
+        _INTERVAL_CACHE[key] = cached
+    return cached
 
 
 # 关键词模糊搜索覆盖的字段（大小写不敏感）。
@@ -522,7 +561,7 @@ _SORT_BY_WHITELIST = {
 }
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_permission("asset_list", "view"))])
 def list_assets(
     type_code: str = Query("", description="按资产类型模板代码筛选"),
     kb_id: int | None = Query(None, description="按来源知识库筛选"),
@@ -541,46 +580,51 @@ def list_assets(
 ) -> dict:
     """资产列表（分页 + 多维筛选 + 关键词搜索 + 排序）。
 
-    智能搜索：当 keyword 是合法 IP 时，用前三个 octets 做 LIKE 拉取候选集，
-    再在 Python 层精确判断 IP 是否落在 CIDR/范围/逗号分隔多值中。
+    智能搜索：当 keyword 是合法 IP/CIDR 时，其余筛选条件仍走 SQL，但 ip 命中
+    判断在 Python 层用数值区间完成（支持 CIDR/跨段范围/逗号分隔多值存储）。
+    单 IP 精准匹配未命中时，额外返回 suggestions（最接近的 5 个 IP 信息）。
     """
     # ===== IP 智能搜索 =====
     search_ip, search_net = _parse_search_ip(keyword)
 
-    if search_ip or search_net:
-        # 用 IP 前缀做 SQL LIKE 拉取候选集（扩大范围，Python 层再精确过滤）
-        if search_ip:
-            # 219.133.105.155 → 前缀 "219.133.105"
-            prefix = ".".join(str(search_ip).split(".")[:3])
-            ip_like = f"%{prefix}%"
-        else:
-            # CIDR：用网络地址前缀
-            prefix = ".".join(str(search_net.network_address).split(".")[:3])
-            ip_like = f"%{prefix}%"
+    # 精确匹配 + 最近 IP 建议（IP 检索统一走轻量列扫描 + Python 数值过滤）
+    suggestions: list[dict] = []
 
-        # IP 前缀 LIKE 拉大候选集 + 其余字段模糊匹配（与常规分支口径保持一致）
-        query = _apply_asset_filters(
-            db.query(Asset).filter(
-                or_(
-                    Asset.ip.ilike(ip_like),
-                    _keyword_condition(keyword),
-                )
-            ),
+    if search_ip or search_net:
+        # 背景：资产 ip 字段存在大量大范围存储（CIDR / 跨段范围，如 192.168.194.62/3、
+        # 58.250.156.224-218.17.86.254），此前用"前三段前缀 LIKE"拉候选集会漏掉它们，
+        # 导致按 IP 永远检索不到资产。改为：其余筛选条件仍走 SQL，ip 命中在 Python 层
+        # 用数值区间判断（带模块级缓存，全量 10 万级资产扫描 < 1s）。
+        sort_col = _SORT_BY_WHITELIST.get(sort_by, Asset.id)
+        order_dir = sort_col.desc() if order.lower() == "desc" else sort_col.asc()
+        light_query = _apply_asset_filters(
+            db.query(Asset.id, Asset.ip, Asset.identifier, Asset.name, Asset.type_code),
             kb_id, asset_type, department, criticality, source, "", status, tag_id, type_code,
         )
-        # Python 层精确过滤：IP/CIDR 包含判断
-        all_candidates = query.order_by(
-            _SORT_BY_WHITELIST.get(sort_by, Asset.id).desc() if order.lower() == "desc"
-            else _SORT_BY_WHITELIST.get(sort_by, Asset.id).asc()
-        ).all()
-        filtered = [
-            r for r in all_candidates
-            if _ip_matches_stored(search_ip, search_net, r.ip)
-            or (search_ip and r.identifier and str(search_ip) == r.identifier)
-        ]
-        total = len(filtered)
+        all_rows = light_query.order_by(order_dir).all()
+        filtered_ids: list[int] = []
+        for row in all_rows:
+            if _ip_matches_stored(search_ip, search_net, row.ip):
+                filtered_ids.append(row.id)
+            elif search_ip and row.identifier and str(search_ip) == row.identifier:
+                filtered_ids.append(row.id)
+        total = len(filtered_ids)
         start = (page - 1) * page_size
-        records = filtered[start:start + page_size]
+        page_ids = filtered_ids[start:start + page_size]
+        if page_ids:
+            records = (
+                db.query(Asset)
+                .filter(Asset.id.in_(page_ids))
+                .all()
+            )
+            # 保持 light_query 的排序展示
+            order_map = {aid: i for i, aid in enumerate(page_ids)}
+            records.sort(key=lambda a: order_map.get(a.id, 0))
+        else:
+            records = []
+        # 精准匹配未命中（单 IP）→ 计算最接近的 5 个 IP 信息供前端展示
+        if search_ip is not None and total == 0:
+            suggestions = _nearest_ip_suggestions(all_rows, search_ip)
     else:
         # ===== 常规搜索（非 IP keyword） =====
         query = _apply_asset_filters(
@@ -600,13 +644,53 @@ def list_assets(
             .all()
         )
 
-    return {
+    result = {
         "items": to_dict_list_with_agent_name(records, db),
         "total": total,
         "page": page,
         "page_size": page_size,
         "pages": (total + page_size - 1) // page_size if total > 0 else 0,
     }
+    if suggestions:
+        result["suggestions"] = suggestions
+    return result
+
+
+def _nearest_ip_suggestions(all_rows, search_ip, limit: int = 5) -> list[dict]:
+    """从候选行中找出与搜索 IP 数值最接近的 limit 个 IP 信息。
+
+    每个资产取其各区间到搜索 IP 的最近端点作为代表 IP，按距离升序返回；
+    用于"精准匹配未命中"时给用户最接近的 5 个 IP 线索（可点击二次检索）。
+    """
+    ip_int = int(search_ip)
+    best = []
+    for row in all_rows:
+        intervals = _cached_intervals(row.ip)
+        if not intervals:
+            continue
+        best_dist = None
+        best_ip_int = None
+        for start, end in intervals:
+            if start <= ip_int <= end:
+                best_dist, best_ip_int = 0, ip_int
+                break
+            for edge in (start, end):
+                dist = abs(edge - ip_int)
+                if best_dist is None or dist < best_dist:
+                    best_dist, best_ip_int = dist, edge
+        if best_ip_int is not None:
+            best.append((best_dist, row.id, best_ip_int, row.ip, row.name or row.identifier or f"资产{row.id}", row.type_code))
+    best.sort(key=lambda x: (x[0], x[1]))
+    return [
+        {
+            "ip": _int_to_ip(item[2]),
+            "asset_id": item[1],
+            "asset_name": item[4],
+            "stored_ip": item[3],
+            "type_code": item[5],
+        }
+        for item in best[:limit]
+    ]
 
 
 def _asset_tags_to_list(record: Asset) -> list[dict]:
@@ -626,7 +710,7 @@ def to_dict_list_with_agent_name(records: list, db: Session) -> list[dict]:
     return result
 
 
-@router.get("/ids")
+@router.get("/ids", dependencies=[Depends(require_permission("asset_list", "view"))])
 def list_asset_ids(
     type_code: str = Query("", description="按资产类型模板代码筛选"),
     kb_id: int | None = Query(None, description="按来源知识库筛选"),
@@ -646,7 +730,26 @@ def list_asset_ids(
 
     注意：此端点必须定义在 ``GET /{asset_id}`` 之前，否则 "ids" 会被
     ``{asset_id}`` 路径参数匹配并尝试解析为整数，返回 422 错误。
+
+    IP 智能匹配口径与 ``GET /assets`` 列表一致：keyword 为合法 IP/CIDR 时，
+    用轻量列扫描 + Python 数值区间过滤（支持 CIDR/跨段范围/逗号分隔多值存储）。
     """
+    search_ip, search_net = _parse_search_ip(keyword)
+    if search_ip or search_net:
+        light_query = _apply_asset_filters(
+            db.query(Asset.id, Asset.ip, Asset.identifier),
+            kb_id, asset_type, department, criticality, source, "", status, tag_id, type_code,
+        )
+        all_rows = light_query.all()
+        ids = []
+        for row in all_rows:
+            if _ip_matches_stored(search_ip, search_net, row.ip):
+                ids.append(row.id)
+            elif search_ip and row.identifier and str(search_ip) == row.identifier:
+                ids.append(row.id)
+            if len(ids) >= 10000:
+                break
+        return {"ids": ids, "total": len(ids)}
     query = _apply_asset_filters(
         db.query(Asset.id), kb_id, asset_type,
         department, criticality, source, keyword, status, tag_id, type_code,
@@ -656,7 +759,7 @@ def list_asset_ids(
     return {"ids": ids, "total": len(ids)}
 
 
-@router.get("/field-options")
+@router.get("/field-options", dependencies=[Depends(require_permission("asset_list", "view"))])
 def get_field_options(
     type_code: str = Query("", description="按资产类型模板代码筛选"),
     db: Session = Depends(get_db),
@@ -682,7 +785,7 @@ def get_field_options(
     }
 
 
-@router.get("/stats")
+@router.get("/stats", dependencies=[Depends(require_permission("asset_overview", "view"))])
 def get_asset_stats(
     type_code: str = Query("", description="按资产类型模板代码筛选"),
     db: Session = Depends(get_db),
@@ -727,7 +830,7 @@ def get_asset_stats(
     }
 
 
-@router.get("/overview")
+@router.get("/overview", dependencies=[Depends(require_permission("asset_overview", "view"))])
 def get_asset_overview(
     db: Session = Depends(get_db),
 ) -> dict:
@@ -814,7 +917,7 @@ def get_asset_overview(
     }
 
 
-@router.get("/export")
+@router.get("/export", dependencies=[Depends(require_permission("asset_list", "view"))])
 def export_assets(
     ids: str = Query("", description="指定资产 ID 列表（逗号分隔，如 '1,2,3'）；非空时只导出这些资产"),
     type_code: str = Query("", description="按资产类型模板代码筛选；传了则按模板字段列导出"),
@@ -1005,7 +1108,7 @@ _IMPORT_FIELD_MAP = {
 }
 
 
-@router.get("/import-template")
+@router.get("/import-template", dependencies=[Depends(require_permission("asset_list", "view"))])
 def download_import_template(
     type_code: str = Query("", description="资产类型模板代码；传了则按模板字段生成表头与示例"),
     db: Session = Depends(get_db),
@@ -1296,7 +1399,7 @@ async def import_assets(
     conflict_strategy: str = Query("skip", description="冲突策略：skip跳过/overwrite覆盖/error报错中止"),
     request: Request = None,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role("admin", "analyst")),
+    user: User = Depends(require_permission("asset_list", "edit")),
 ) -> dict:
     """批量导入资产（CSV/Excel）。
 
@@ -1610,7 +1713,7 @@ class CustomFieldCreateRequest(BaseModel):
     options: list[str] | None = Field(None, description="select 类型的选项列表")
 
 
-@router.get("/custom-fields")
+@router.get("/custom-fields", dependencies=[Depends(require_any_permission(("asset_list", "view"), ("asset_templates", "view")))])
 def list_custom_fields(db: Session = Depends(get_db)) -> list[dict]:
     """列出所有资产自定义字段（按 sort_order 排序）。"""
     from app.models.asset import AssetCustomField
@@ -1626,9 +1729,9 @@ def list_custom_fields(db: Session = Depends(get_db)) -> list[dict]:
 def create_custom_field(
     body: CustomFieldCreateRequest,
     db: Session = Depends(get_db),
-    _: object = Depends(require_role("admin", "analyst")),
+    _: object = Depends(require_any_permission(("asset_list", "edit"), ("asset_templates", "edit"))),
 ) -> dict:
-    """创建资产自定义字段（仅 admin/analyst）。
+    """创建资产自定义字段（需资产清单或类型模板的编辑权限）。
 
     自定义字段的值存储在 Asset.extra_fields JSON 中，所有知识库共用。
     field_key 不能与标准字段（identifier/name/ip 等）重复。
@@ -1672,9 +1775,9 @@ def create_custom_field(
 def delete_custom_field(
     field_id: int,
     db: Session = Depends(get_db),
-    _: object = Depends(require_role("admin", "analyst")),
+    _: object = Depends(require_any_permission(("asset_list", "edit"), ("asset_templates", "edit"))),
 ) -> dict:
-    """删除资产自定义字段（仅 admin/analyst）。
+    """删除资产自定义字段（需资产清单或类型模板的编辑权限）。
 
     注意：已录入资产 extra_fields 中该字段的值不会被清除（保留历史数据），
     但该字段不再出现在映射配置的下拉选项中。
@@ -1700,7 +1803,7 @@ class TagCreateRequest(BaseModel):
     color: str = Field("brand", description="标签颜色（tailwind 色名）")
 
 
-@router.get("/tags")
+@router.get("/tags", dependencies=[Depends(require_any_permission(("asset_list", "view"), ("asset_templates", "view")))])
 def list_tags(
     db: Session = Depends(get_db),
 ) -> list[dict]:
@@ -1725,9 +1828,9 @@ def list_tags(
 def create_tag(
     body: TagCreateRequest,
     db: Session = Depends(get_db),
-    _: object = Depends(require_role("admin", "analyst")),
+    _: object = Depends(require_any_permission(("asset_list", "edit"), ("asset_templates", "edit"))),
 ) -> dict:
-    """创建资产标签（仅 admin/analyst）。名称唯一。"""
+    """创建资产标签（需资产清单或类型模板的编辑权限）。名称唯一。"""
     name = body.name.strip()
     if not name:
         raise HTTPException(status_code=422, detail="标签名称不能为空")
@@ -1746,9 +1849,9 @@ def create_tag(
 def delete_tag(
     tag_id: int,
     db: Session = Depends(get_db),
-    _: object = Depends(require_role("admin", "analyst")),
+    _: object = Depends(require_any_permission(("asset_list", "edit"), ("asset_templates", "edit"))),
 ) -> dict:
-    """删除资产标签（仅 admin/analyst）。
+    """删除资产标签（需资产清单或类型模板的编辑权限）。
 
     删除标签会自动解除所有资产的关联（关联表 ondelete=CASCADE），但不删除资产本身。
     """
@@ -1765,7 +1868,7 @@ def delete_tag(
 # 资产去重检测
 # ============================================================================
 
-@router.get("/duplicates")
+@router.get("/duplicates", dependencies=[Depends(require_permission("asset_list", "view"))])
 def detect_duplicates(
     type_code: str = Query("", description="按资产类型模板代码筛选；为空则检测全部"),
     db: Session = Depends(get_db),
@@ -1859,9 +1962,9 @@ def batch_update_assets(
     body: BatchUpdateRequest,
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role("admin", "analyst")),
+    user: User = Depends(require_permission("asset_list", "edit")),
 ) -> dict:
-    """批量更新资产（仅 admin/analyst）。
+    """批量更新资产（需资产清单编辑权限）。
 
     对 body.ids 指定的资产批量设置 body.fields 中的字段。仅白名单字段生效，
     其余字段忽略。fields 中值为空字符串的字段跳过（不修改）。
@@ -1927,7 +2030,7 @@ def batch_update_assets(
     return {"ok": True, "updated": updated}
 
 
-@router.get("/{asset_id}")
+@router.get("/{asset_id}", dependencies=[Depends(require_permission("asset_list", "view"))])
 def get_asset(asset_id: int, db: Session = Depends(get_db)) -> dict:
     """获取单个资产详情。"""
     record = db.query(Asset).filter(Asset.id == asset_id).first()
@@ -1938,7 +2041,7 @@ def get_asset(asset_id: int, db: Session = Depends(get_db)) -> dict:
     return d
 
 
-@router.get("/{asset_id}/changes")
+@router.get("/{asset_id}/changes", dependencies=[Depends(require_permission("asset_list", "view"))])
 def list_asset_changes(
     asset_id: int,
     limit: int = Query(100, ge=1, le=500, description="最多返回条数"),
@@ -2054,9 +2157,9 @@ def create_asset(
     body: AssetCreateRequest,
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role("admin", "analyst")),
+    user: User = Depends(require_permission("asset_list", "edit")),
 ) -> dict:
-    """手动新增资产（管理员/分析师）。
+    """手动新增资产（需资产清单编辑权限）。
 
     支持两种模式：
     1. 模板模式（``type_code`` + ``fields``）：按模板分发字段并派生标识。
@@ -2186,9 +2289,9 @@ def update_asset(
     body: AssetUpdateRequest,
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role("admin", "analyst")),
+    user: User = Depends(require_permission("asset_list", "edit")),
 ) -> dict:
-    """更新资产（管理员/分析师）。
+    """更新资产（需资产清单编辑权限）。
 
     支持两种模式：
     1. 模板模式（``fields`` 非 None）：按模板分发仅更新传入的字段。
@@ -2321,9 +2424,9 @@ def delete_asset(
     asset_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role("admin")),
+    user: User = Depends(require_permission("asset_list", "delete")),
 ) -> dict:
-    """删除资产（仅管理员）。记录 AssetChange(action='delete')。"""
+    """删除资产（需资产清单删除权限）。记录 AssetChange(action='delete')。"""
     record = db.query(Asset).filter(Asset.id == asset_id).first()
     if record is None:
         raise HTTPException(status_code=404, detail="资产不存在")
@@ -2353,9 +2456,9 @@ def batch_delete_assets(
     body: BatchDeleteRequest,
     request: Request = None,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role("admin")),
+    user: User = Depends(require_permission("asset_list", "delete")),
 ) -> dict:
-    """批量删除资产（仅管理员）。逐条记 AssetChange(action='delete')。"""
+    """批量删除资产（需资产清单删除权限）。逐条记 AssetChange(action='delete')。"""
     ids = body.ids
     if not ids:
         return {"ok": True, "deleted": 0}

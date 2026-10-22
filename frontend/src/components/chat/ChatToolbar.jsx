@@ -2,7 +2,7 @@
  * 对话顶部工具栏（对标 new-api Playground 工具栏）
  *
  * 左侧：会话标题（大字号）+ 引擎药丸标签
- * 右侧：[模型：xxx ▾] [⚙ N] [📝 System Prompt] [🗑 清空]
+ * 右侧：[⚙ N] [📝 System Prompt] [🗑 清空]（模型切换已迁至底部输入卡片）
  *
  * Props:
  * - agent: 当前选中智能体对象
@@ -16,7 +16,6 @@
  */
 import { useState } from 'react'
 import { Eraser, FileText, SlidersHorizontal } from 'lucide-react'
-import ModelSwitcher from './ModelSwitcher'
 import ParamPanel from './ParamPanel'
 import {
   countEnabledParams,
@@ -57,10 +56,6 @@ export default function ChatToolbar({
     updateOverrides((prev) => ({ ...prev, params: nextParams }))
   }
 
-  const handleModelChange = (modelConfigId) => {
-    updateOverrides((prev) => ({ ...prev, model_config_id: modelConfigId }))
-  }
-
   // 清空对话：二次确认
   const handleClear = () => {
     if (!confirmClear) {
@@ -73,13 +68,13 @@ export default function ChatToolbar({
   }
 
   return (
-    <div className="flex shrink-0 items-center gap-3 border-b border-border bg-card/30 px-6 py-3">
+    <div className="flex shrink-0 items-center gap-3 border-b border-border px-6 py-2.5">
       {/* 左侧：头像 + 会话标题 + 引擎药丸标签 */}
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/15 text-sm">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary text-sm">
         {agent.avatar ? (
           <img src={agent.avatar} alt={name} className="h-full w-full object-cover" />
         ) : (
-          <span className="font-semibold text-primary">
+          <span className="font-semibold text-foreground">
             {name.charAt(0).toUpperCase()}
           </span>
         )}
@@ -87,20 +82,20 @@ export default function ChatToolbar({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="truncate text-base font-semibold text-foreground">{name}</span>
-          {/* 引擎药丸标签 */}
-          <span className="inline-flex shrink-0 items-center rounded-full bg-indigo-500/15 px-2 py-0.5 text-[10px] font-medium text-indigo-400">
+          {/* 引擎药丸标签（低饱和描边小标签） */}
+          <span className="inline-flex shrink-0 items-center rounded-full border border-border px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
             Hermes
           </span>
           {/* 模型覆盖指示点 */}
           {modelOverridden && (
             <span
-              className="inline-flex h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
+              className="inline-flex h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground"
               title="已覆盖模型"
             />
           )}
           {/* 流式状态 */}
           {streaming && (
-            <span className="inline-flex shrink-0 items-center gap-1 text-[10px] text-primary">
+            <span className="inline-flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
               生成中
             </span>
@@ -110,14 +105,6 @@ export default function ChatToolbar({
 
       {/* 右侧：调试工具按钮组 */}
       <div className="flex shrink-0 items-center gap-3">
-        {/* 模型切换 */}
-        <ModelSwitcher
-          value={ov.model_config_id}
-          onChange={handleModelChange}
-          llmConfigs={llmConfigs}
-          agentDefaultModelId={agent.model_config_id}
-        />
-
         {/* 参数面板 */}
         <ParamPanel
           params={ov.params || {}}
@@ -131,15 +118,15 @@ export default function ChatToolbar({
           onClick={onToggleSystemPrompt}
           className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs transition ${
             showSystemPrompt || spModified
-              ? 'border-primary/50 bg-primary/10 text-primary'
-              : 'border-border bg-secondary text-muted-foreground hover:bg-muted hover:text-foreground'
+              ? 'border-primary/40 bg-muted text-foreground'
+              : 'border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground'
           }`}
           title="System Prompt（仅本次会话生效）"
         >
           <FileText className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">System Prompt</span>
           {spModified && (
-            <span className="inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
+            <span className="inline-flex h-1.5 w-1.5 rounded-full bg-muted-foreground" />
           )}
         </button>
 
@@ -151,7 +138,7 @@ export default function ChatToolbar({
           className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-40 ${
             confirmClear
               ? 'border-destructive/50 bg-destructive/10 text-destructive'
-              : 'border-transparent bg-transparent text-muted-foreground/50 hover:bg-muted hover:text-muted-foreground'
+              : 'border-transparent bg-transparent text-muted-foreground hover:bg-muted hover:text-muted-foreground'
           }`}
           title={confirmClear ? '再点一次确认清空' : '清空当前对话（参数保留）'}
         >

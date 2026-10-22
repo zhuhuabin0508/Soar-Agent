@@ -116,6 +116,26 @@ def _check_attribute(node: ast.AST) -> None:
             )
 
 
+# format/% 格式化逃逸原语：运行时通过字符串模板访问对象属性链
+# （如 "{x.__class__.__init__.__globals__}".format(x)），静态 Attribute 检查
+# 拦不住字符串字面量，需单独检测字符串常量中的危险 dunder 模式
+_FORMAT_ESCAPE_DUNDERS = (
+    "__class__", "__globals__", "__subclasses__", "__builtins__",
+    "__mro__", "__bases__", "__loader__", "__spec__",
+)
+
+
+def _check_string_constant(node: ast.AST) -> None:
+    """检查字符串常量（含 f-string 文本片段）中的 format 逃逸原语。"""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        for dunder in _FORMAT_ESCAPE_DUNDERS:
+            if dunder in node.value:
+                raise CodeValidationError(
+                    f"字符串中包含禁止的 dunder 模式: {dunder}"
+                    f"（防止通过 format 属性链逃逸沙箱）"
+                )
+
+
 def _check_name(node: ast.AST) -> None:
     """检查 Name 节点是否引用了被禁内建。"""
     if isinstance(node, ast.Name):
@@ -144,6 +164,7 @@ def validate_tool_code(code: str) -> None:
         _check_import(node)
         _check_attribute(node)
         _check_name(node)
+        _check_string_constant(node)
 
     logger.debug("工具代码 AST 审查通过")
 

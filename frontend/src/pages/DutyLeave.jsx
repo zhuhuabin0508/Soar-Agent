@@ -4,15 +4,15 @@ import { CalendarX, CalendarDays, Clock, Check, X, AlertTriangle, Trash2 } from 
 import { toast } from '../store/toastStore'
 import { confirm } from '../components/ConfirmDialog'
 import { Modal } from '../components/Dialog'
-import { inputCls, inputBaseCls, labelCls } from '../components/property/FormControls'
-import { Button, PageContainer, DataTable, Pagination } from '../components/ui'
+import { inputCls, labelCls } from '../components/property/FormControls'
+import { Button, PageContainer, DataTable, Pagination, StatusBadge, CompactSelect, DatePicker } from '../components/ui'
 import { hasPermission } from '../utils/permissions'
 import dutyApi from '../api/duty'
 
 const STATUS_META = {
-  pending: { label: '待审批', cls: 'bg-amber-500/10 text-amber-500' },
-  approved: { label: '已批准', cls: 'bg-emerald-500/10 text-emerald-500' },
-  rejected: { label: '已拒绝', cls: 'bg-red-500/10 text-red-500' },
+  pending: { label: '待审批', color: 'warning' },
+  approved: { label: '已批准', color: 'success' },
+  rejected: { label: '已拒绝', color: 'danger' },
 }
 const SHIFT_META = { DAY: '白班', NIGHT: '晚班', ALL: '全天' }
 
@@ -155,14 +155,12 @@ export default function DutyLeave() {
     {
       key: 'status', header: '状态', width: '90px',
       render: (r) => {
-        const m = STATUS_META[r.status] || { label: r.status || '--', cls: 'bg-muted text-muted-foreground' }
-        return (
-          <span className={`inline-flex whitespace-nowrap rounded px-2.5 py-1 text-xs font-medium ${m.cls}`}>{m.label}</span>
-        )
+        const m = STATUS_META[r.status] || { label: r.status || '--', color: 'neutral' }
+        return <StatusBadge color={m.color} label={m.label} />
       },
     },
     {
-      key: 'actions', header: '操作', width: '170px',
+      key: 'actions', header: '操作', width: '240px',
       render: (r) => {
         const canApprove = r.status === 'pending' && canEdit
         if (!canApprove && !canDelete) return <span className="text-xs text-muted-foreground">--</span>
@@ -170,10 +168,10 @@ export default function DutyLeave() {
           <div className="flex items-center gap-1.5 whitespace-nowrap">
             {canApprove && (
               <>
-                <button onClick={() => openApprove(r, 'approved')} className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-emerald-500 hover:bg-emerald-500/10" title="批准">
+                <button onClick={() => openApprove(r, 'approved')} className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-success transition hover:bg-success/10" title="批准">
                   <Check className="h-3.5 w-3.5" />批准
                 </button>
-                <button onClick={() => openApprove(r, 'rejected')} className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-red-500 hover:bg-red-500/10" title="拒绝">
+                <button onClick={() => openApprove(r, 'rejected')} className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-destructive transition hover:bg-destructive/10" title="拒绝">
                   <X className="h-3.5 w-3.5" />拒绝
                 </button>
               </>
@@ -195,8 +193,8 @@ export default function DutyLeave() {
       {/* 标题区：主标题 + 描述 + 右侧提交按钮 */}
       <div className="mb-6 flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="text-[22px] font-bold text-foreground">请假管理</h1>
-          <p className="mt-2 text-[13px] text-muted-foreground">值班人员请假申请与审批，批准后请假期间自动跳过排班</p>
+          <h1 className="text-[22px] font-bold tracking-tight text-foreground">请假管理</h1>
+          <p className="mt-1.5 text-sm text-muted-foreground">值班人员请假申请与审批，批准后请假期间自动跳过排班</p>
         </div>
         {canEdit && (
           <div className="flex shrink-0 items-center gap-2">
@@ -231,8 +229,10 @@ export default function DutyLeave() {
 
       {/* 筛选区：状态下拉 + 查询/重置，整行横向排列 */}
       <div className="mb-4 flex items-center gap-3 rounded-md border border-border bg-card px-4 py-2.5">
-        <select
-          className={`${inputBaseCls} h-9 w-32`}
+        <label className="text-xs text-muted-foreground whitespace-nowrap">按状态</label>
+        <CompactSelect
+          size="lg"
+          className="w-32"
           value={filterStatus}
           onChange={(e) => { setFilterStatus(e.target.value); setPage(1) }}
         >
@@ -240,20 +240,20 @@ export default function DutyLeave() {
           <option value="pending">待审批</option>
           <option value="approved">已批准</option>
           <option value="rejected">已拒绝</option>
-        </select>
+        </CompactSelect>
         <div className="flex-1" />
-        <Button variant="primary" size="sm" className="h-9 whitespace-nowrap" onClick={load}>查询</Button>
-        <Button variant="secondary" size="sm" className="h-9 whitespace-nowrap" onClick={resetFilter}>重置</Button>
+        <Button variant="secondary" size="sm" className="h-9 whitespace-nowrap" onClick={load}>查询</Button>
+        <Button variant="ghost" size="sm" className="h-9 whitespace-nowrap" onClick={resetFilter}>重置</Button>
       </div>
 
       {canDelete && !!list.length && (
         <div className="mb-3 flex items-center gap-3">
-          <span className="text-xs text-muted-foreground">已选 {selectedKeys.length} 项</span>
+          <span className="text-xs text-muted-foreground">已选 <span className="font-medium tabular-nums text-foreground">{selectedKeys.length}</span> 项</span>
           <Button size="sm" variant="danger" onClick={handleBatchDelete} disabled={!selectedKeys.length || batchDeleting} className="h-9">
             <Trash2 className="mr-1 h-3.5 w-3.5" />{batchDeleting ? '删除中' : '批量删除'}
           </Button>
           {!!selectedKeys.length && (
-            <button onClick={() => setSelectedKeys([])} className="text-xs text-muted-foreground hover:text-foreground">清空选择</button>
+            <button onClick={() => setSelectedKeys([])} className="rounded px-2 py-1 text-xs text-muted-foreground transition hover:bg-accent hover:text-foreground">清空选择</button>
           )}
         </div>
       )}
@@ -293,26 +293,26 @@ export default function DutyLeave() {
         <div className="grid grid-cols-2 gap-5 py-2">
           <div className="col-span-2">
             <label className={labelCls}>请假人员<span className="text-red-500">*</span></label>
-            <select className={inputCls} value={form.member_id} onChange={(e) => setForm({ ...form, member_id: e.target.value })}>
+            <CompactSelect size="lg" block value={form.member_id} onChange={(e) => setForm({ ...form, member_id: e.target.value })}>
               <option value="">请选择</option>
               {members.map((m) => <option key={m.id} value={m.id}>{m.name}（{m.group_name || '未分组'}）</option>)}
-            </select>
+            </CompactSelect>
           </div>
           <div>
             <label className={labelCls}>开始日期<span className="text-red-500">*</span></label>
-            <input type="date" className={inputCls} value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} />
+            <DatePicker block value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} />
           </div>
           <div>
             <label className={labelCls}>结束日期<span className="text-red-500">*</span></label>
-            <input type="date" className={inputCls} value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} />
+            <DatePicker block value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} />
           </div>
           <div>
             <label className={labelCls}>班次</label>
-            <select className={inputCls} value={form.shift} onChange={(e) => setForm({ ...form, shift: e.target.value })}>
+            <CompactSelect size="lg" block value={form.shift} onChange={(e) => setForm({ ...form, shift: e.target.value })}>
               <option value="ALL">全天（白班+晚班）</option>
               <option value="DAY">仅白班</option>
               <option value="NIGHT">仅晚班</option>
-            </select>
+            </CompactSelect>
           </div>
           <div className="col-span-2">
             <label className={labelCls}>请假原因</label>
@@ -343,7 +343,7 @@ export default function DutyLeave() {
       >
         {approveTarget && (
           <div className="space-y-3 py-2">
-            <div className="rounded-md border border-border bg-muted/30 p-3 text-sm">
+            <div className="rounded-md border border-border bg-muted p-3 text-sm">
               <div>请假人员：<span className="font-medium">{approveTarget.row.member_name || '-'}</span></div>
               <div>请假日期：<span className="tabular-nums">{approveTarget.row.start_date} ~ {approveTarget.row.end_date}</span></div>
               <div>班次：{SHIFT_META[approveTarget.row.shift] || approveTarget.row.shift}</div>

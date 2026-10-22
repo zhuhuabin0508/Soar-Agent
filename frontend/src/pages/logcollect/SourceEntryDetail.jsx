@@ -11,7 +11,7 @@ import { inputCls } from '../../components/property/FormControls'
 import { devices as devicesApi } from '../../api/client'
 import { strategyApi } from '../../api/strategy'
 import { Section, Switch } from '../devices/Badges'
-import { Button, EmptyState } from '../../components/ui'
+import { Button, EmptyState, CompactSelect } from '../../components/ui'
 import {
   SOURCE_TYPE_META, PROTOCOL_TAG_CLS, ENTRY_STATUS_META, DEVICE_TYPE_LABELS,
   PARSE_STATUS_META, parseAdapterConfig,
@@ -210,7 +210,7 @@ function BasicInfoTab({ entry, devices, onSaved, onDeleted }) {
 
   const infoRows = [
     { label: '来源 IP', value: <span className="font-mono">{entry.source_ip}</span> },
-    { label: '绑定设备', value: entry.device_name || <span className="text-muted-foreground/50">未绑定</span> },
+    { label: '绑定设备', value: entry.device_name || <span className="text-muted-foreground">未绑定</span> },
     { label: '设备类型', value: deviceTypeLabelOf(entry) },
     { label: '累计接收', value: <span title="该来源自条目创建以来累计接收的日志条数（每条日志计一次）">{fmtCount(entry.received_count)}</span> },
     {
@@ -218,10 +218,10 @@ function BasicInfoTab({ entry, devices, onSaved, onDeleted }) {
       value: (
         <span title="今日统计基于解析终态明细（success/partial/fail/unknown），与累计接收同口径；失败含解析失败与类型识别失败">
           <span className="tabular-nums">{fmtCount(entry.today_received)}</span>
-          <span className="mx-1 text-muted-foreground/40">/</span>
+          <span className="mx-1 text-muted-foreground">/</span>
           <span className="tabular-nums">{fmtCount(entry.today_parsed)}</span>
-          <span className="mx-1 text-muted-foreground/40">/</span>
-          <span className={`tabular-nums ${entry.today_failed ? 'text-destructive' : 'text-muted-foreground/50'}`}>
+          <span className="mx-1 text-muted-foreground">/</span>
+          <span className={`tabular-nums ${entry.today_failed ? 'text-destructive' : 'text-muted-foreground'}`}>
             {fmtCount(entry.today_failed)}
           </span>
         </span>
@@ -251,7 +251,7 @@ function BasicInfoTab({ entry, devices, onSaved, onDeleted }) {
       <div className="card">
         <div className="flex items-center justify-between border-b border-border px-5 py-3">
           <span className="text-sm font-medium">基础配置</span>
-          <span className="text-[11px] text-muted-foreground/70">条目配置仅覆盖该来源 IP，优先级高于接收器默认</span>
+          <span className="text-[11px] text-muted-foreground">条目配置仅覆盖该来源 IP，优先级高于接收器默认</span>
         </div>
         <div className="flex flex-col gap-3 px-5 py-4">
           <label>
@@ -260,17 +260,17 @@ function BasicInfoTab({ entry, devices, onSaved, onDeleted }) {
           </label>
           <label>
             <div className="mb-1 text-xs font-medium text-muted-foreground">绑定设备</div>
-            <select className={inputCls} value={deviceId} onChange={(e) => setDeviceId(e.target.value)}>
+            <CompactSelect value={deviceId} onChange={(e) => setDeviceId(e.target.value)} size="lg" block>
               <option value="">不绑定（走条目/接收器自身归属）</option>
               {devices.map((d) => (<option key={d.id} value={d.id}>{d.name}</option>))}
-            </select>
-            <div className="mt-1 text-[10px] text-muted-foreground/70">告警与接收日志计入该设备；未绑定时走接收器默认归属</div>
+            </CompactSelect>
+            <div className="mt-1 text-[10px] text-muted-foreground">告警与接收日志计入该设备；未绑定时走接收器默认归属</div>
           </label>
           <label className="flex items-center gap-2">
             <Switch checked={enabled} onChange={setEnabled} />
             <span className="text-sm text-muted-foreground">
               启用该来源
-              <span className="ml-1 text-[10px] text-muted-foreground/70">停用后该来源日志将被丢弃（不解析、不入库）</span>
+              <span className="ml-1 text-[10px] text-muted-foreground">停用后该来源日志将被丢弃（不解析、不入库）</span>
             </span>
           </label>
           <div className="mt-1 flex items-center justify-between">
@@ -298,7 +298,7 @@ function deviceTypeLabelOf(entry) {
     // 未识别：灰字 + 「去配置」链接，引导完成设备接入绑定
     return (
       <span className="inline-flex items-center gap-1.5">
-        <span className="text-muted-foreground/70">未识别</span>
+        <span className="text-muted-foreground">未识别</span>
         <Link to="/device-onboard" className="text-xs text-primary transition hover:underline" title="打开设备接入指引，完成设备接入与解析模板配置">去配置</Link>
       </span>
     )
@@ -407,15 +407,15 @@ function StrategyTab({ entry, strategies, onSaved }) {
     <div className="flex flex-col gap-3">
       <div className="card px-5 py-4">
         <div className="mb-1 text-sm font-medium">解析模板</div>
-        <div className="mb-3 text-[11px] text-muted-foreground/70">
+        <div className="mb-3 text-[11px] text-muted-foreground">
           优先级链：条目固定模板 → 接收器默认模板（{entry.receiver_strategy_id ? '已固定' : '自动匹配'}）→ 系统自动匹配
         </div>
-        <select className={`${inputCls} max-w-md`} value={strategyId} onChange={(e) => setStrategyId(e.target.value)}>
+        <CompactSelect value={strategyId} onChange={(e) => setStrategyId(e.target.value)} size="lg" block className="max-w-md">
           <option value="">跟随接收器（{entry.receiver_strategy_id ? `固定 #${entry.receiver_strategy_id}` : '自动匹配'}）</option>
           {strategies.map((s) => (
             <option key={s.id} value={s.id}>{s.strategy_name}{s.device_type ? `（${s.device_type}）` : ''}</option>
           ))}
-        </select>
+        </CompactSelect>
         <div className="mt-1 text-xs text-muted-foreground">
           {strategyId
             ? '选择模板后固定使用该模板解析，失败即记为失败，不会自动切换其他模板。'
@@ -431,14 +431,14 @@ function StrategyTab({ entry, strategies, onSaved }) {
         {filterOn && (
           <div className="mt-2 flex flex-col gap-2">
             {rules.length === 0 && (
-              <div className="text-xs text-muted-foreground/70">暂无规则；添加后按条件丢弃事件，如丢弃健康检查类告警</div>
+              <div className="text-xs text-muted-foreground">暂无规则；添加后按条件丢弃事件，如丢弃健康检查类告警</div>
             )}
             {rules.map((r, i) => (
               <div key={i} className="flex items-center gap-2">
                 <input className={`${inputCls} flex-1 font-mono`} placeholder="字段名，如 alert_name" value={r.field} onChange={(e) => setRule(i, 'field', e.target.value)} />
-                <select className={`${inputCls} w-[120px]`} value={r.op} onChange={(e) => setRule(i, 'op', e.target.value)}>
+                <CompactSelect value={r.op} onChange={(e) => setRule(i, 'op', e.target.value)} size="md" className="w-[120px]">
                   {FILTER_OPS.map((o) => (<option key={o.value} value={o.value}>{o.label}</option>))}
-                </select>
+                </CompactSelect>
                 <input
                   className={`${inputCls} flex-1 font-mono`} placeholder={NO_VALUE_OPS.has(r.op) ? '（无需值）' : '判定值（in 类逗号分隔）'}
                   value={r.value} disabled={NO_VALUE_OPS.has(r.op)} onChange={(e) => setRule(i, 'value', e.target.value)}
@@ -450,10 +450,10 @@ function StrategyTab({ entry, strategies, onSaved }) {
             ))}
             <div className="flex items-center gap-2">
               <button type="button" onClick={addRule} className="btn-secondary btn-sm">+ 添加规则</button>
-              <select className={`${inputCls} w-auto py-1 text-xs`} value={filterMatch} onChange={(e) => setFilterMatch(e.target.value)}>
+              <CompactSelect value={filterMatch} onChange={(e) => setFilterMatch(e.target.value)} size="md">
                 <option value="all">全部条件满足才丢弃</option>
                 <option value="any">任一条件满足即丢弃</option>
-              </select>
+              </CompactSelect>
             </div>
           </div>
         )}
@@ -467,7 +467,7 @@ function StrategyTab({ entry, strategies, onSaved }) {
             onChange={(e) => toggleEnricher('asset', e.target.checked)}
           />
           <span className="text-sm">资产关联富化</span>
-          <span className="text-[10px] text-muted-foreground/70">按 src_ip / host_ip 匹配设备表，补 asset_id 与设备名</span>
+          <span className="text-[10px] text-muted-foreground">按 src_ip / host_ip 匹配设备表，补 asset_id 与设备名</span>
         </label>
       </Section>
 
@@ -534,10 +534,10 @@ function PreviewTab({ entry }) {
     <div className="flex flex-col gap-3">
       {/* 筛选栏 */}
       <div className="flex items-center gap-2">
-        <select className={`${inputCls} w-auto`} value={parseStatus} onChange={(e) => setParseStatus(e.target.value)}>
+        <CompactSelect value={parseStatus} onChange={(e) => setParseStatus(e.target.value)} size="lg">
           <option value="">全部解析状态</option>
           {Object.entries(PARSE_STATUS_META).map(([v, m]) => (<option key={v} value={v}>{m.label}</option>))}
-        </select>
+        </CompactSelect>
         <Button variant="secondary" onClick={load} disabled={loading}>
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> 刷新
         </Button>
@@ -570,14 +570,14 @@ function PreviewTab({ entry }) {
                     key={l.id} type="button"
                     onClick={() => setSelected(l)}
                     className={`mb-1 flex w-full flex-col gap-1 rounded-md border px-3 py-2 text-left transition ${
-                      active ? 'border-primary/50 bg-primary/5' : 'border-transparent hover:bg-accent/50'
+                      active ? 'border-primary/50 bg-primary/5' : 'border-transparent hover:bg-accent'
                     }`}
                   >
                     <div className="flex w-full items-center justify-between gap-2">
                       <span className="font-mono text-[11px] text-muted-foreground">{fmtTime(l.received_at)}</span>
                       <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${pm.cls}`}>{pm.label}</span>
                     </div>
-                    <div className="w-full truncate font-mono text-xs text-foreground/80" title={l.raw_data}>
+                    <div className="w-full truncate font-mono text-xs text-foreground" title={l.raw_data}>
                       {l.raw_data || '（空）'}
                     </div>
                   </button>
@@ -615,7 +615,7 @@ function PreviewTab({ entry }) {
                 <div>
                   <div className="text-muted-foreground">关联告警</div>
                   <div className="mt-0.5 font-medium">
-                    {selected.alert_id ? `告警 #${selected.alert_id}` : <span className="text-muted-foreground/50">未生成告警</span>}
+                    {selected.alert_id ? `告警 #${selected.alert_id}` : <span className="text-muted-foreground">未生成告警</span>}
                   </div>
                 </div>
                 <div>
@@ -631,16 +631,16 @@ function PreviewTab({ entry }) {
                     <div className="text-muted-foreground">命中解析模板</div>
                     <div className="mt-0.5 font-medium">
                       {selected.strategy_name ? (
-                        <span>{selected.strategy_name}{selected.strategy_id ? <span className="text-muted-foreground/70">（#{selected.strategy_id}）</span> : null}</span>
-                      ) : <span className="text-muted-foreground/50">未记录</span>}
+                        <span>{selected.strategy_name}{selected.strategy_id ? <span className="text-muted-foreground">（#{selected.strategy_id}）</span> : null}</span>
+                      ) : <span className="text-muted-foreground">未记录</span>}
                     </div>
                   </div>
                   <div>
                     <div className="text-muted-foreground">命中规则</div>
                     <div className="mt-0.5 font-medium">
                       {selected.rule_id ? (
-                        <span className="font-mono">{selected.rule_id}{selected.log_type ? <span className="font-sans text-muted-foreground/70">（{selected.log_type}）</span> : null}</span>
-                      ) : <span className="text-muted-foreground/50">未记录</span>}
+                        <span className="font-mono">{selected.rule_id}{selected.log_type ? <span className="font-sans text-muted-foreground">（{selected.log_type}）</span> : null}</span>
+                      ) : <span className="text-muted-foreground">未记录</span>}
                     </div>
                   </div>
                 </div>
@@ -650,7 +650,7 @@ function PreviewTab({ entry }) {
               {selected.parsed_fields && (
                 <div>
                   <div className="mb-1 text-xs font-medium text-muted-foreground">解析后内容（标准模型字段）</div>
-                  <pre className="max-h-[280px] overflow-auto rounded-md border border-primary/20 bg-primary/5 p-3 font-mono text-[11px] leading-relaxed text-foreground/90">
+                  <pre className="max-h-[280px] overflow-auto rounded-md border border-primary/20 bg-primary/5 p-3 font-mono text-[11px] leading-relaxed text-foreground">
                     {prettyRaw(selected.parsed_fields) || '（空）'}
                   </pre>
                 </div>
@@ -671,7 +671,7 @@ function PreviewTab({ entry }) {
 
               <div>
                 <div className="mb-1 text-xs font-medium text-muted-foreground">原始内容（格式化）</div>
-                <pre className="max-h-[280px] overflow-auto rounded-md bg-muted/50 p-3 font-mono text-[11px] leading-relaxed text-foreground/90">
+                <pre className="max-h-[280px] overflow-auto rounded-md bg-muted p-3 font-mono text-[11px] leading-relaxed text-foreground">
                   {prettyRaw(selected.raw_data) || '（空）'}
                 </pre>
               </div>
