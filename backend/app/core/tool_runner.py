@@ -777,6 +777,12 @@ def load_tool_function(tool, enabled_kbs=None, agent_id=None, user_id=None) -> C
         namespace["run_search_assets"] = execute_search_assets
     except ImportError:  # pragma: no cover
         logger.debug("decision 未安装，工具命名空间不注入 run_search_assets")
+    try:
+        from app.agent.discovery_search import execute_search_discovered_assets
+
+        namespace["run_search_discovered_assets"] = execute_search_discovered_assets
+    except ImportError:  # pragma: no cover
+        logger.debug("discovery_search 未安装，工具命名空间不注入 run_search_discovered_assets")
 
     # 数据库访问注入：允许工具查询/写入已封禁 IP 表（query_banned_ip / record_ban 等）
     # 同时注入 KnowledgeBase / KnowledgeSegment，供 get_asset_info 查询知识库名称和精确 IP 匹配

@@ -135,6 +135,7 @@ HERMES_BUILTIN_TOOLS: list[dict[str, Any]] = [
             "用于研判时对比告警 IP 是否属于已知资产。"
             "按智能体勾选的资产类型检索：未勾选则不可用；勾选部分则只查这些类型；"
             "全部勾选则不按类型过滤。同一 IP 若出现在主机/网段/出口等多类下会全部返回。"
+            "不查询资产发现（云主机/裸金属/网络资源/弹性IP），该类数据使用 search_discovered_assets。"
         ),
         "parameters_schema": [
             {"name": "keyword", "type": "String", "required": False, "description": "IP/名称/标识/负责人；单个 IP 会做网段包含匹配；支持逗号/分号/空白分隔批量查询多个 IP"},
@@ -155,6 +156,36 @@ HERMES_BUILTIN_TOOLS: list[dict[str, Any]] = [
             "        keyword=keyword, department=department,\n"
             "        type_code=type_code, limit=limit,\n"
             "        type_codes=list(enabled_asset_types or []),\n"
+            "    )\n"
+        ),
+        "tool_type": "code",
+        "category": "security",
+        "enabled": True,
+    },
+    {
+        "name": "search_discovered_assets",
+        "description": (
+            "查询资产发现数据（综合运管平台爬取的云主机、裸金属、网络资源、弹性IP）。"
+            "不查询资产清单。约数十万行，IP 与 CMDB ID 走精确匹配；"
+            "实例名、部门走模糊匹配，关键词至少 2 个字。"
+            "支持逗号/分号/空白分隔批量查询，一次调用返回每个目标各自的命中。"
+            "resource_type 可空；为空时四类都查。"
+        ),
+        "parameters_schema": [
+            {"name": "keyword", "type": "String", "required": True, "description": "IP、CMDB ID、实例名或部门；支持逗号/分号/空白分隔批量查询"},
+            {"name": "ip", "type": "String", "required": False, "description": "待查询 IP（与 keyword 二选一，优先 keyword）"},
+            {"name": "resource_type", "type": "String", "required": False, "description": "cloud_host / bare_metal / e_government_network / elastic_ip；空表示四类都查"},
+            {"name": "limit", "type": "Number", "required": False, "description": "每一类返回条数上限，默认 10，最大 20"},
+        ],
+        "code": (
+            "async def run(**kwargs):\n"
+            "    keyword = (kwargs.get('keyword') or kwargs.get('ip') or '').strip()\n"
+            "    resource_type = (kwargs.get('resource_type') or '').strip()\n"
+            "    limit = int(kwargs.get('limit') or 10)\n"
+            "    return await run_search_discovered_assets(\n"
+            "        keyword=keyword,\n"
+            "        resource_type=resource_type,\n"
+            "        limit=limit,\n"
             "    )\n"
         ),
         "tool_type": "code",

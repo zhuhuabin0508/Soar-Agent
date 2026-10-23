@@ -654,6 +654,7 @@ def _build_asset_tool(enabled_asset_types: list[str]):
             "一次调用返回每个查询目标各自的命中——批量研判多个 IP 时必须合并为一次调用，不要逐个查询。"
             "传入单个 IP 会匹配包含该 IP 的网段/CIDR/范围/EIP；"
             "传入 CIDR 会匹配重叠网段。"
+            "不查询资产发现（云主机/裸金属/网络资源/弹性IP），该类数据使用 search_discovered_assets。"
         ),
         args_schema=SearchAssetsArgs,
         coroutine=_coroutine,

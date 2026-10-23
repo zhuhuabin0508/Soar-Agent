@@ -46,7 +46,7 @@ function highlightEntities(text) {
     while ((m = toolRe.exec(line)) !== null) {
       const word = m[1]
       // 排除常见英文单词（只匹配含下划线的或已知工具名）
-      if (word.includes('_') || ['search_assets', 'get_threat_intel', 'check_whitelist', 'check_subnet', 'query_banned_ip', 'record_ban', 'calculate_ban_duration', 'search_knowledge_base', 'read_document', 'query_kb_file'].includes(word)) {
+      if (word.includes('_') || ['search_assets', 'search_discovered_assets', 'get_threat_intel', 'check_whitelist', 'check_subnet', 'query_banned_ip', 'record_ban', 'calculate_ban_duration', 'search_knowledge_base', 'read_document', 'query_kb_file'].includes(word)) {
         matches.push({ start: m.index, end: m.index + m[0].length, text: m[0], type: 'tool' })
       }
     }

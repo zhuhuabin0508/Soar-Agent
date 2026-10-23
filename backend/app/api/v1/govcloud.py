@@ -15,6 +15,8 @@ from sqlalchemy.orm import Session
 
 from app.core.audit import get_client_ip, log_audit
 from app.core.govcloud_schema import (
+    EXTRA_IP_KEYS,
+    EXTRA_NAME_KEYS,
     FIELD_LABELS,
     RESERVED_COLUMNS,
     RESOURCE_EXCEL_FIELDS,
@@ -345,6 +347,10 @@ def list_govcloud_assets(
             col = getattr(model, attr, None)
             if col is not None:
                 clauses.append(col.ilike(like))
+        extra = getattr(model, "extra_excel", None)
+        if extra is not None:
+            for key in (*EXTRA_IP_KEYS, *EXTRA_NAME_KEYS):
+                clauses.append(extra[key].astext.ilike(like))
         query = query.filter(or_(*clauses))
 
     total = query.count()

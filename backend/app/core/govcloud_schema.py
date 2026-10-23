@@ -202,6 +202,9 @@ FIELD_LABELS: dict[str, str] = {
 
 SOURCE_ID_KEYS = ("_id", "instance_id", "inst_id")
 
+EXTRA_IP_KEYS = ("IP", "ip", "弹性IP")
+EXTRA_NAME_KEYS = ("实例名", "名称")
+
 
 def excel_attr(field: str) -> str:
     """Excel 表头 → ORM 属性名（``_id`` 映射为 cmdb_id）。"""

@@ -334,6 +334,129 @@ def ensure_columns(engine, table_name: str, columns: dict[str, str]) -> None:
     logger.info("轻量迁移完成: table=%s, checked=%d", table_name, len(columns))
 
 
+def _ensure_govcloud_search_indexes(engine) -> None:
+    btree_indexes = (
+        ("ix_gch_ip", "govcloud_cloud_hosts", "ip_address"),
+        ("ix_gch_fip", "govcloud_cloud_hosts", "floatip_address"),
+        ("ix_gch_inst", "govcloud_cloud_hosts", "instance_id"),
+        ("ix_gch_cmdb", "govcloud_cloud_hosts", "cmdb_id"),
+        ("ix_gbm_ip", "govcloud_bare_metals", "ip_address"),
+        ("ix_gbm_fip", "govcloud_bare_metals", "floatip_address"),
+        ("ix_gbm_inst", "govcloud_bare_metals", "instance_id"),
+        ("ix_gbm_cmdb", "govcloud_bare_metals", "cmdb_id"),
+        ("ix_gnet_ip", "govcloud_networks", "ip_address"),
+        ("ix_gnet_cidr", "govcloud_networks", "cidr"),
+        ("ix_gnet_inst", "govcloud_networks", "instance_id"),
+        ("ix_gnet_cmdb", "govcloud_networks", "cmdb_id"),
+        ("ix_geip_ip", "govcloud_elastic_ips", "ip_address"),
+        ("ix_geip_fip", "govcloud_elastic_ips", "floatip_address"),
+        ("ix_geip_inst", "govcloud_elastic_ips", "instance_id"),
+        ("ix_geip_cmdb", "govcloud_elastic_ips", "cmdb_id"),
+    )
+    trgm_indexes = (
+        ("ix_gch_name_trgm", "govcloud_cloud_hosts", "instance_name"),
+        ("ix_gch_iname_trgm", "govcloud_cloud_hosts", "inst_name"),
+        ("ix_gch_udept_trgm", "govcloud_cloud_hosts", "user_department"),
+        ("ix_gch_adept_trgm", "govcloud_cloud_hosts", "applicant_department"),
+        ("ix_gbm_name_trgm", "govcloud_bare_metals", "instance_name"),
+        ("ix_gbm_iname_trgm", "govcloud_bare_metals", "inst_name"),
+        ("ix_gbm_udept_trgm", "govcloud_bare_metals", "user_department"),
+        ("ix_gbm_adept_trgm", "govcloud_bare_metals", "applicant_department"),
+        ("ix_gnet_name_trgm", "govcloud_networks", "instance_name"),
+        ("ix_gnet_iname_trgm", "govcloud_networks", "inst_name"),
+        ("ix_gnet_label_trgm", "govcloud_networks", "name"),
+        ("ix_gnet_udept_trgm", "govcloud_networks", "user_department"),
+        ("ix_gnet_adept_trgm", "govcloud_networks", "applicant_department"),
+        ("ix_geip_name_trgm", "govcloud_elastic_ips", "instance_name"),
+        ("ix_geip_iname_trgm", "govcloud_elastic_ips", "inst_name"),
+        ("ix_geip_udept_trgm", "govcloud_elastic_ips", "user_department"),
+        ("ix_geip_adept_trgm", "govcloud_elastic_ips", "applicant_department"),
+    )
+    extra_ip_indexes = (
+        ("ix_gch_extra_ip", "govcloud_cloud_hosts"),
+        ("ix_gbm_extra_ip", "govcloud_bare_metals"),
+        ("ix_gnet_extra_ip", "govcloud_networks"),
+        ("ix_geip_extra_ip", "govcloud_elastic_ips"),
+    )
+    extra_name_indexes = (
+        ("ix_gch_extra_name_trgm", "govcloud_cloud_hosts"),
+        ("ix_gbm_extra_name_trgm", "govcloud_bare_metals"),
+        ("ix_gnet_extra_name_trgm", "govcloud_networks"),
+        ("ix_geip_extra_name_trgm", "govcloud_elastic_ips"),
+    )
+    insp = inspect(engine)
+
+    def _ready(table: str, column: str) -> bool:
+        if not insp.has_table(table):
+            return False
+        return column in {item["name"] for item in insp.get_columns(table)}
+
+    for index_name, table, column in btree_indexes:
+        if not _ready(table, column):
+            continue
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    f"CREATE INDEX IF NOT EXISTS {index_name} ON {table} ({column})"
+                ))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("资产发现索引 %s 创建失败: %s", index_name, exc)
+    trgm_ok = False
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+        trgm_ok = True
+    except Exception as exc:  # noqa: BLE001
+        try:
+            with engine.connect() as conn:
+                trgm_ok = conn.execute(
+                    text("SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm'")
+                ).first() is not None
+        except Exception:  # noqa: BLE001
+            trgm_ok = False
+        if not trgm_ok:
+            logger.warning("pg_trgm 不可用，资产发现名称搜索无法走索引: %s", exc)
+    for index_name, table in extra_ip_indexes:
+        if not _ready(table, "extra_excel"):
+            continue
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    f"CREATE INDEX IF NOT EXISTS {index_name} "
+                    f"ON {table} ((extra_excel->>'IP'))"
+                ))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("资产发现扩展 IP 索引 %s 创建失败: %s", index_name, exc)
+    if not trgm_ok:
+        return
+    for index_name, table, column in trgm_indexes:
+        if not _ready(table, column):
+            continue
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    f"CREATE INDEX IF NOT EXISTS {index_name} "
+                    f"ON {table} USING gin ({column} gin_trgm_ops)"
+                ))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("资产发现模糊索引 %s 创建失败: %s", index_name, exc)
+    for index_name, table in extra_name_indexes:
+        if not _ready(table, "extra_excel"):
+            continue
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    f"CREATE INDEX IF NOT EXISTS {index_name} "
+                    f"ON {table} USING gin ((extra_excel->>'实例名') gin_trgm_ops)"
+                ))
+                conn.execute(text(
+                    f"CREATE INDEX IF NOT EXISTS {index_name}_ip "
+                    f"ON {table} USING gin ((extra_excel->>'IP') gin_trgm_ops)"
+                ))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("资产发现扩展字段模糊索引 %s 创建失败: %s", index_name, exc)
+
+
 def _reset_govcloud_split_schema(engine) -> None:
     """资产发现分表迁移：去掉旧 JSON 单表；纠正列名；清空与空新表脱节的旧批次。"""
     with engine.begin() as conn:
@@ -1113,6 +1236,10 @@ def run_lightweight_migrations(engine) -> None:
             _reset_govcloud_split_schema(engine)
         except Exception as extra_exc:  # noqa: BLE001
             logger.warning("重置政务云分表/批次失败（忽略）: %s", extra_exc)
+        try:
+            _ensure_govcloud_search_indexes(engine)
+        except Exception as index_exc:  # noqa: BLE001
+            logger.warning("资产发现查询索引创建失败（忽略）: %s", index_exc)
     except Exception as exc:  # noqa: BLE001
         logger.warning("轻量迁移失败（忽略继续）: %s", exc)
     finally:

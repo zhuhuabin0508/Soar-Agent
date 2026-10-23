@@ -7,6 +7,7 @@ import { AGENT_TEMPLATES, getTemplateRecommendedTools } from './agentTemplates'
 const TOOL_KEYWORDS = [
   { name: 'check_whitelist', words: ['白名单', '误报', '可信', 'whitelist'] },
   { name: 'search_assets', words: ['资产', '归属', '主机', '网段', '出口', '台账', 'asset'] },
+  { name: 'search_discovered_assets', words: ['资产发现', '云主机', '裸金属', '弹性ip', '弹性IP', '综合运管', '网络资源'] },
   { name: 'get_asset_info', words: ['资产信息', '查资产'] },
   { name: 'get_threat_intel', words: ['威胁情报', '恶意', '情报', 'threat', 'c2', '木马'] },
   { name: 'check_subnet', words: ['网段', '子网', 'subnet'] },

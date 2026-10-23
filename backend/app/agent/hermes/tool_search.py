@@ -194,6 +194,7 @@ _EXPLICIT_CORE_NAMES = frozenset({
 # 研判/封禁链路核心工具：即使 source=db_code 也永不延迟
 _JUDGMENT_CORE_TOOL_NAMES = frozenset({
     "search_assets",
+    "search_discovered_assets",
     "get_asset_info",
     "get_threat_intel",
     "check_whitelist",

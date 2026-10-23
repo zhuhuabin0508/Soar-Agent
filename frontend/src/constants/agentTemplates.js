@@ -64,9 +64,10 @@ export const AGENT_TEMPLATES = [
 
 ## 研判顺序
 1. 调用 check_whitelist 检查源 IP 是否在白名单/可信网段
-2. 调用 search_assets 查询资产归属（主机、网段、出口地址）
-3. 对外网 IP 调用 get_threat_intel 查询威胁情报
-4. 必要时调用 check_subnet 确认网段关系
+2. 调用 search_assets 查询资产清单归属（主机、网段、出口地址）
+3. 调用 search_discovered_assets 查询资产发现（云主机、裸金属、网络资源、弹性IP）
+4. 对外网 IP 调用 get_threat_intel 查询威胁情报
+5. 必要时调用 check_subnet 确认网段关系
 
 ## 输出要求
 - 给出风险等级（高/中/低）与处置建议（封禁/观察/误报）
@@ -75,7 +76,7 @@ export const AGENT_TEMPLATES = [
       temperature: 0.3,
       max_iterations: 8,
       engine: 'hermes',
-      enabled_tools: ['check_whitelist', 'search_assets', 'get_threat_intel', 'check_subnet'],
+      enabled_tools: ['check_whitelist', 'search_assets', 'search_discovered_assets', 'get_threat_intel', 'check_subnet'],
       enabled_asset_types: ['host_asset', 'network_segment', 'egress_ip'],
       tool_configs: { tool_search: { enabled: 'off' } },
     },
@@ -86,6 +87,7 @@ export const AGENT_TEMPLATES = [
     tool_hints: {
       check_whitelist: '先查白名单，排除可信 IP 与误报',
       search_assets: '查 IP 对应主机、网段或出口地址',
+      search_discovered_assets: '查综合运管平台发现的云主机、裸金属、网络资源和弹性IP',
       get_threat_intel: '查外网 IP 恶意标签与置信度',
       check_subnet: '确认 IP 与网段归属关系',
     },
@@ -107,11 +109,12 @@ export const AGENT_TEMPLATES = [
 
 ## 决策流程
 1. check_whitelist：白名单命中则终止，标记误报
-2. search_assets：确认资产归属与业务重要性
-3. get_threat_intel：查询恶意标签与置信度
-4. query_banned_ip：查询历史封禁与违规次数
-5. calculate_ban_duration：按地域、违规次数、威胁标签计算时长
-6. 确认需封禁后调用 record_ban 写入封禁记录
+2. search_assets：确认资产清单中的归属与业务重要性
+3. search_discovered_assets：确认是否为已发现的云主机、裸金属、网络资源或弹性IP
+4. get_threat_intel：查询恶意标签与置信度
+5. query_banned_ip：查询历史封禁与违规次数
+6. calculate_ban_duration：按地域、违规次数、威胁标签计算时长
+7. 确认需封禁后调用 record_ban 写入封禁记录
 
 ## 原则
 - 内网 IP 禁止自动封禁
@@ -123,6 +126,7 @@ export const AGENT_TEMPLATES = [
       enabled_tools: [
         'check_whitelist',
         'search_assets',
+        'search_discovered_assets',
         'get_threat_intel',
         'query_banned_ip',
         'calculate_ban_duration',
@@ -138,6 +142,7 @@ export const AGENT_TEMPLATES = [
     tool_hints: {
       check_whitelist: '白名单命中则终止，避免误封',
       search_assets: '确认是否为关键业务或出口地址',
+      search_discovered_assets: '确认 IP 是否落在已发现的云主机或弹性IP上',
       get_threat_intel: '获取恶意标签，影响封禁等级',
       query_banned_ip: '查历史封禁与违规次数',
       calculate_ban_duration: '按规则计算封禁时长',
@@ -160,7 +165,8 @@ export const AGENT_TEMPLATES = [
       system_prompt: `你是资产管理智能体，负责资产查询、录入与知识库梳理。
 
 ## 核心工具
-- search_assets / query_asset：查询资产
+- search_assets / query_asset：查询资产清单
+- search_discovered_assets：查询资产发现（云主机、裸金属、网络资源、弹性IP）
 - discover_new_kbs + fetch_kb_content：从知识库梳理资产
 - add_asset / update_asset / list_assets：维护资产表
 
@@ -173,6 +179,7 @@ export const AGENT_TEMPLATES = [
       engine: 'hermes',
       enabled_tools: [
         'search_assets',
+        'search_discovered_assets',
         'query_asset',
         'add_asset',
         'update_asset',
@@ -188,7 +195,8 @@ export const AGENT_TEMPLATES = [
     wizardStep: 'ability',
     tool_guide: '已按「资产管理」场景预选查询与维护工具；仅做知识库梳理时可保持默认。',
     tool_hints: {
-      search_assets: '按 IP/名称检索资产',
+      search_assets: '按 IP/名称检索资产清单',
+      search_discovered_assets: '按 IP、CMDB ID、实例名或部门检索资产发现',
       query_asset: '精确查询单条资产',
       add_asset: '录入新资产',
       update_asset: '更新已有资产',
