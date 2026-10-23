@@ -349,8 +349,8 @@ export default function GovCloudAssets() {
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1 gap-4 p-6">
-        <aside className="w-[240px] shrink-0">
+      <div className="flex min-h-0 flex-1 gap-4 overflow-hidden p-6">
+        <aside className="w-[240px] shrink-0 overflow-y-auto">
           <div className="mb-2 px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
             发现来源
           </div>
@@ -398,7 +398,7 @@ export default function GovCloudAssets() {
           </div>
         </aside>
 
-        <section className="min-w-0 flex-1">
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <div className="mb-3">
             <h2 className="text-base font-semibold text-foreground">{sourceTitle(currentGroup)}</h2>
             {currentGroup?.description && (
@@ -429,7 +429,8 @@ export default function GovCloudAssets() {
               />
             )
           ) : (
-            <>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="min-h-0 max-h-[min(420px,42%)] overflow-y-auto">
               <div className="card-stagger mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 {visibleTables.length === 0 ? (
                   <div className="col-span-full rounded-lg border border-dashed border-border py-8 text-center text-xs text-muted-foreground">
@@ -559,11 +560,14 @@ export default function GovCloudAssets() {
                 </div>
               )}
 
+              </div>
+              <div className="mt-3 flex min-h-0 w-full min-w-0 flex-1 flex-col">
               {loading ? (
-                <div className="overflow-hidden rounded-lg border border-border">
+                <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border">
                   <LoadingState rows={6} cols={Math.max(4, Math.min(displayColumns.length || 5, 8))} />
                 </div>
               ) : items.length === 0 ? (
+                <div className="min-h-0 flex-1 overflow-auto">
                 <EmptyState
                   icon={FileSpreadsheet}
                   title={keyword ? '未找到匹配的资产' : `${currentTable?.excel_name || '当前表'}暂无数据`}
@@ -587,13 +591,14 @@ export default function GovCloudAssets() {
                     ) : undefined
                   }
                 />
+                </div>
               ) : (
-                <div className="table-stagger max-h-[62vh] overflow-auto rounded-lg border border-border">
+                <div className="table-stagger min-h-0 flex-1 overflow-auto overscroll-contain rounded-lg border border-border">
                   <table className="w-max min-w-full text-left text-sm">
-                    <thead className="sticky top-0 z-10 bg-muted text-xs text-muted-foreground">
+                    <thead className="sticky top-0 z-10 text-xs text-muted-foreground">
                       <tr>
                         {displayColumns.map((col) => (
-                          <th key={col.key} className="whitespace-nowrap px-3 py-2 font-medium">
+                          <th key={col.key} className="whitespace-nowrap border-b border-border bg-muted px-3 py-2 font-medium">
                             {col.label}
                           </th>
                         ))}
@@ -622,12 +627,13 @@ export default function GovCloudAssets() {
                 </div>
               )}
 
-              {total > pageSize && (
-                <div className="mt-4">
+              {total > 0 && (
+                <div className="shrink-0">
                   <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} showPageSize={false} />
                 </div>
               )}
-            </>
+              </div>
+            </div>
           )}
         </section>
       </div>
